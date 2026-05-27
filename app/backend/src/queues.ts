@@ -280,7 +280,7 @@ async function handleSendScheduledMessage(job) {
     await scheduleRecord?.update({
       sentAt: moment().format("YYYY-MM-DD HH:mm"),
       status: "ENVIADA"
-    });
+    } as any);
 
     logger.info(`[🧵] Mensagem agendada enviada para: ${schedule.contact.name}`);
     sendScheduledMessages.clean(15000, "completed");
@@ -753,7 +753,7 @@ async function handlePrepareContact(job) {
         }
       );
 
-      await record.update({ jobId: nextJob.id });
+      await record.update({ jobId: String(nextJob.id) } as any);
     }
 
     await verifyAndFinalizeCampaign(campaign);

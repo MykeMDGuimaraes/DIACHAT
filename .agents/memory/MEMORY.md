@@ -1,0 +1,2 @@
+- [React-scripts uuid shims](uuid-shims.md) — react-trello needs uuid/v1, uuid/v4; use .cjs shims in uuid@11 instead of installing uuid@3
+- [Fork-ts-checker ajv8 patch](fork-ts-checker-ajv8.md) — schema-utils in fork-ts-checker@6 crashes with ajv-keywords@5; patch validate.js to catch unknown keywords

@@ -130,7 +130,7 @@ const UpdateTicketService = async ({
           await ticketTraking.update({
             ratingAt: moment().toDate(),
             userId: actionUserId
-          });
+          } as any);
 
           io.to(`company-${ticket.companyId}-open`)
             .to(`queue-${ticket.queueId}-open`)
@@ -268,7 +268,7 @@ const UpdateTicketService = async ({
       whatsappId,
       chatbot,
       queueOptionId
-    });
+    } as any);
 
     await ticket.reload();
 
@@ -278,7 +278,7 @@ const UpdateTicketService = async ({
         queuedAt: moment().toDate(),
         startedAt: null,
         userId: null
-      });
+      } as any);
     }
 
     if (status !== undefined && ["open"].indexOf(status) > -1) {
@@ -288,7 +288,7 @@ const UpdateTicketService = async ({
         rated: false,
         whatsappId,
         userId: ticket.userId
-      });
+      } as any);
     }
 
     await ticketTraking.save();

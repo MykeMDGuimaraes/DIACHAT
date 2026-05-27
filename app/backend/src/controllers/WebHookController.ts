@@ -42,7 +42,7 @@ export const webHook = async (
           where: {
             facebookPageUserId: entry.id,
             channel
-          }
+          } as any
         });
 
         if (getTokenPage) {

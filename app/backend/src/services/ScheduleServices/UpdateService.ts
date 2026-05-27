@@ -58,7 +58,7 @@ const UpdateUserService = async ({
     contactId,
     ticketId,
     userId,
-  });
+  } as any);
 
   await schedule.reload();
   return schedule;

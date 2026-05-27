@@ -70,7 +70,7 @@ import { WebhookModel } from "../../models/Webhook";
 import {differenceInMilliseconds} from "date-fns";
 import Whatsapp from "../../models/Whatsapp";
 
-const request = require("request");
+import axios from "axios";
 
 const fs = require("fs");
 
@@ -2125,22 +2125,11 @@ export const handleMessageIntegration = async (
 
   if (queueIntegration.type === "n8n" || queueIntegration.type === "webhook") {
     if (queueIntegration?.urlN8N) {
-      const options = {
-        method: "POST",
-        url: queueIntegration?.urlN8N,
-        headers: {
-          "Content-Type": "application/json"
-        },
-        json: msg
-      };
       try {
-        request(options, function (error, response) {
-          if (error) {
-            throw new Error(error);
-          } else {
-            console.log(response.body);
-          }
+        const response = await axios.post(queueIntegration?.urlN8N, msg, {
+          headers: { "Content-Type": "application/json" }
         });
+        console.log(response.data);
       } catch (error) {
         throw new Error(error);
       }

@@ -74,7 +74,7 @@ const UpdateService = async (data: Data, companyId: number): Promise<Campaign> =
     }
   }
 
-  await record.update(data);
+  await record.update(data as any);
 
   await record.reload({
     include: [

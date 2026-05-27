@@ -2,7 +2,7 @@ import { Button, Dialog, DialogActions, DialogContent, DialogTitle, Grid, IconBu
 import { CloseOutlined, FontDownload, ImportContacts } from "@material-ui/icons";
 import React, { useState } from "react";
 import { FaDownload } from "react-icons/fa";
-import * as XLSX from 'xlsx';
+import readXlsxFile from 'read-excel-file';
 import { array } from "yup";
 import toastError from "../../errors/toastError";
 import api from "../../services/api";
@@ -83,32 +83,35 @@ const ImportContactsModal = ( props ) => {
     const [successUpload, setSuccessUpload] = useState([]);
     const [errorUpload, setErrorUpload] = useState([]);
 
-    const handleNewFile = ( e ) => {
+    const handleNewFile = async ( e ) => {
 
         const file = e.target.files[0];
 
         if(!file) return;
 
         setNameFile( file.name );
-        readXlsx( file );
+        await readXlsx( file );
     }
 
-    const readXlsx = ( file ) => {
-
-        const reader = new FileReader();
-        reader.onload = ( e ) => {
-
-            const ab = e.target.result;
-            const wb = XLSX.read(ab,{type: 'array'})
-
-            const wsname = wb.SheetNames[0];
-            const ws = wb.Sheets[wsname];
-
-            const data = XLSX.utils.sheet_to_json(ws);
+    const readXlsx = async ( file ) => {
+        try {
+            const rows = await readXlsxFile(file);
+            if (rows.length < 2) {
+                setListContacts([]);
+                return;
+            }
+            const headers = rows[0].map(h => String(h ?? ""));
+            const data = rows.slice(1).map(row => {
+                const obj = {};
+                headers.forEach((header, i) => {
+                    obj[header] = row[i];
+                });
+                return obj;
+            });
             setListContacts(data);
+        } catch (e) {
+            toastError(e);
         }
-
-        reader.readAsArrayBuffer(file);
     }
 
     const handleSaveListContacts = async (  ) => {

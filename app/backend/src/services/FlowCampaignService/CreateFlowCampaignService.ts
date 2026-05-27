@@ -23,12 +23,12 @@ const CreateFlowCampaignService = async ({
   try {
     const flow = await FlowCampaignModel.create({
       userId: userId,
-      companyId: companyId,
+      companyId: Number(companyId),
       name: name,
       phrase: phrase,
       flowId: flowId,
       whatsappId: whatsappId
-    });
+    } as any);
 
     return flow;
   } catch (error) {

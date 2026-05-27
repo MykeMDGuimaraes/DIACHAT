@@ -1,19 +1,34 @@
 import { head } from "lodash";
-import XLSX from "xlsx";
+import ExcelJS from "exceljs";
 import { has } from "lodash";
 import ContactListItem from "../../models/ContactListItem";
 import CheckContactNumber from "../WbotServices/CheckNumber";
 import { logger } from "../../utils/logger";
-// import CheckContactNumber from "../WbotServices/CheckNumber";
 
 export async function ImportContacts(
   contactListId: number,
   companyId: number,
   file: Express.Multer.File | undefined
 ) {
-  const workbook = XLSX.readFile(file?.path as string);
-  const worksheet = head(Object.values(workbook.Sheets)) as any;
-  const rows: any[] = XLSX.utils.sheet_to_json(worksheet, { header: 0 });
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.readFile(file?.path as string);
+  const worksheet = workbook.worksheets[0];
+
+  const rows: any[] = [];
+  let headers: string[] = [];
+
+  worksheet.eachRow((row, rowNumber) => {
+    if (rowNumber === 1) {
+      headers = (row.values as any[]).slice(1).map(h => String(h ?? ""));
+    } else {
+      const obj: Record<string, any> = {};
+      (row.values as any[]).slice(1).forEach((val, idx) => {
+        obj[headers[idx]] = val;
+      });
+      rows.push(obj);
+    }
+  });
+
   const contacts = rows.map(row => {
     let name = "";
     let number = "";

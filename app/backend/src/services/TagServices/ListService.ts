@@ -54,11 +54,11 @@ const ListService = async ({
     group: ['Tag.id']
   });
 
-  const hasMore = count > offset + tags.length;
+  const hasMore = (count as any as number) > offset + tags.length;
 
   return {
     tags,
-    count,
+    count: count as any as number,
     hasMore
   };
 };

@@ -37,7 +37,7 @@ const CreateService = async ({
       companyId,
       userId,
       status: 'PENDENTE'
-    }
+    } as any
   );
 
   await schedule.reload();
