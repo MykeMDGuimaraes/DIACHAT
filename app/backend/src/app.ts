@@ -38,6 +38,14 @@ app.use(Sentry.Handlers.requestHandler());
 app.use("/public", express.static(uploadConfig.directory));
 app.use(routes);
 
+app.get("*", (req: Request, res: Response, next: NextFunction) => {
+  const frontendUrl = process.env.FRONTEND_URL;
+  if (frontendUrl && req.method === "GET" && req.accepts("html")) {
+    return res.redirect(302, `${frontendUrl}${req.originalUrl}`);
+  }
+  return next();
+});
+
 app.use(Sentry.Handlers.errorHandler());
 
 app.use(async (err: Error, req: Request, res: Response, _: NextFunction) => {
