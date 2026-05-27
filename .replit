@@ -40,25 +40,25 @@ outputType = "console"
 name = "Backend"
 author = "agent"
 
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "cd app/backend && npm start"
-waitForPort = 3001
-
 [workflows.workflow.metadata]
 outputType = "console"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "bash app/backend/replit-start.sh"
+waitForPort = 3001
 
 [[workflows.workflow]]
 name = "Frontend"
 author = "agent"
 
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "cd app/frontend && npm start"
-waitForPort = 5000
-
 [workflows.workflow.metadata]
 outputType = "webview"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "bash app/frontend/replit-start.sh"
+waitForPort = 5000
 
 [[ports]]
 localPort = 3001
