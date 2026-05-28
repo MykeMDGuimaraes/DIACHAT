@@ -36,6 +36,7 @@ import { Can } from "../components/Can";
 import { SocketContext } from "../context/Socket/SocketContext";
 import { isArray } from "lodash";
 import TableChartIcon from '@material-ui/icons/TableChart';
+import ViewKanbanIcon from '@material-ui/icons/ViewWeek';
 import api from "../services/api";
 import BorderColorIcon from '@material-ui/icons/BorderColor';
 import ToDoList from "../pages/ToDoList/";
@@ -293,14 +294,22 @@ const MainListItems = (props) => {
         primary={i18n.t("mainDrawer.listItems.tickets")}
         icon={<WhatsAppIcon />}
       />
-	  
-	{showKanban && (  
-	  <ListItemLink
-        to="/kanban"
-        primary={`Kanban`}
-        icon={<TableChartIcon />}
-      />
-	  )}
+          
+        {showKanban && (
+          <ListItemLink
+            to="/kanban"
+            primary={`Kanban`}
+            icon={<TableChartIcon />}
+          />
+        )}
+
+        {showKanban && (
+          <ListItemLink
+            to="/crm"
+            primary={`CRM`}
+            icon={<ViewKanbanIcon />}
+          />
+        )}
 
 
       <ListItemLink
@@ -308,8 +317,8 @@ const MainListItems = (props) => {
         primary={i18n.t("mainDrawer.listItems.quickMessages")}
         icon={<FlashOnIcon />}
       />
-	  
-	  <ListItemLink
+          
+          <ListItemLink
         to="/todolist"
         primary={i18n.t("mainDrawer.listItems.tasks")}
         icon={<BorderColorIcon />}
@@ -367,7 +376,7 @@ const MainListItems = (props) => {
               color="inherit">
               {i18n.t("mainDrawer.listItems.administration")}
             </ListSubheader>
-			
+                        
             {showCampaigns && (
               <>
                 <ListItem
@@ -534,8 +543,8 @@ const MainListItems = (props) => {
               primary={i18n.t("mainDrawer.listItems.settings")}
               icon={<SettingsOutlinedIcon />}
             />
-			
-			
+                        
+                        
             {!collapsed && <React.Fragment>
               <Divider />
               {/* 
@@ -549,7 +558,7 @@ const MainListItems = (props) => {
               </Typography>
             </React.Fragment>
             }
-			
+                        
           </>
         )}
       />

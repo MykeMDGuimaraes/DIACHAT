@@ -77,6 +77,7 @@ export HOST=0.0.0.0
 export PORT=5000
 export DANGEROUSLY_DISABLE_HOST_CHECK=true
 export BROWSER=none
+export NODE_OPTIONS="--openssl-legacy-provider ${NODE_OPTIONS:-}"
 
 echo "[replit-start] starting CRA dev server on :$PORT..."
 exec npm start
