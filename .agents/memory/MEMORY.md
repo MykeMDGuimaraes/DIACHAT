@@ -1,2 +1,2 @@
-- [React-scripts uuid shims](uuid-shims.md) — react-trello needs uuid/v1, uuid/v4; use .cjs shims in uuid@11 instead of installing uuid@3
-- [Fork-ts-checker ajv8 patch](fork-ts-checker-ajv8.md) — schema-utils in fork-ts-checker@6 crashes with ajv-keywords@5; patch validate.js to catch unknown keywords
+- [Replit multi-port apps](replit-multi-port-apps.md) — bare REPLIT_DEV_DOMAIN serves only externalPort 80; other ports need `:PORT` suffix on the same hostname over HTTPS.
+- [Atendechat frontend patches](atendechat-frontend-patches.md) — `npm install` in app/frontend wipes uuid/eslint-scope/schema-utils patches; replit-start.sh only re-applies them when node_modules is missing.
