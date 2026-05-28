@@ -303,7 +303,7 @@ const MainListItems = (props) => {
           />
         )}
 
-        {showKanban && (
+        {showKanban && user.profile === "admin" && (
           <ListItemLink
             to="/crm"
             primary={`CRM`}
