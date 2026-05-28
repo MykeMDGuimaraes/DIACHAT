@@ -3768,6 +3768,11 @@ big-integer@^1.6.16:
   resolved "https://registry.npmjs.org/big-integer/-/big-integer-1.6.52.tgz"
   integrity sha512-QxD8cf2eVqJOOz63z6JIN9BzvVs/dlySa5HGSBH5xtR8dPteIRQnBxxKqkNTiT6jbDTF6jAfrd4oMcND9RGbQg==
 
+big.js@^5.2.2:
+  version "5.2.2"
+  resolved "https://registry.npmjs.org/big.js/-/big.js-5.2.2.tgz"
+  integrity sha512-vyL2OymJxmarO8gxMr0mhChsO9QGwhynfuu4+MHTAW6czfq9humCB7rKpUjDd9YUiDPU4mzpyupFSvOClAwbmQ==
+
 binary-extensions@^2.0.0:
   version "2.3.0"
   resolved "https://registry.npmjs.org/binary-extensions/-/binary-extensions-2.3.0.tgz"
@@ -5105,6 +5110,11 @@ emoji-regex@^9.2.2:
   version "9.2.2"
   resolved "https://registry.npmjs.org/emoji-regex/-/emoji-regex-9.2.2.tgz"
   integrity sha512-L18DaJsXSUk2+42pv8mLs5jJT2hqFkFE4j21wOmgbUqsZ2hL72NsUU785g9RXgo3s0ZNgVl42TiHp3ZtOv/Vyg==
+
+emojis-list@^3.0.0:
+  version "3.0.0"
+  resolved "https://registry.npmjs.org/emojis-list/-/emojis-list-3.0.0.tgz"
+  integrity sha512-/kyM18EfinwXZbno9FyUGeFh87KC8HRQBQGildHZbEuRyWFOmv1U10o9BBp8XVZDVNNuQKyIGIu5ZYAAXJ0V2Q==
 
 encodeurl@~2.0.0:
   version "2.0.0"
@@ -7526,7 +7536,7 @@ json5@^1.0.2:
   dependencies:
     minimist "^1.2.0"
 
-json5@^2.2.0, json5@^2.2.3:
+json5@^2.1.2, json5@^2.2.0, json5@^2.2.3:
   version "2.2.3"
   resolved "https://registry.npmjs.org/json5/-/json5-2.2.3.tgz"
   integrity sha512-XmOWe7eyHYH14cLdVPoyg+GOH3rYX++KpzrylJwSW98t3Nk+U8XOl8FWKOgwtzdb8lXGf6zYwDUzeHMWfxasyg==
@@ -7759,7 +7769,25 @@ loader-runner@^4.3.2:
   resolved "https://registry.npmjs.org/loader-runner/-/loader-runner-4.3.2.tgz"
   integrity sha512-DFEqQ3ihfS9blba08cLfYf1NRAIEm+dDjic073DRDc3/JspI/8wYmtDsHwd3+4hwvdxSK7PGaElfTmm0awWJ4w==
 
-loader-utils@^3.2.1:
+loader-utils@^2.0.0:
+  version "2.0.4"
+  resolved "https://registry.npmjs.org/loader-utils/-/loader-utils-2.0.4.tgz"
+  integrity sha512-xXqpXoINfFhgua9xiqD8fPFHgkoq1mmmpE92WlDbm9rNRd/EbRb+Gqf908T2DMfuHjjJlksiK2RbHVOdD/MqSw==
+  dependencies:
+    big.js "^5.2.2"
+    emojis-list "^3.0.0"
+    json5 "^2.1.2"
+
+loader-utils@^2.0.4:
+  version "2.0.4"
+  resolved "https://registry.npmjs.org/loader-utils/-/loader-utils-2.0.4.tgz"
+  integrity sha512-xXqpXoINfFhgua9xiqD8fPFHgkoq1mmmpE92WlDbm9rNRd/EbRb+Gqf908T2DMfuHjjJlksiK2RbHVOdD/MqSw==
+  dependencies:
+    big.js "^5.2.2"
+    emojis-list "^3.0.0"
+    json5 "^2.1.2"
+
+loader-utils@^3.2.0:
   version "3.3.1"
   resolved "https://registry.npmjs.org/loader-utils/-/loader-utils-3.3.1.tgz"
   integrity sha512-FMJTLMXfCLMLfJxcX9PFqX5qD88Z5MRGaZCVzfuqeZSPsyiBzs+pahDQjbIWz2QIzPZz0NX9Zy4FX3lmK6YHIg==
@@ -9756,7 +9784,7 @@ read-cache@^1.0.0:
   dependencies:
     pify "^2.3.0"
 
-read-excel-file@^5.8.5:
+read-excel-file@^5.8.8:
   version "5.8.8"
   resolved "https://registry.npmjs.org/read-excel-file/-/read-excel-file-5.8.8.tgz"
   integrity sha512-Jb3g7wYe3NU7k52q5xs16swqsl47xIxc/CvHuJy49Elzp6+G6bg56Lds4s57FayosuCYm+TTU0ROpMMuM7WE0A==

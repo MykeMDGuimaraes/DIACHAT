@@ -62,7 +62,7 @@
     "react-toastify": "9.0.0",
     "react-trello": "^2.2.11",
     "reactflow": "^11.11.4",
-    "read-excel-file": "^5.8.5",
+    "read-excel-file": "^5.8.8",
     "recharts": "^2.0.2",
     "socket.io-client": "^4.7.5",
     "styled-components": "^5.3.5",
