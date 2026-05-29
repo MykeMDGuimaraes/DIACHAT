@@ -1,3 +1,4 @@
 - [Replit multi-port apps](replit-multi-port-apps.md) — bare REPLIT_DEV_DOMAIN serves only externalPort 80; other ports need `:PORT` suffix on the same hostname over HTTPS.
 - [CRA HMR websocket SecurityError](cra-hmr-websocket-https-proxy.md) — CRA dev server (http) behind https proxy bakes protocol=ws: → synchronous SecurityError flagged as a crash; force webSocketURL.protocol='wss'.
+- [uuid v1/v4 subpath under CRA5](uuid-subpath-cra-pitfalls.md) — exposing uuid ./v1 and ./v4 for react-trello: never use .cjs shim (file-loader → URL string) nor dist/cjs (node crypto); point exports at dist/esm-browser.
 - [Atendechat frontend patches](atendechat-frontend-patches.md) — `npm install` in app/frontend wipes uuid/eslint-scope/schema-utils patches; replit-start.sh only re-applies them when node_modules is missing.

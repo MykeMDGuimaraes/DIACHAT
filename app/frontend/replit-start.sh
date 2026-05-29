@@ -22,35 +22,47 @@ if [ ! -d node_modules ]; then
     }
   "
 
-  # Patch 2: Create uuid/v1 and uuid/v4 CJS compatibility shims in uuid@11
-  # so react-trello (which uses require('uuid/v1')) works without installing
-  # the vulnerable uuid@3. uuid@11 ships CJS builds in dist/cjs/ that export
-  # the v1/v4 functions as .default. We expose them via .cjs shim files and
-  # add ./v1 and ./v4 entries to uuid's exports map.
+  # Patch 2: Expose uuid/v1 and uuid/v4 subpaths in uuid@11 so react-trello
+  # (which does require('uuid/v1')) resolves the real functions without
+  # installing the vulnerable uuid@3. We point the ./v1 and ./v4 exports map
+  # entries directly at uuid's esm-browser .js dist files. Two gotchas:
+  #  - Do NOT use .cjs shim files: CRA's webpack file-loader only excludes
+  #    .js/.mjs/.jsx/.ts/.tsx from asset handling, so a .cjs module is emitted
+  #    as a static asset and require() returns a URL string instead of the
+  #    function (crashes react-trello's Board: "(0, _v.default) is not a fn").
+  #  - Use esm-browser (not dist/cjs): the cjs build imports node's 'crypto'
+  #    for rng, which CRA5/webpack5 no longer polyfills; esm-browser uses the
+  #    global Web Crypto API. The dist files expose a proper .default, so
+  #    react-trello's _interopRequireDefault yields the function.
   node -e "
     const fs = require('fs');
     const path = require('path');
     const uuidDir = path.join('node_modules', 'uuid');
-    const v1Cjs = path.join(uuidDir, 'v1.cjs');
-    const v4Cjs = path.join(uuidDir, 'v4.cjs');
 
-    if (!fs.existsSync(v1Cjs)) {
-      fs.writeFileSync(v1Cjs, '\"use strict\";\nmodule.exports = require(\"./dist/cjs/v1.js\").default;\n');
-      console.log('[patch] created uuid/v1.cjs shim');
+    // Remove any stale .cjs shims from a previous patch version.
+    for (const f of ['v1.cjs', 'v4.cjs']) {
+      const p = path.join(uuidDir, f);
+      if (fs.existsSync(p)) { fs.unlinkSync(p); console.log('[patch] removed stale uuid/' + f + ' shim'); }
     }
-    if (!fs.existsSync(v4Cjs)) {
-      fs.writeFileSync(v4Cjs, '\"use strict\";\nmodule.exports = require(\"./dist/cjs/v4.js\").default;\n');
-      console.log('[patch] created uuid/v4.cjs shim');
+
+    for (const f of ['dist/esm-browser/v1.js', 'dist/esm-browser/v4.js']) {
+      if (!fs.existsSync(path.join(uuidDir, f))) { console.error('[patch] FATAL: expected uuid file missing: ' + f + ' (uuid layout changed?)'); process.exit(1); }
     }
 
     const pkgPath = path.join(uuidDir, 'package.json');
     const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+    if (!pkg.exports || typeof pkg.exports !== 'object') { console.error('[patch] FATAL: uuid package.json has no exports map (uuid layout changed?)'); process.exit(1); }
+    const want = {
+      './v1': { import: './dist/esm-browser/v1.js', require: './dist/esm-browser/v1.js', default: './dist/esm-browser/v1.js' },
+      './v4': { import: './dist/esm-browser/v4.js', require: './dist/esm-browser/v4.js', default: './dist/esm-browser/v4.js' },
+    };
     let changed = false;
-    if (!pkg.exports['./v1']) { pkg.exports['./v1'] = { require: './v1.cjs' }; changed = true; }
-    if (!pkg.exports['./v4']) { pkg.exports['./v4'] = { require: './v4.cjs' }; changed = true; }
+    for (const k of Object.keys(want)) {
+      if (JSON.stringify(pkg.exports[k]) !== JSON.stringify(want[k])) { pkg.exports[k] = want[k]; changed = true; }
+    }
     if (changed) {
       fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2));
-      console.log('[patch] added ./v1 and ./v4 to uuid exports map');
+      console.log('[patch] pointed uuid ./v1 and ./v4 exports at real dist files');
     }
   "
 
