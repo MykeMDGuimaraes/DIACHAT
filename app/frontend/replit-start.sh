@@ -70,6 +70,23 @@ if [ ! -d node_modules ]; then
     }
   "
 
+  # Patch 4: Force the CRA dev-server HMR client to use protocol 'wss' so it never
+  # tries an insecure ws:// socket. WDS otherwise bakes protocol=ws: because the
+  # dev server runs over http behind the Replit https proxy; ws:// from an https
+  # page throws a synchronous SecurityError that Replit's detector reports as a
+  # frontend crash. ('auto' is not normalized by this WDS client, so use wss.)
+  node -e "
+    const fs = require('fs');
+    const path = 'node_modules/react-scripts/config/webpackDevServer.config.js';
+    let content = fs.readFileSync(path, 'utf8');
+    const anchor = 'port: sockPort,';
+    if (content.includes(anchor) && !content.includes('WDS_SOCKET_PROTOCOL')) {
+      content = content.replace(anchor, anchor + \"\n        protocol: process.env.WDS_SOCKET_PROTOCOL || 'wss',\");
+      fs.writeFileSync(path, content);
+      console.log('[patch] forced CRA HMR websocket protocol to wss');
+    }
+  "
+
   echo "[replit-start] patches applied."
 fi
 
