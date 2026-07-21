@@ -1,3 +1,4 @@
+import withAuthToken from "../../utils/withAuthToken";
 import React, { useState, useEffect, useRef } from "react";
 
 import * as Yup from "yup";
@@ -576,7 +577,7 @@ const FlowBuilderSingleBlockModal = ({
           <img
             src={
               valueDefault.length > 0
-                ? process.env.REACT_APP_BACKEND_URL + "/public/" + valueDefault
+                ? withAuthToken(process.env.REACT_APP_BACKEND_URL + "/public/" + valueDefault)
                 : ""
             }
             className={`img${number}`}
@@ -645,7 +646,7 @@ const FlowBuilderSingleBlockModal = ({
             <audio controls="controls">
               <source
                 src={
-                  process.env.REACT_APP_BACKEND_URL + "/public/" + valueDefault
+                  withAuthToken(process.env.REACT_APP_BACKEND_URL + "/public/" + valueDefault)
                 }
                 type="audio/mp3"
               />
@@ -709,7 +710,7 @@ const FlowBuilderSingleBlockModal = ({
             <video controls="controls" style={{ width: "200px" }}>
               <source
                 src={
-                  process.env.REACT_APP_BACKEND_URL + "/public/" + valueDefault
+                  withAuthToken(process.env.REACT_APP_BACKEND_URL + "/public/" + valueDefault)
                 }
                 type="video/mp4"
               />

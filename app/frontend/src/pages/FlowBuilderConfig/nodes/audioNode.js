@@ -1,3 +1,4 @@
+import withAuthToken from "../../../utils/withAuthToken";
 import { ContentCopy, Delete, Message, MicNone } from "@mui/icons-material";
 import React, { memo } from "react";
 
@@ -75,7 +76,7 @@ export default memo(({ data, isConnectable, id }) => {
           )}
         </div>
         <audio controls="controls">
-          <source src={`${link}/public/${data.url}`} type="audio/mp3" />
+          <source src={withAuthToken(`${link}/public/${data.url}`)} type="audio/mp3" />
           seu navegador não suporta HTML5
         </audio>
       </div>

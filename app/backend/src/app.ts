@@ -8,6 +8,7 @@ import * as Sentry from "@sentry/node";
 
 import "./database";
 import uploadConfig from "./config/upload";
+import mediaAuth from "./middleware/mediaAuth";
 import AppError from "./errors/AppError";
 import routes from "./routes";
 import { logger } from "./utils/logger";
@@ -35,7 +36,7 @@ app.use(
 app.use(cookieParser());
 app.use(express.json());
 app.use(Sentry.Handlers.requestHandler());
-app.use("/public", express.static(uploadConfig.directory));
+app.use("/public", mediaAuth, express.static(uploadConfig.directory));
 app.use(routes);
 
 app.get("*", (req: Request, res: Response, next: NextFunction) => {

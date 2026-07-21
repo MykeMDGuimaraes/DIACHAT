@@ -3,6 +3,7 @@ import { makeStyles } from "@material-ui/core/styles";
 import toastError from "../../errors/toastError";
 import Popover from "@material-ui/core/Popover";
 import AnnouncementIcon from "@material-ui/icons/Announcement";
+import withAuthToken from "../../utils/withAuthToken";
 import Notifications from "@material-ui/icons/Notifications"
 
 import {
@@ -40,7 +41,7 @@ const useStyles = makeStyles((theme) => ({
 
 function AnnouncementDialog({ announcement, open, handleClose }) {
   const getMediaPath = (filename) => {
-    return `${process.env.REACT_APP_BACKEND_URL}/public/${filename}`;
+    return withAuthToken(`${process.env.REACT_APP_BACKEND_URL}/public/${filename}`);
   };
   return (
     <Dialog
@@ -225,7 +226,7 @@ export default function AnnouncementsPopover() {
   };
 
   const getMediaPath = (filename) => {
-    return `${process.env.REACT_APP_BACKEND_URL}/public/${filename}`;
+    return withAuthToken(`${process.env.REACT_APP_BACKEND_URL}/public/${filename}`);
   };
 
   const handleShowAnnouncementDialog = (record) => {

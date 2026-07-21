@@ -30,6 +30,7 @@ import LocationPreview from "../LocationPreview";
 import whatsBackgroundDark from "../../assets/wa-background-dark.png"; //DARK MODE PLW DESIGN//
 
 import api from "../../services/api";
+import withAuthToken from "../../utils/withAuthToken";
 import toastError from "../../errors/toastError";
 import { SocketContext } from "../../context/Socket/SocketContext";
 import { i18n } from "../../translate/i18n";
@@ -480,14 +481,14 @@ const MessagesList = ({ ticket, ticketId, isGroup }) => {
     } else if (message.mediaType === "audio") {
       return (
         <audio controls>
-          <source src={message.mediaUrl} type="audio/ogg"></source>
+          <source src={withAuthToken(message.mediaUrl)} type="audio/ogg"></source>
         </audio>
       );
     } else if (message.mediaType === "video") {
       return (
         <video
           className={classes.messageMedia}
-          src={message.mediaUrl}
+          src={withAuthToken(message.mediaUrl)}
           controls
         />
       );
@@ -500,7 +501,7 @@ const MessagesList = ({ ticket, ticketId, isGroup }) => {
               color="primary"
               variant="outlined"
               target="_blank"
-              href={message.mediaUrl}
+              href={withAuthToken(message.mediaUrl)}
             >
               {i18n.t("messagesList.header.buttons.download")}
             </Button>
@@ -628,7 +629,7 @@ const MessagesList = ({ ticket, ticketId, isGroup }) => {
             && (
               <div className={classes.downloadMedia}>
                 <audio controls>
-                  <source src={message.quotedMsg.mediaUrl} type="audio/ogg"></source>
+                  <source src={withAuthToken(message.quotedMsg.mediaUrl)} type="audio/ogg"></source>
                 </audio>
               </div>
             )
@@ -637,7 +638,7 @@ const MessagesList = ({ ticket, ticketId, isGroup }) => {
             && (
               <video
                 className={classes.messageMedia}
-                src={message.quotedMsg.mediaUrl}
+                src={withAuthToken(message.quotedMsg.mediaUrl)}
                 controls
               />
             )
@@ -650,7 +651,7 @@ const MessagesList = ({ ticket, ticketId, isGroup }) => {
                   color="primary"
                   variant="outlined"
                   target="_blank"
-                  href={message.quotedMsg.mediaUrl}
+                  href={withAuthToken(message.quotedMsg.mediaUrl)}
                 >
                   {i18n.t("messagesList.header.buttons.download")}
                 </Button>

@@ -1,3 +1,4 @@
+import withAuthToken from "../../../utils/withAuthToken";
 import { ContentCopy, Delete, Image, Message } from "@mui/icons-material";
 import React, { memo } from "react";
 
@@ -55,7 +56,7 @@ export default memo(({ data, isConnectable, id }) => {
         </div>
       </div>
       <div style={{color: '#ededed', fontSize: '12px', width: 180}}>
-        <img src={`${link}/public/${data.url}`} style={{width: '180px'}} />
+        <img src={withAuthToken(`${link}/public/${data.url}`)} style={{width: '180px'}} />
       </div>
       <Handle
         type="source"

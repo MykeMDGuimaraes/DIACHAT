@@ -3,6 +3,7 @@ import { makeStyles } from "@material-ui/core/styles";
 
 import ModalImage from "react-modal-image";
 import api from "../../services/api";
+import withAuthToken from "../../utils/withAuthToken";
 
 const useStyles = makeStyles(theme => ({
 	messageMedia: {
@@ -39,9 +40,9 @@ const ModalImageCors = ({ imageUrl }) => {
 	return (
 		<ModalImage
 			className={classes.messageMedia}
-			smallSrcSet={fetching ? imageUrl : blobUrl}
-			medium={fetching ? imageUrl : blobUrl}
-			large={fetching ? imageUrl : blobUrl}
+			smallSrcSet={fetching ? withAuthToken(imageUrl) : blobUrl}
+			medium={fetching ? withAuthToken(imageUrl) : blobUrl}
+			large={fetching ? withAuthToken(imageUrl) : blobUrl}
 			alt="image"
 		/>
 	);

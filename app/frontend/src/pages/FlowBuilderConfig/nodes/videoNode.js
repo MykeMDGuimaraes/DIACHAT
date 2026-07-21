@@ -1,3 +1,4 @@
+import withAuthToken from "../../../utils/withAuthToken";
 import {
   ContentCopy,
   Delete,
@@ -78,7 +79,7 @@ export default memo(({ data, isConnectable, id }) => {
       </div>
       <div style={{ color: "#ededed", fontSize: "12px", width: 180 }}>
         <video controls="controls" width="180px">
-          <source src={`${link}/public/${data.url}`} type="video/mp4" />
+          <source src={withAuthToken(`${link}/public/${data.url}`)} type="video/mp4" />
           seu navegador não suporta HTML5
         </video>
       </div>

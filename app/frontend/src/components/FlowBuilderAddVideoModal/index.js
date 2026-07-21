@@ -1,3 +1,4 @@
+import withAuthToken from "../../utils/withAuthToken";
 import React, { useState, useEffect, useRef } from "react";
 
 import * as Yup from "yup";
@@ -79,7 +80,7 @@ const FlowBuilderAddVideoModal = ({ open, onSave, onUpdate, data, close }) => {
         title: "Editar video",
         btn: "Salvar"
       });
-      setPreview(process.env.REACT_APP_BACKEND_URL + '/public/' + data.data.url)
+      setPreview(withAuthToken(process.env.REACT_APP_BACKEND_URL + '/public/' + data.data.url))
       setRecord(data.data.record)
       setActiveModal(true);
     } else if (open === "create") {
