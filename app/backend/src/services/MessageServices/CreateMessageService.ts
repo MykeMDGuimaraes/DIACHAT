@@ -1,4 +1,9 @@
 import { getIO } from "../../libs/socket";
+import { publishTenantEvent } from "../../libs/tenantEvents";
+import {
+  toConversationMessageDTO,
+  toConversationSummaryDTO
+} from "../InternalV1Services/Dtos";
 import Message from "../../models/Message";
 import Ticket from "../../models/Ticket";
 import Whatsapp from "../../models/Whatsapp";
@@ -70,6 +75,11 @@ const CreateMessageService = async ({
       ticket: message.ticket,
       contact: message.ticket.contact
     });
+
+  publishTenantEvent(companyId, "message.created", {
+    message: toConversationMessageDTO(message),
+    conversation: toConversationSummaryDTO(message.ticket)
+  });
 
   return message;
 };

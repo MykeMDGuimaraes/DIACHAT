@@ -1,4 +1,6 @@
 import { getIO } from "../../libs/socket";
+import { publishTenantEvent } from "../../libs/tenantEvents";
+import { toContactDTO } from "../InternalV1Services/Dtos";
 import Contact from "../../models/Contact";
 import ContactCustomField from "../../models/ContactCustomField";
 import { isNil } from "lodash";
@@ -69,6 +71,10 @@ const CreateOrUpdateContactService = async ({
       contact
     });
   }
+
+  publishTenantEvent(companyId, "contact.updated", {
+    contact: toContactDTO(contact)
+  });
 
   return contact;
 };

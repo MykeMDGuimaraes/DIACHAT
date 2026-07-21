@@ -22,6 +22,8 @@ import Ticket from "../../models/Ticket";
 import Message from "../../models/Message";
 
 import { getIO } from "../../libs/socket";
+import { publishTenantEvent } from "../../libs/tenantEvents";
+import { toConversationMessageDTO } from "../InternalV1Services/Dtos";
 import CreateMessageService from "../MessageServices/CreateMessageService";
 import { logger } from "../../utils/logger";
 import CreateOrUpdateContactService from "../ContactServices/CreateOrUpdateContactService";
@@ -2885,6 +2887,9 @@ const handleMsgAck = async (
         message: messageToUpdate
       }
     );
+    publishTenantEvent(messageToUpdate.companyId, "message.updated", {
+      message: toConversationMessageDTO(messageToUpdate)
+    });
   } catch (err) {
     Sentry.captureException(err);
     logger.error(`Error handling message ack. Err: ${err}`);

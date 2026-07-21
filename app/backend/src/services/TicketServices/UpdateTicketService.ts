@@ -3,6 +3,8 @@ import * as Sentry from "@sentry/node";
 import CheckContactOpenTickets from "../../helpers/CheckContactOpenTickets";
 import SetTicketMessagesAsRead from "../../helpers/SetTicketMessagesAsRead";
 import { getIO } from "../../libs/socket";
+import { publishTenantEvent } from "../../libs/tenantEvents";
+import { toConversationSummaryDTO } from "../InternalV1Services/Dtos";
 import Ticket from "../../models/Ticket";
 import Setting from "../../models/Setting";
 import Queue from "../../models/Queue";
@@ -315,6 +317,10 @@ const UpdateTicketService = async ({
         action: "update",
         ticket
       });
+
+    publishTenantEvent(companyId, "conversation.updated", {
+      conversation: toConversationSummaryDTO(ticket)
+    });
 
     return { ticket, oldStatus, oldUserId };
   } catch (err) {
