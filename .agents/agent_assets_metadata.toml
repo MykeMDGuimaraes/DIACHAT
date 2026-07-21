@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "zohdxdYcTTx0TU-01buop"
+uri = "file://docs/INTEGRACAO_HUB.md"
+type = "text"
+title = "Guia de Integração — Hub Fala Caminhoneiro"
