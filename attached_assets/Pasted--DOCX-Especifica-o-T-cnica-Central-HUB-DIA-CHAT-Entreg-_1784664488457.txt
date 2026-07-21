@@ -1,0 +1,111 @@
+# DOCX — Especificação Técnica Central HUB + DIA CHAT
+
+## Entregável
+
+Criar `C:\Users\marco\Documents\hub-fala-caminhoneiro\docs\Especificacao_Tecnica_Integracao_Hub_DIA_CHAT_v1.0.docx`.
+
+- Documento em português, versão 1.0, status “Baseline para implementação”.
+- Público: desenvolvimento.
+- Identidade principal: DIA Solutions; Hub Caminhoneiro identificado como tenant de referência.
+- Escopo: frontend Central HUB, BFF e DIA CHAT. O Roteador será documentado somente pelas responsabilidades e contratos necessários.
+- Aparência: preset `compact_reference_guide`, capa editorial, sumário navegável, cabeçalhos, numeração de páginas e identidade visual inspirada no roadmap.
+- Não incluir backlog, histórias, estimativas, RACI ou planejamento de sprints.
+
+## Conteúdo técnico
+
+1. Capa, controle de versão, objetivo, escopo, não objetivos e glossário.
+2. Estado atual:
+   - Central HUB já apresenta histórico somente leitura.
+   - BFF fornece mensagens mockadas.
+   - Modelo atual de mensagens é insuficiente.
+   - Dependência legada do Chatwoot.
+   - Build frontend atualmente bloqueado por configuração Tailwind/PostCSS.
+   - Repositório `DIA-CHAT` existente, privado e vazio; implementação será greenfield.
+3. Arquitetura-alvo:
+   - Hub Caminhoneiro como um tenant do DIA CHAT.
+   - DIA CHAT como fonte de contatos, conversas, mensagens e anexos.
+   - Roteador como fonte de tickets, automação, handoff e vínculo entre ticket e conversa.
+   - BFF stateless como agregador e fronteira de segurança.
+   - Frontend consumindo exclusivamente o BFF.
+4. Diagramas:
+   - Contexto multi-tenant.
+   - Componentes e propriedade dos dados.
+   - Sequência de recebimento e envio de mensagens.
+   - Máquina de estados de takeover, pausa e liberação.
+5. Requisitos por componente:
+   - Central HUB: inbox, leitura, resposta, anexos, estados de entrega, takeover/release e recuperação de conexão.
+   - BFF: autenticação Clerk, resolução interna do tenant, agregação, proxy de anexos, SSE, idempotência e tratamento de falhas.
+   - DIA CHAT: isolamento por tenant, persistência, ingestão/egresso WhatsApp, eventos, anexos, auditoria e API v1.
+6. Segurança:
+   - Browser nunca informa `tenantId`.
+   - Tenant derivado por host/configuração no BFF.
+   - Credenciais de serviço e contexto de tenant nas chamadas internas.
+   - Testes obrigatórios contra acesso cruzado entre tenants.
+   - Logs somente com identificadores; conteúdo das mensagens não será registrado.
+7. Resiliência e operação tecnicamente necessária:
+   - Reconexão SSE, recuperação por cursor e polling.
+   - Idempotência por `clientMessageId`.
+   - Timeouts, retries, circuit breaker e catálogo de erros.
+   - Disponibilidade mensal de 99,5%.
+   - Interface nativa do DIA CHAT como fallback da Central HUB.
+
+## APIs, contratos e tipos
+
+Documentar com tabelas e exemplos JSON:
+
+- BFF público:
+  - `GET /api/inbox`
+  - `GET /api/tickets/:id/conversation`
+  - `GET /api/tickets/:id/conversation/messages?cursor=`
+  - `POST /api/tickets/:id/conversation/messages`
+  - `POST /api/tickets/:id/handoff/takeover`
+  - `POST /api/tickets/:id/handoff/release`
+  - `GET /api/events`
+- DIA CHAT interno:
+  - Consulta de contatos e conversas.
+  - Paginação de mensagens por cursor.
+  - Envio idempotente de texto e anexos.
+  - Streaming autenticado de anexos.
+  - Canal de eventos tenant-scoped para o BFF.
+- Tipos normativos:
+  - `ConversationMessageV1`
+  - `ConversationSummaryV1`
+  - `ConversationLinkV1`
+  - `AttachmentV1`
+  - `ConversationEventV1`
+  - `ApiErrorV1`
+  - `HandoffState`
+  - `MappingState`
+  - `DeliveryStatus`
+- Regras críticas:
+  - Falha ao pausar o Ailton impede o envio humano.
+  - Falha no envio após a pausa mantém o controle humano.
+  - Retry reutiliza o mesmo `clientMessageId`.
+  - Mapeamento ausente ou ambíguo fica pendente e nunca é associado automaticamente.
+  - Retorno à automação exige liberação explícita.
+
+## Testes e validação do documento
+
+A especificação incluirá cenários de aceite para:
+
+- Isolamento entre tenants em REST, eventos e anexos.
+- Leitura, paginação, envio e status de mensagens.
+- Anexos válidos, inválidos, grandes e indisponíveis.
+- Takeover, pausa automática por mensagem humana e release explícito.
+- Idempotência e falhas parciais.
+- Reconexão SSE sem perda ou duplicação.
+- RBAC por perfil Clerk.
+- Mapeamento pendente ou conflitante.
+- Indisponibilidade do BFF, DIA CHAT e Roteador.
+- Carga de homologação em 3× o volume previsto.
+
+O DOCX será produzido com estilos Word reais, tabelas de geometria fixa e diagramas com texto alternativo. Depois será renderizado integralmente em PNG, revisado página por página e submetido a auditorias de estrutura, acessibilidade, tabelas, cabeçalhos e paginação.
+
+## Premissas
+
+- Data-base: 21 de julho de 2026.
+- Tenant inicial: `hub-fala-caminhoneiro`.
+- Cliente B não será ativado nesta versão, embora a arquitetura permita novos tenants.
+- Chatwoot permanece apenas em homologação e seus campos legados serão marcados para descontinuação.
+- O Roteador não será redesenhado neste documento; apenas seus contratos obrigatórios serão especificados.
+- O roadmap e o repositório atual serão as fontes de verdade do diagnóstico.
