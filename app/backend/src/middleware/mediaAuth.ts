@@ -12,6 +12,7 @@ import { FlowImgModel } from "../models/FlowImg";
 import FilesOptions from "../models/FilesOptions";
 import Files from "../models/Files";
 import { audit, requestIp } from "../libs/auditLog";
+import { verifyServiceToken } from "./isServiceAuth";
 
 interface TokenPayload {
   id: string;
@@ -28,15 +29,22 @@ const PUBLIC_ALLOWLIST = new Set([
 const notFound = (res: Response): Response =>
   res.status(404).json({ error: "ERR_NOT_FOUND" });
 
+interface MediaActor {
+  companyId: number;
+  actorType: "user" | "service";
+  actorId?: string;
+}
+
 const auditMedia = (
   req: Request,
-  companyId: number | null,
+  actor: MediaActor,
   file: string,
   outcome: "success" | "denied"
 ): void => {
   audit({
-    companyId,
-    actorType: companyId ? "user" : "anonymous",
+    companyId: actor.companyId,
+    actorType: actor.actorType,
+    actorId: actor.actorId,
     action: "media.access",
     targetType: "file",
     targetId: file,
@@ -90,13 +98,23 @@ const mediaAuth = async (
     return res.status(401).json({ error: "ERR_SESSION_EXPIRED" });
   }
 
-  let companyId: number;
+  let actor: MediaActor;
   try {
     const decoded = verify(token, authConfig.secret) as unknown as TokenPayload;
-    companyId = decoded.companyId;
+    actor = { companyId: decoded.companyId, actorType: "user" };
   } catch {
-    return res.status(401).json({ error: "ERR_INVALID_TOKEN" });
+    // Não é JWT de usuário — tenta credencial de serviço (tokenId.secret)
+    const credential = await verifyServiceToken(token);
+    if (!credential) {
+      return res.status(401).json({ error: "ERR_INVALID_TOKEN" });
+    }
+    actor = {
+      companyId: credential.companyId,
+      actorType: "service",
+      actorId: `service:${credential.id}`
+    };
   }
+  const { companyId } = actor;
 
   // quickMessage/<mediaPath> — exatamente como gerado pelo model QuickMessage
   if (segments[0] === "quickMessage") {
@@ -105,10 +123,10 @@ const mediaAuth = async (
       attributes: ["id"]
     });
     if (record && normalized === `quickMessage/${filename}`) {
-      auditMedia(req, companyId, normalized, "success");
+      auditMedia(req, actor, normalized, "success");
       return next();
     }
-    auditMedia(req, companyId, normalized, "denied");
+    auditMedia(req, actor, normalized, "denied");
     return notFound(res);
   }
 
@@ -119,10 +137,10 @@ const mediaAuth = async (
       attributes: ["id"]
     });
     if (record && normalized === `announcements/${filename}`) {
-      auditMedia(req, companyId, normalized, "success");
+      auditMedia(req, actor, normalized, "success");
       return next();
     }
-    auditMedia(req, companyId, normalized, "denied");
+    auditMedia(req, actor, normalized, "denied");
     return notFound(res);
   }
 
@@ -164,10 +182,10 @@ const mediaAuth = async (
       flowImg ||
       announcement
     ) {
-      auditMedia(req, companyId, normalized, "success");
+      auditMedia(req, actor, normalized, "success");
       return next();
     }
-    auditMedia(req, companyId, normalized, "denied");
+    auditMedia(req, actor, normalized, "denied");
     return notFound(res);
   }
 
@@ -186,11 +204,11 @@ const mediaAuth = async (
     ]
   });
   if (fileOption) {
-    auditMedia(req, companyId, normalized, "success");
+    auditMedia(req, actor, normalized, "success");
     return next();
   }
 
-  auditMedia(req, companyId, normalized, "denied");
+  auditMedia(req, actor, normalized, "denied");
   return notFound(res);
 };
 

@@ -290,11 +290,14 @@ Erro de validação: `?cursor=abc` → `400 {"error":{"code":"VALIDATION_ERROR",
 
 Cada chamada do Hub gera registros de auditoria no DIA CHAT contendo **apenas identificadores** — nunca o conteúdo das mensagens: uso da credencial (`service.auth`, com tokenId, método e caminho), envios (`v1.message.send`, com `clientMessageId`, conversa e flag de anexo), acessos a mídia (`media.access`) e tentativas negadas (credencial inválida/revogada). Nenhuma ação extra é exigida do Hub; isto é informativo para fins de conformidade.
 
-## 7. Anexos / mídia — estado atual
+## 7. Anexos / mídia
 
 - Mensagens com anexo trazem `mediaUrl` relativo, ex.: `"/public/comprovante.jpeg"` (concatene com a base URL do backend).
-- **Hoje o download exige JWT de usuário da interface do DIA CHAT** (query `?token=` ou header); a **credencial de serviço ainda não dá acesso** a `/public/*` — chamadas com ela retornam `401`.
-- Acesso a anexos via credencial de serviço é **trabalho futuro** já mapeado. Até lá, o Hub pode exibir metadados do anexo (`mediaType`, nome no `mediaUrl`) sem o binário.
+- O download é feito com a **mesma credencial de serviço** usada nas demais chamadas, de duas formas equivalentes:
+  - Header: `curl -H "Authorization: Bearer $TOKEN" "$BASE/public/comprovante.jpeg" -o comprovante.jpeg`
+  - Query string (útil para `<img src>` no frontend do Hub): `GET $BASE/public/comprovante.jpeg?token=$TOKEN` — atenção: a URL com token não deve ser exposta ao navegador do usuário final; sirva o binário via BFF.
+- O acesso é escopado ao tenant da credencial: anexos de outros tenants (ou inexistentes) retornam `404`; credencial inválida/revogada retorna `401`.
+- Cada download (concedido ou negado) gera auditoria `media.access` com o caminho do arquivo — nunca o conteúdo.
 
 ## 8. Início rápido (passo a passo)
 

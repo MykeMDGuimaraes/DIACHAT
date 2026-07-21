@@ -188,6 +188,16 @@ async function main() {
     check("JWT B → anexo de A = 404", rB.status === 404, { status: rB.status });
     const rN = await fetch(`${BASE}/public/${fileName}`);
     check("sem token → anexo = 401", rN.status === 401, { status: rN.status });
+    const rSA = await fetch(`${BASE}/public/${fileName}?token=${ta.svcToken}`);
+    check("credencial de serviço A → anexo de A = 200", rSA.status === 200, { status: rSA.status });
+    const bodySA = await rSA.text();
+    check("credencial de serviço A → conteúdo do anexo", bodySA === "conteudo do anexo A");
+    const rSB = await fetch(`${BASE}/public/${fileName}?token=${tb.svcToken}`);
+    check("credencial de serviço B → anexo de A = 404", rSB.status === 404, { status: rSB.status });
+    const rSH = await fetch(`${BASE}/public/${fileName}`, { headers: { Authorization: `Bearer ${ta.svcToken}` } });
+    check("credencial de serviço via header → anexo de A = 200", rSH.status === 200, { status: rSH.status });
+    const rSI = await fetch(`${BASE}/public/${fileName}?token=inv_alido.segredo`);
+    check("credencial de serviço inválida → anexo = 401", rSI.status === 401, { status: rSI.status });
   }
 
   console.log("== 4. Canal de eventos SSE ==");
@@ -318,6 +328,9 @@ async function main() {
     check("audita credencial inválida (service.auth denied)", rows.some(r => r.action === "service.auth" && r.outcome === "denied"));
     check("audita envio v1 (v1.message.send)", has("v1.message.send", "success", A));
     check("audita acesso a anexo concedido e negado", has("media.access", "success", A) && has("media.access", "denied", B));
+    const hasSvcMedia = (outcome, cid) =>
+      rows.some(r => r.action === "media.access" && r.outcome === outcome && r.companyId === cid && r.actorType === "service");
+    check("audita anexo via credencial de serviço (concedido A, negado B)", hasSvcMedia("success", A) && hasSvcMedia("denied", B));
     check("audita tentativa de login negada", rows.some(r => r.action === "auth.login" && r.outcome === "denied"));
 
     const leaked = rows.filter(r => {

@@ -7,6 +7,34 @@ import { audit, requestIp } from "../libs/auditLog";
 export const hashSecret = (secret: string): string =>
   createHash("sha256").update(secret).digest("hex");
 
+// Valida um token "tokenId.secret" e retorna a credencial ativa
+// correspondente, ou null se inválido/revogado. Não lança nem audita —
+// quem chama decide como registrar o resultado.
+export const verifyServiceToken = async (
+  token: string
+): Promise<ServiceCredential | null> => {
+  const [tokenId, secret] = token.split(".");
+  if (!tokenId || !secret) {
+    return null;
+  }
+
+  const credential = await ServiceCredential.findOne({ where: { tokenId } });
+  if (!credential || credential.revokedAt) {
+    return null;
+  }
+
+  const expected = Buffer.from(credential.secretHash, "hex");
+  const provided = Buffer.from(hashSecret(secret), "hex");
+  if (
+    expected.length !== provided.length ||
+    !timingSafeEqual(expected, provided)
+  ) {
+    return null;
+  }
+
+  return credential;
+};
+
 const isServiceAuth = async (
   req: Request,
   res: Response,
