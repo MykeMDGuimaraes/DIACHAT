@@ -5,6 +5,7 @@ import { getIO } from "../libs/socket";
 import CreateService from "../services/ChatService/CreateService";
 import ListService from "../services/ChatService/ListService";
 import ShowFromUuidService from "../services/ChatService/ShowFromUuidService";
+import ShowService from "../services/ChatService/ShowService";
 import DeleteService from "../services/ChatService/DeleteService";
 import FindMessages from "../services/ChatService/FindMessages";
 import UpdateService from "../services/ChatService/UpdateService";
@@ -73,6 +74,8 @@ export const update = async (
   const data = req.body;
   const { id } = req.params;
 
+  await ShowService(+id, companyId);
+
   const record = await UpdateService({
     ...data,
     id: +id
@@ -127,6 +130,8 @@ export const saveMessage = async (
   const senderId = +req.user.id;
   const chatId = +id;
 
+  await ShowService(chatId, companyId);
+
   const newMessage = await CreateMessageService({
     chatId,
     senderId,
@@ -163,6 +168,8 @@ export const checkAsRead = async (
   const { companyId } = req.user;
   const { userId } = req.body;
   const { id } = req.params;
+
+  await ShowService(+id, companyId);
 
   const chatUser = await ChatUser.findOne({ where: { chatId: id, userId } });
   await chatUser.update({ unreads: 0 });
