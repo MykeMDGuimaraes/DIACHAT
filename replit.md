@@ -7,6 +7,7 @@ DIA CHAT (fork AtendeChat/Whaticket) — plataforma de atendimento multi-tenant 
 - Autenticação por credencial de serviço (`Bearer tokenId.secret`), escopada por tenant (companyId).
 - Recursos: contacts, conversations, messages (paginação por cursor), envio idempotente (`clientMessageId`) e canal de eventos SSE `GET /internal/v1/events` (cursor via `?cursor=` ou `Last-Event-ID`; `cursor=0` = somente ao vivo; evento `resync` quando o cursor sai da janela de retenção).
 - Credenciais: `POST /service-credentials` (super admin); token exibido apenas na criação.
+- Guia de integração para o time do Hub (BFF + frontend): `docs/INTEGRACAO_HUB.md` (PT-BR, autossuficiente, com exemplos reais).
 
 ## Auditoria
 - Tabela `AuditLogs` (tenant, ator, ação, alvo, outcome, ip, metadata) — somente identificadores, nunca conteúdo de mensagens.
