@@ -61,8 +61,9 @@ export const kanban = async (req: Request, res: Response): Promise<Response> => 
 
 export const show = async (req: Request, res: Response): Promise<Response> => {
   const { tagId } = req.params;
+  const { companyId } = req.user;
 
-  const tag = await ShowService(tagId);
+  const tag = await ShowService(tagId, companyId);
 
   return res.status(200).json(tag);
 };
@@ -78,7 +79,11 @@ export const update = async (
   const { tagId } = req.params;
   const tagData = req.body;
 
-  const tag = await UpdateService({ tagData, id: tagId });
+  const tag = await UpdateService({
+    tagData,
+    id: tagId,
+    companyId: req.user.companyId
+  });
 
   const io = getIO();
   io.to(`company-${req.user.companyId}-mainchannel`).emit("tag", {
@@ -95,7 +100,7 @@ export const remove = async (
 ): Promise<Response> => {
   const { tagId } = req.params;
 
-  await DeleteService(tagId);
+  await DeleteService(tagId, req.user.companyId);
 
   const io = getIO();
   io.to(`company-${req.user.companyId}-mainchannel`).emit("tag", {

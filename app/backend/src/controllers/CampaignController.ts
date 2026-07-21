@@ -140,8 +140,9 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
 
 export const show = async (req: Request, res: Response): Promise<Response> => {
   const { id } = req.params;
+  const { companyId } = req.user;
 
-  const record = await ShowService(id);
+  const record = await ShowService(id, companyId);
 
   return res.status(200).json(record);
 };
@@ -186,6 +187,7 @@ export const cancel = async (
 ): Promise<Response> => {
   const { id } = req.params;
 
+  await ShowService(id, req.user.companyId);
   await CancelService(+id);
 
   return res.status(204).json({ message: "Cancelamento realizado" });
@@ -197,6 +199,7 @@ export const restart = async (
 ): Promise<Response> => {
   const { id } = req.params;
 
+  await ShowService(id, req.user.companyId);
   await RestartService(+id);
 
   return res.status(204).json({ message: "Reinício dos disparos" });
@@ -209,7 +212,7 @@ export const remove = async (
   const { id } = req.params;
   const { companyId } = req.user;
 
-  await DeleteService(id);
+  await DeleteService(id, companyId);
 
   const io = getIO();
   io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-campaign`, {
@@ -239,7 +242,14 @@ export const mediaUpload = async (
   const file = head(files);
 
   try {
-    const campaign = await Campaign.findByPk(id);
+    const campaign = await Campaign.findOne({
+      where: { id, companyId: req.user.companyId }
+    });
+
+    if (!campaign) {
+      throw new AppError("ERR_NO_CAMPAIGN_FOUND", 404);
+    }
+
     campaign.mediaPath = file.filename;
     campaign.mediaName = file.originalname;
     await campaign.save();
@@ -256,7 +266,14 @@ export const deleteMedia = async (
   const { id } = req.params;
 
   try {
-    const campaign = await Campaign.findByPk(id);
+    const campaign = await Campaign.findOne({
+      where: { id, companyId: req.user.companyId }
+    });
+
+    if (!campaign) {
+      throw new AppError("ERR_NO_CAMPAIGN_FOUND", 404);
+    }
+
     const filePath = path.resolve("public", campaign.mediaPath);
     const fileExists = fs.existsSync(filePath);
     if (fileExists) {
@@ -280,10 +297,10 @@ export async function createContactListFromTag(tagId: number, companyId: number,
     const ticketTags = await TicketTag.findAll({ where: { tagId } });
     const ticketIds = ticketTags.map((ticketTag) => ticketTag.ticketId);
 
-    const tickets = await Ticket.findAll({ where: { id: ticketIds } });
+    const tickets = await Ticket.findAll({ where: { id: ticketIds, companyId } });
     const contactIds = tickets.map((ticket) => ticket.contactId);
 
-    const selectedContacts = await Contact.findAll({ where: { id: contactIds } });
+    const selectedContacts = await Contact.findAll({ where: { id: contactIds, companyId } });
 
     const randomName = `${campanhaNome} | TAG: ${tagId} - ${formattedDate}`
     const contactList = await ContactList.create({ name: randomName, companyId: companyId });
@@ -319,11 +336,11 @@ export async function createContactListFromTagAndContactList(tagId: number, cont
     const ticketTags = await TicketTag.findAll({ where: { tagId } });
     const ticketIds = ticketTags.map((ticketTag) => ticketTag.ticketId);
 
-    const tickets = await Ticket.findAll({ where: { id: ticketIds } });
+    const tickets = await Ticket.findAll({ where: { id: ticketIds, companyId } });
     const contactIds = tickets.map((ticket) => ticket.contactId);
 
-    const selectedContactListItems = await ContactListItem.findAll({ where: { contactListId } })
-    const ticketContacts = await Contact.findAll({ where: { id: contactIds } });
+    const selectedContactListItems = await ContactListItem.findAll({ where: { contactListId, companyId } })
+    const ticketContacts = await Contact.findAll({ where: { id: contactIds, companyId } });
 
     const contactMap = new Map<string, {email: string, name: string, number: string}>();
 

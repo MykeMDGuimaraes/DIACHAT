@@ -1,9 +1,12 @@
 import Chat from "../../models/Chat";
 import AppError from "../../errors/AppError";
 
-const DeleteService = async (id: string): Promise<void> => {
+const DeleteService = async (
+  id: string,
+  companyId: number
+): Promise<void> => {
   const record = await Chat.findOne({
-    where: { id }
+    where: { id, companyId }
   });
 
   if (!record) {

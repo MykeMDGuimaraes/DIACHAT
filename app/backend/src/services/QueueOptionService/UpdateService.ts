@@ -11,10 +11,11 @@ interface QueueData {
 
 const UpdateService = async (
   queueOptionId: number | string,
-  queueOptionData: QueueData
+  queueOptionData: QueueData,
+  companyId: number
 ): Promise<QueueOption> => {
 
-  const queueOption = await ShowService(queueOptionId);
+  const queueOption = await ShowService(queueOptionId, companyId);
 
   await queueOption.update(queueOptionData as any);
 

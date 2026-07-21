@@ -92,8 +92,9 @@ export const update = async (
 
 export const show = async (req: Request, res: Response): Promise<Response> => {
   const { id } = req.params;
+  const { companyId } = req.user;
 
-  const record = await ShowFromUuidService(id);
+  const record = await ShowFromUuidService(id, companyId);
 
   return res.status(200).json(record);
 };
@@ -105,7 +106,7 @@ export const remove = async (
   const { id } = req.params;
   const { companyId } = req.user;
 
-  await DeleteService(id);
+  await DeleteService(id, companyId);
 
   const io = getIO();
   io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-chat`, {

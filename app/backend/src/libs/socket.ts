@@ -14,7 +14,9 @@ let io: SocketIO;
 export const initIO = (httpServer: Server): SocketIO => {
   io = new SocketIO(httpServer, {
     cors: {
-      origin: "*",
+      origin: process.env.FRONTEND_URL
+        ? process.env.FRONTEND_URL.split(",").map(o => o.trim())
+        : false,
       credentials: true,
       methods: ["GET", "POST", "OPTIONS"],
       allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"]

@@ -5,7 +5,10 @@ import ContactList from "../../models/ContactList";
 import ContactListItem from "../../models/ContactListItem";
 import Whatsapp from "../../models/Whatsapp";
 
-const ShowService = async (id: string | number): Promise<Campaign> => {
+const ShowService = async (
+  id: string | number,
+  companyId: number
+): Promise<Campaign> => {
   const record = await Campaign.findByPk(id, {
     include: [
       { model: CampaignShipping },
@@ -14,7 +17,7 @@ const ShowService = async (id: string | number): Promise<Campaign> => {
     ]
   });
 
-  if (!record) {
+  if (!record || record.companyId !== companyId) {
     throw new AppError("ERR_NO_TICKETNOTE_FOUND", 404);
   }
 

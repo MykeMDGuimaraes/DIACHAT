@@ -46,8 +46,9 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
 
 export const show = async (req: Request, res: Response): Promise<Response> => {
   const { Invoiceid } = req.params;
+  const { companyId } = req.user;
 
-  const invoice = await ShowInvoceService(Invoiceid);
+  const invoice = await ShowInvoceService(Invoiceid, companyId);
 
   return res.status(200).json(invoice);
 };

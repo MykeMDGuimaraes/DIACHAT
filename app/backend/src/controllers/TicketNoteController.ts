@@ -78,8 +78,9 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
 
 export const show = async (req: Request, res: Response): Promise<Response> => {
   const { id } = req.params;
+  const { companyId } = req.user;
 
-  const ticketNote = await ShowTicketNoteService(id);
+  const ticketNote = await ShowTicketNoteService(id, companyId);
 
   return res.status(200).json(ticketNote);
 };

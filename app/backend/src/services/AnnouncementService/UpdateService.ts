@@ -11,9 +11,9 @@ interface Data {
 }
 
 const UpdateService = async (data: Data): Promise<Announcement> => {
-  const { id } = data;
+  const { id, companyId } = data;
 
-  const record = await Announcement.findByPk(id);
+  const record = await Announcement.findOne({ where: { id, companyId } });
 
   if (!record) {
     throw new AppError("ERR_NO_ANNOUNCEMENT_FOUND", 404);

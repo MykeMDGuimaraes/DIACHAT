@@ -6,10 +6,14 @@ import Queue from "../../models/Queue";
 import Tag from "../../models/Tag";
 import Whatsapp from "../../models/Whatsapp";
 
-const ShowTicketUUIDService = async (uuid: string): Promise<Ticket> => {
+const ShowTicketUUIDService = async (
+  uuid: string,
+  companyId: number
+): Promise<Ticket> => {
   const ticket = await Ticket.findOne({
     where: {
-      uuid
+      uuid,
+      companyId
     },
     include: [
       {
@@ -41,7 +45,7 @@ const ShowTicketUUIDService = async (uuid: string): Promise<Ticket> => {
     ]
   }); 
 
-  if (!ticket) {
+  if (!ticket || ticket.companyId !== companyId) {
     throw new AppError("ERR_NO_TICKET_FOUND", 404);
   }
 

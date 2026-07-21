@@ -77,8 +77,9 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
 
 export const show = async (req: Request, res: Response): Promise<Response> => {
   const { id } = req.params;
+  const { companyId } = req.user;
 
-  const record = await ShowService(id);
+  const record = await ShowService(id, companyId);
 
   return res.status(200).json(record);
 };
@@ -103,7 +104,8 @@ export const update = async (
 
   const record = await UpdateService({
     ...data,
-    id
+    id,
+    companyId: req.user.companyId
   });
 
   const io = getIO();
@@ -122,7 +124,7 @@ export const remove = async (
   const { id } = req.params;
   const { companyId } = req.user;
 
-  await DeleteService(id);
+  await DeleteService(id, companyId);
 
   const io = getIO();
   io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-announcement`, {
@@ -152,7 +154,13 @@ export const mediaUpload = async (
   const file = head(files);
 
   try {
-    const announcement = await Announcement.findByPk(id);
+    const announcement = await Announcement.findOne({
+      where: { id, companyId: req.user.companyId }
+    });
+
+    if (!announcement) {
+      throw new AppError("ERR_NO_ANNOUNCEMENT_FOUND", 404);
+    }
 
     await announcement.update({
       mediaPath: file.filename,
@@ -179,7 +187,14 @@ export const deleteMedia = async (
   const { id } = req.params;
 
   try {
-    const announcement = await Announcement.findByPk(id);
+    const announcement = await Announcement.findOne({
+      where: { id, companyId: req.user.companyId }
+    });
+
+    if (!announcement) {
+      throw new AppError("ERR_NO_ANNOUNCEMENT_FOUND", 404);
+    }
+
     const filePath = path.resolve("public", announcement.mediaPath);
     const fileExists = fs.existsSync(filePath);
     if (fileExists) {
