@@ -11,3 +11,6 @@ Servir /public exige middleware de autorização antes do express.static: token 
 
 ## Credencial de serviço (BFF)
 Chamadas serviço-a-serviço usam Bearer <tokenId>.<secret> validado pelo middleware isServiceAuth, que injeta req.user {profile:"service", companyId} no mesmo formato do isAuth — rotas futuras (API v1) devem confiar nesse companyId e nunca aceitar tenant vindo do cliente. Gestão (criar/listar/revogar) é super-admin; segredo só aparece na criação; rotação = criar nova + revogar antiga.
+
+## API interna /internal/v1 (BFF)
+Contratos do BFF usam DTOs explícitos (services/InternalV1Services/Dtos.ts) e cursores opacos base64url {campo de ordenação, id} com tie-break — nunca expor models crus nem paginação por offset em rotas novas do BFF. Idempotência de envio via tabela V1MessageIdempotencies (unique companyId+ticketId+clientMessageId): replay responde antes de qualquer checagem de canal; falha de envio apaga a linha para permitir retry. Erros v1 sempre {error:{code,message}}.

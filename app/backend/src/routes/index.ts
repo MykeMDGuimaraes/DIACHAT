@@ -35,7 +35,10 @@ import flowDefaultRoutes from "./flowDefaultRoutes";
 import flowBuilder from "./flowBuilderRoutes";
 import flowCampaignRoutes from "./flowCampaignRoutes";
 import serviceCredentialRoutes from "./serviceCredentialRoutes";
+import internalV1Routes from "./internalV1Routes";
 const routes = Router();
+
+routes.use("/internal/v1", internalV1Routes);
 
 routes.use(userRoutes);
 routes.use(serviceCredentialRoutes);
