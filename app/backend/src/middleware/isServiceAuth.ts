@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from "express";
 import { createHash, timingSafeEqual } from "crypto";
 import AppError from "../errors/AppError";
 import ServiceCredential from "../models/ServiceCredential";
+import { audit, requestIp } from "../libs/auditLog";
 
 export const hashSecret = (secret: string): string =>
   createHash("sha256").update(secret).digest("hex");
@@ -32,6 +33,14 @@ const isServiceAuth = async (
   });
 
   if (!credential || credential.revokedAt) {
+    audit({
+      companyId: credential ? credential.companyId : null,
+      actorType: "anonymous",
+      action: "service.auth",
+      outcome: "denied",
+      ip: requestIp(req),
+      metadata: { tokenId, reason: credential ? "revoked" : "unknown" }
+    });
     throw new AppError("ERR_INVALID_SERVICE_CREDENTIAL", 401);
   }
 
@@ -41,6 +50,14 @@ const isServiceAuth = async (
     expected.length !== provided.length ||
     !timingSafeEqual(expected, provided)
   ) {
+    audit({
+      companyId: credential.companyId,
+      actorType: "anonymous",
+      action: "service.auth",
+      outcome: "denied",
+      ip: requestIp(req),
+      metadata: { tokenId, reason: "bad_secret" }
+    });
     throw new AppError("ERR_INVALID_SERVICE_CREDENTIAL", 401);
   }
 
@@ -53,6 +70,15 @@ const isServiceAuth = async (
   credential
     .update({ lastUsedAt: new Date() })
     .catch(() => undefined);
+
+  audit({
+    companyId: credential.companyId,
+    actorType: "service",
+    actorId: `service:${credential.id}`,
+    action: "service.auth",
+    ip: requestIp(req),
+    metadata: { tokenId, method: req.method, path: req.originalUrl.split("?")[0] }
+  });
 
   return next();
 };

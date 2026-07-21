@@ -9,6 +9,7 @@ import Ticket from "../models/Ticket";
 import V1MessageIdempotency from "../models/V1MessageIdempotency";
 import SendWhatsAppMessage from "../services/WbotServices/SendWhatsAppMessage";
 import SendWhatsAppMedia from "../services/WbotServices/SendWhatsAppMedia";
+import { audit, requestIp } from "../libs/auditLog";
 import {
   toContactDTO,
   toConversationSummaryDTO,
@@ -311,6 +312,16 @@ export const sendConversationMessage = async (
       true,
       companyId
     );
+    audit({
+      companyId,
+      actorType: "service",
+      actorId: req.user.id,
+      action: "v1.message.send",
+      targetType: "ticket",
+      targetId: ticket.id,
+      ip: requestIp(req),
+      metadata: { clientMessageId, duplicate: true, hasMedia: !!media }
+    });
     return res.status(200).json({ data: result });
   }
 
@@ -371,6 +382,16 @@ export const sendConversationMessage = async (
       false,
       companyId
     );
+    audit({
+      companyId,
+      actorType: "service",
+      actorId: req.user.id,
+      action: "v1.message.send",
+      targetType: "ticket",
+      targetId: ticket.id,
+      ip: requestIp(req),
+      metadata: { clientMessageId, duplicate: false, hasMedia: !!media }
+    });
     return res.status(201).json({ data: result });
   } catch (err) {
     await record.destroy().catch(() => undefined);

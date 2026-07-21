@@ -7,13 +7,36 @@ import { SendRefreshToken } from "../helpers/SendRefreshToken";
 import { RefreshTokenService } from "../services/AuthServices/RefreshTokenService";
 import FindUserFromToken from "../services/AuthServices/FindUserFromToken";
 import User from "../models/User";
+import { audit, requestIp } from "../libs/auditLog";
 
 export const store = async (req: Request, res: Response): Promise<Response> => {
   const { email, password } = req.body;
 
-  const { token, serializedUser, refreshToken } = await AuthUserService({
-    email,
-    password
+  let authResult;
+  try {
+    authResult = await AuthUserService({
+      email,
+      password
+    });
+  } catch (err) {
+    audit({
+      actorType: "anonymous",
+      action: "auth.login",
+      outcome: "denied",
+      ip: requestIp(req),
+      metadata: { email: typeof email === "string" ? email : null }
+    });
+    throw err;
+  }
+
+  const { token, serializedUser, refreshToken } = authResult;
+
+  audit({
+    companyId: serializedUser.companyId,
+    actorType: "user",
+    actorId: serializedUser.id,
+    action: "auth.login",
+    ip: requestIp(req)
   });
 
   SendRefreshToken(res, refreshToken);

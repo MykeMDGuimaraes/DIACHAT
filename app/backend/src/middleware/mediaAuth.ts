@@ -11,6 +11,7 @@ import { FlowAudioModel } from "../models/FlowAudio";
 import { FlowImgModel } from "../models/FlowImg";
 import FilesOptions from "../models/FilesOptions";
 import Files from "../models/Files";
+import { audit, requestIp } from "../libs/auditLog";
 
 interface TokenPayload {
   id: string;
@@ -26,6 +27,23 @@ const PUBLIC_ALLOWLIST = new Set([
 
 const notFound = (res: Response): Response =>
   res.status(404).json({ error: "ERR_NOT_FOUND" });
+
+const auditMedia = (
+  req: Request,
+  companyId: number | null,
+  file: string,
+  outcome: "success" | "denied"
+): void => {
+  audit({
+    companyId,
+    actorType: companyId ? "user" : "anonymous",
+    action: "media.access",
+    targetType: "file",
+    targetId: file,
+    outcome,
+    ip: requestIp(req)
+  });
+};
 
 const mediaAuth = async (
   req: Request,
@@ -87,8 +105,10 @@ const mediaAuth = async (
       attributes: ["id"]
     });
     if (record && normalized === `quickMessage/${filename}`) {
+      auditMedia(req, companyId, normalized, "success");
       return next();
     }
+    auditMedia(req, companyId, normalized, "denied");
     return notFound(res);
   }
 
@@ -99,8 +119,10 @@ const mediaAuth = async (
       attributes: ["id"]
     });
     if (record && normalized === `announcements/${filename}`) {
+      auditMedia(req, companyId, normalized, "success");
       return next();
     }
+    auditMedia(req, companyId, normalized, "denied");
     return notFound(res);
   }
 
@@ -142,8 +164,10 @@ const mediaAuth = async (
       flowImg ||
       announcement
     ) {
+      auditMedia(req, companyId, normalized, "success");
       return next();
     }
+    auditMedia(req, companyId, normalized, "denied");
     return notFound(res);
   }
 
@@ -162,9 +186,11 @@ const mediaAuth = async (
     ]
   });
   if (fileOption) {
+    auditMedia(req, companyId, normalized, "success");
     return next();
   }
 
+  auditMedia(req, companyId, normalized, "denied");
   return notFound(res);
 };
 

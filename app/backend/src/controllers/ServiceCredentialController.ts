@@ -4,6 +4,7 @@ import AppError from "../errors/AppError";
 import ServiceCredential from "../models/ServiceCredential";
 import Company from "../models/Company";
 import { hashSecret } from "../middleware/isServiceAuth";
+import { audit, requestIp } from "../libs/auditLog";
 
 export const index = async (req: Request, res: Response): Promise<Response> => {
   const credentials = await ServiceCredential.findAll({
@@ -44,6 +45,17 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
     secretHash: hashSecret(secret)
   } as any);
 
+  audit({
+    companyId,
+    actorType: "user",
+    actorId: req.user.id,
+    action: "service_credential.create",
+    targetType: "service_credential",
+    targetId: credential.id,
+    ip: requestIp(req),
+    metadata: { tokenId, name }
+  });
+
   return res.status(201).json({
     id: credential.id,
     name: credential.name,
@@ -66,6 +78,16 @@ export const revoke = async (
   }
   if (!credential.revokedAt) {
     await credential.update({ revokedAt: new Date() });
+    audit({
+      companyId: credential.companyId,
+      actorType: "user",
+      actorId: req.user.id,
+      action: "service_credential.revoke",
+      targetType: "service_credential",
+      targetId: credential.id,
+      ip: requestIp(req),
+      metadata: { tokenId: credential.tokenId }
+    });
   }
 
   return res.json({
