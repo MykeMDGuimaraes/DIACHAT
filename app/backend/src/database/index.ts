@@ -42,6 +42,7 @@ import { FlowBuilderModel } from "../models/FlowBuilder";
 import { FlowAudioModel } from "../models/FlowAudio";
 import { FlowCampaignModel } from "../models/FlowCampaign";
 import { FlowImgModel } from "../models/FlowImg";
+import ServiceCredential from "../models/ServiceCredential";
 
 // eslint-disable-next-line
 const dbConfig = require("../config/database");
@@ -93,6 +94,7 @@ const models = [
   FlowAudioModel,
   FlowCampaignModel,
   FlowImgModel,
+  ServiceCredential,
 ];
 
 sequelize.addModels(models);

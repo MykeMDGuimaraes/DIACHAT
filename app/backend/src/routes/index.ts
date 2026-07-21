@@ -34,9 +34,11 @@ import forgotsRoutes from "./forgotPasswordRoutes";
 import flowDefaultRoutes from "./flowDefaultRoutes";
 import flowBuilder from "./flowBuilderRoutes";
 import flowCampaignRoutes from "./flowCampaignRoutes";
+import serviceCredentialRoutes from "./serviceCredentialRoutes";
 const routes = Router();
 
 routes.use(userRoutes);
+routes.use(serviceCredentialRoutes);
 routes.use("/auth", authRoutes);
 routes.use(settingRoutes);
 routes.use(contactRoutes);

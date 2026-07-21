@@ -8,3 +8,6 @@ Regra: qualquer service que busca registro por id/uuid deve receber companyId (d
 
 ## Mídia em /public
 Servir /public exige middleware de autorização antes do express.static: token via header ou ?token= (tags de mídia não mandam header), deny-by-default com caminho canônico e posse resolvida nas tabelas donas (Message.mediaUrl, QuickMessage/Announcement/Campaign/Schedule.mediaPath, FlowAudio/FlowImg.name, FilesOptions.path→Files). Arquivos ficam flat em public/, então basename sozinho não é prova de posse — sempre casar o caminho completo esperado. Allowlist explícita para assets realmente públicos.
+
+## Credencial de serviço (BFF)
+Chamadas serviço-a-serviço usam Bearer <tokenId>.<secret> validado pelo middleware isServiceAuth, que injeta req.user {profile:"service", companyId} no mesmo formato do isAuth — rotas futuras (API v1) devem confiar nesse companyId e nunca aceitar tenant vindo do cliente. Gestão (criar/listar/revogar) é super-admin; segredo só aparece na criação; rotação = criar nova + revogar antiga.
