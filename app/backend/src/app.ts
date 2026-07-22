@@ -4,6 +4,8 @@ import "express-async-errors";
 import express, { Request, Response, NextFunction } from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
+import path from "path";
+import fs from "fs";
 import * as Sentry from "@sentry/node";
 
 import "./database";
@@ -39,13 +41,34 @@ app.use(Sentry.Handlers.requestHandler());
 app.use("/public", mediaAuth, express.static(uploadConfig.directory));
 app.use(routes);
 
-app.get("*", (req: Request, res: Response, next: NextFunction) => {
-  const frontendUrl = process.env.FRONTEND_URL;
-  if (frontendUrl && req.method === "GET" && req.accepts("html")) {
-    return res.redirect(302, `${frontendUrl}${req.originalUrl}`);
-  }
-  return next();
-});
+const frontendBuildDir = path.resolve(
+  __dirname,
+  "..",
+  "..",
+  "frontend",
+  "build"
+);
+const serveFrontend = fs.existsSync(
+  path.join(frontendBuildDir, "index.html")
+);
+
+if (serveFrontend) {
+  app.use(express.static(frontendBuildDir));
+  app.get("*", (req: Request, res: Response, next: NextFunction) => {
+    if (req.method === "GET" && req.accepts("html")) {
+      return res.sendFile(path.join(frontendBuildDir, "index.html"));
+    }
+    return next();
+  });
+} else {
+  app.get("*", (req: Request, res: Response, next: NextFunction) => {
+    const frontendUrl = process.env.FRONTEND_URL;
+    if (frontendUrl && req.method === "GET" && req.accepts("html")) {
+      return res.redirect(302, `${frontendUrl}${req.originalUrl}`);
+    }
+    return next();
+  });
+}
 
 app.use(Sentry.Handlers.errorHandler());
 

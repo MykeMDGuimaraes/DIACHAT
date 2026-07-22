@@ -18,5 +18,11 @@ DIA CHAT (fork AtendeChat/Whaticket) — plataforma de atendimento multi-tenant 
 - Comando único (com o workflow Backend rodando): `cd app/backend && npm run test:isolation`
 - O script `app/backend/scripts/isolationTests.js` cria dois tenants de teste (ISO-TEST-A/B), valida acesso cruzado em REST v1, eventos SSE, anexos `/public` e caminho por UUID, além de idempotência, paginação por cursor e trilha de auditoria. Limpa e recria os fixtures a cada execução.
 
+## Publicação (deployment)
+- Alvo: VM (estado persistente — sessões WhatsApp, Redis, campanhas). Build: `scripts/deploy-build.sh`; run: `scripts/deploy-run.sh`.
+- Em produção tudo roda numa única origem: backend serve o build do frontend (`app/frontend/build`) com fallback SPA; frontend compilado com `REACT_APP_BACKEND_URL=""` (URLs relativas).
+- Banco: produção usa `DATABASE_URL` (deploy-run exporta `DB_*` a partir dela, com SSL quando `sslmode=require`). Redis roda local dentro da VM.
+- Seeds: só no primeiro deploy — definir secret `RUN_SEEDS=true` na primeira publicação e remover depois. Migrações rodam sempre.
+
 ## User preferences
 - Comunicação e artefatos em PT-BR.

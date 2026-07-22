@@ -114,6 +114,12 @@ node -e "
 
 echo "[replit-start] patches verified."
 
+# Modo usado pelo build de produção (scripts/deploy-build.sh): aplica apenas os
+# patches de node_modules e sai, sem subir o dev server.
+if [ "${1:-}" = "--patches-only" ]; then
+  exit 0
+fi
+
 export HOST=0.0.0.0
 export PORT=5000
 export DANGEROUSLY_DISABLE_HOST_CHECK=true

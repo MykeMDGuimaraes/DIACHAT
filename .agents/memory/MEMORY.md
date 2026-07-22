@@ -3,3 +3,4 @@
 - [uuid v1/v4 subpath under CRA5](uuid-subpath-cra-pitfalls.md) — exposing uuid ./v1 and ./v4 for react-trello: never use .cjs shim (file-loader → URL string) nor dist/cjs (node crypto); point exports at dist/esm-browser.
 - [Atendechat frontend patches](atendechat-frontend-patches.md) — `npm install` in app/frontend wipes uuid/eslint-scope/schema-utils patches; replit-start.sh only re-applies them when node_modules is missing.
 - [Isolamento multi-tenant](multi-tenant-isolation.md) — todo Show*/mutação por id precisa de companyId do JWT com 404 em cross-tenant; socket CORS vem de FRONTEND_URL.
+- [Build CRA de produção sem OOM](cra-build-oom.md) — só compila com GENERATE_SOURCEMAP=false + heap ~2560MB e dev server parado; processos em background do bash morrem, use workflow temporário.
