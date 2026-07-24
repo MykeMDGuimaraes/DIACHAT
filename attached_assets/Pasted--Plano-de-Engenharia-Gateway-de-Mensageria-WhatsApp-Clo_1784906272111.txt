@@ -1,0 +1,563 @@
+# Plano de Engenharia — Gateway de Mensageria, WhatsApp Cloud API e Webhooks DiaChat
+
+## 1. Resumo e decisões arquiteturais
+
+**Objetivo:** transformar o DiaChat em uma plataforma de mensageria multicanal com Baileys e WhatsApp Cloud API, API pública assíncrona e webhooks confiáveis, preservando tickets, contatos, filas, campanhas, Flow Builder e atendimento existentes.
+
+**Base analisada:** aplicação ativa em [`app`](https://github.com/MykeMDGuimaraes/DIACHAT/tree/aabbc01fd82fc6c9293c5d7b92a395cccff0b896/app), com Node.js/Express/TypeScript/Sequelize/PostgreSQL/Redis/Bull/Baileys no backend e React/Material UI no frontend.
+
+Referências adotadas:
+
+- Do [UAZAPI OpenAPI](https://docs.uazapi.com/openapi-bundled.json): endpoints separados por tipo de mensagem, múltiplos webhooks, eventos/filtros, prevenção de loops, URL dinâmica e histórico de falhas.
+- Do [Chatwoot](https://www.chatwoot.com/hc/user-guide/articles/1677693021-how-to-use-webhooks): múltiplos webhooks e assinatura HMAC verificável. Do [fluxo manual de WhatsApp](https://www.chatwoot.com/hc/user-guide/articles/1677832735-how-to-setup-a-whats_app-channel): onboarding manual com Phone Number ID, WABA ID e token.
+- Da [Meta Cloud API](https://developers.facebook.com/docs/whatsapp/cloud-api/get-started): integração oficial, templates, callbacks e status de mensagens.
+- Do [Swagger AtendeChat](https://api.atendechat.com.br/swagger/v2/swagger.json): inventário funcional de mensageria. Não copiar o modelo de token administrativo único do [`auth.guard.ts`](https://raw.githubusercontent.com/Atendechat08/instalador-Atendechat/main/api_oficial/src/%40core/guard/auth.guard.ts); o DiaChat usará credenciais tenant-scoped e escopos.
+- Hospedagem integral no Replit, usando **Reserved VM**, adequada para APIs e conexões permanentes. Nenhuma fila, sessão ou mídia dependerá do filesystem publicado, pois ele não é persistente. ([Reserved VM](https://docs.replit.com/references/publishing/reserved-vm-deployments), [persistência](https://docs.replit.com/learn/projects-and-artifacts/replit-deployments))
+
+Decisões fixadas:
+
+- Manter Baileys e adicionar Meta Cloud API.
+- Não implementar Twilio na v1.
+- Criar serviço separado `app/messaging-gateway`.
+- Gateway em NestJS, Prisma e BullMQ; core atual permanece Express/Sequelize.
+- API pública assíncrona, retornando `202 Accepted`.
+- Uma rota por tipo de mensagem.
+- Múltiplos webhooks por empresa ou conexão.
+- PostgreSQL como única fonte de verdade; Redis apenas como acelerador.
+- Meta com configuração manual e app pertencente a cada cliente.
+- Sincronizar e utilizar templates aprovados; criação/aprovação permanece no Meta Business Manager.
+- Substituir `/api/messages/send` no corte, sem camada de compatibilidade; preservar `/internal/v1`.
+- Até 20 conexões simultâneas na v1.
+- Payload bruto sanitizado por 30 dias; metadados de entrega por 180 dias.
+- Hospedagem nos EUA aceita mediante controles formais de LGPD e transferência internacional.
+
+## 2. Arquitetura, tecnologia e modelo de dados
+
+### Componentes
+
+```mermaid
+flowchart LR
+    UI["Frontend React"] --> CORE["DiaChat Core<br/>Express + Sequelize"]
+    CLIENT["Clientes / n8n"] --> PROXY["Porta pública DiaChat"]
+    META["Meta Webhooks"] --> PROXY
+    PROXY --> CORE
+    PROXY --> GATEWAY["Messaging Gateway<br/>NestJS + Prisma"]
+
+    CORE <-->|"HTTP interno assinado<br/>Outbox/Inbox"| GATEWAY
+    GATEWAY --> BAILEYS["Baileys"]
+    GATEWAY --> CLOUD["WhatsApp Cloud API"]
+    GATEWAY --> DEST["Webhooks dos clientes"]
+
+    CORE --> PG["PostgreSQL<br/>schema public"]
+    GATEWAY --> MPG["PostgreSQL<br/>schema messaging"]
+    CORE --> REDIS["Redis / BullMQ"]
+    GATEWAY --> REDIS
+    GATEWAY --> STORAGE["Replit App Storage"]
+```
+
+Responsabilidades:
+
+- `app/backend`: sistema de registro de empresas, usuários, contatos, tickets, mensagens, filas, campanhas e Flow Builder.
+- `app/messaging-gateway`: conexões Baileys/Meta, API pública, credenciais, templates, normalização de eventos e entrega de webhooks.
+- `app/messaging-contracts`: esquemas Zod, tipos TypeScript, catálogo de eventos e geração do OpenAPI 3.1.
+- `app/frontend`: telas de conexões, templates, credenciais, webhooks e entregas.
+- `.replit`, `replit.nix` e scripts de deploy: execução integrada no Replit.
+
+Tecnologias do gateway:
+
+- Node.js 20, TypeScript, NestJS com Fastify.
+- Prisma sobre schema PostgreSQL `messaging`.
+- BullMQ/ioredis para execução; tabelas PostgreSQL para durabilidade.
+- Zod e OpenAPI 3.1 para contratos.
+- Pino para logs JSON; Sentry para erros e alertas.
+- PM2 Runtime como supervisor dos processos.
+- AES-256-GCM para credenciais e sessões.
+- Replit App Storage para arquivos persistentes.
+- Jest, Supertest e React Testing Library; Playwright para smoke tests.
+
+Não migrar simultaneamente o core para NestJS/Prisma nem atualizar React/Material UI. Isso seria um projeto independente e aumentaria o risco.
+
+### Processos no Replit
+
+Produção:
+
+- Reserved VM inicial: 4 vCPU/8 GB, sujeita ao teste com 20 sessões Baileys.
+- Um único processo público, mantendo o `PORT` atual e ouvindo em `0.0.0.0`.
+- Gateway interno em `127.0.0.1:3002`.
+- PM2 em modo `fork`, exatamente uma instância do gateway para impedir dois donos da mesma sessão Baileys.
+- Processos supervisionados: Redis, core e gateway.
+- Sem Docker Compose dentro do Replit.
+- Redis continua sem ser fonte persistente; um reconciliador executado no startup e a cada 30 segundos repõe jobs pendentes a partir do PostgreSQL.
+- Build: `npm ci`, geração Prisma/OpenAPI, compilação gateway/backend/frontend.
+- Prestart: validação das variáveis, lock de migração, `sequelize db:migrate` e `prisma migrate deploy`.
+- Core encaminha `/api/v1/*` e `/webhooks/meta/*` ao gateway antes de `express.json()`, preservando os bytes usados na validação de assinatura.
+- Rotas administrativas passam primeiro pela autenticação do core, que injeta contexto de usuário/empresa assinado; headers internos enviados pelo cliente são removidos.
+
+Segredos obrigatórios no Replit Publishing:
+
+- `DATABASE_URL` de produção, nunca o banco de desenvolvimento.
+- `PUBLIC_BASE_URL`.
+- `INTERNAL_SERVICE_SECRET`.
+- `API_KEY_PEPPER`.
+- `CREDENTIALS_MASTER_KEY_V1`.
+- `CREDENTIALS_ACTIVE_KEY_VERSION=1`.
+- `SENTRY_DSN`.
+- `META_GRAPH_VERSION`, sempre fixada em uma versão suportada, nunca `latest`.
+
+Tokens Meta de clientes não ficam nos Replit Secrets: são dados dinâmicos cifrados no banco.
+
+### Comunicação durável
+
+Não usar Redis Streams como fonte de verdade.
+
+Cada serviço possuirá:
+
+- `IntegrationOutbox`: eventos produzidos na mesma transação da alteração de negócio.
+- `IntegrationInbox`: eventos recebidos, com `eventId` único, estado e resultado.
+- Dispatcher com `FOR UPDATE SKIP LOCKED`, lease, tentativas e backoff.
+- Comunicação HTTP somente em localhost, assinada com HMAC e protegida contra replay.
+- Consumidores idempotentes.
+
+Fluxo de envio:
+
+1. Gateway autentica, valida idempotência e grava `MessageCommand`.
+2. Retorna `202` somente após commit.
+3. Outbox do gateway solicita ao core a preparação da mensagem.
+4. Core localiza/cria contato e ticket, persiste `Message` e publica `message.send.requested`.
+5. Gateway envia pelo adapter correto.
+6. Resultado e status retornam ao core por outbox/inbox.
+7. Eventos confirmados pelo core alimentam os webhooks externos.
+
+Fluxo de recebimento:
+
+1. Gateway valida assinatura Meta ou recebe evento Baileys.
+2. Persiste `ProviderInboundEvent` e deduplica antes de confirmar o callback.
+3. Responde à Meta imediatamente.
+4. Core cria/atualiza contato, ticket e mensagem com transação idempotente.
+5. Evento de domínio é devolvido ao gateway para distribuição externa.
+
+### Contrato dos providers
+
+Tipos comuns:
+
+- `ProviderKind`: `baileys | meta_cloud`.
+- `MessageKind`: `text | media | template | location | contact`.
+- `MessageStatus`: `queued | persisted | sending | sent | delivered | read | failed | unknown`.
+- `MessageOrigin`: `agent | api | campaign | flow | provider`.
+- `ConnectionStatus`: `created | validating | connecting | connected | degraded | disconnected | revoked`.
+
+Interface obrigatória:
+
+- `validateConnection()`
+- `start()` e `stop()`
+- `send(command)`
+- `markRead(message)`
+- `syncTemplates()`
+- `normalizeInbound(payload)`
+- `normalizeStatus(payload)`
+- `getCapabilities()`
+
+Capacidades:
+
+| Capacidade | Baileys | Meta Cloud |
+|---|---:|---:|
+| Texto, mídia, localização e contato | Sim | Sim |
+| Resposta/citação | Sim | Sim |
+| Marcar como lida | Sim | Sim |
+| Templates oficiais | Não | Sim |
+| Grupos e presença internos | Sim | Não na v1 |
+| API pública de grupos/chamadas/newsletters | Não | Não |
+
+Todas as chamadas diretas a `sendMessage()` existentes devem ser substituídas por uma única porta de mensageria. CI falhará se Baileys for importado fora do adapter, listener/provider ou testes autorizados.
+
+Erros canônicos:
+
+- `AUTH_INVALID`
+- `CONNECTION_NOT_READY`
+- `RECIPIENT_INVALID`
+- `TEMPLATE_REQUIRED`
+- `TEMPLATE_NOT_APPROVED`
+- `MEDIA_INVALID`
+- `CAPABILITY_UNSUPPORTED`
+- `RATE_LIMITED`
+- `PROVIDER_REJECTED`
+- `PROVIDER_UNAVAILABLE`
+- `SEND_OUTCOME_UNKNOWN`
+
+Timeout ocorrido depois de a requisição ter sido transmitida ao provider deve virar `unknown`; não reenviar automaticamente, pois isso poderia duplicar a mensagem. Somente falhas comprovadamente anteriores ao envio ou respostas explicitamente retryable poderão ser repetidas.
+
+### Modelo de dados
+
+No core:
+
+- Expandir `Whatsapp` com `channelType`, `gatewayConnectionId`, `runtimeOwner`, `capabilities`, `displayPhone` e status projetado.
+- Migrar o significado atual de `provider=stable|beta` para `baileysMode`; não reaproveitar esse campo para o novo provider.
+- Expandir `Message` com `provider`, `providerMessageId`, `messageOrigin`, `clientReference`, `deliveryStatus`, `failureCode` e `failureDetails`.
+- Índice único por empresa/conexão/provider/providerMessageId.
+- Adicionar `CoreIntegrationOutbox`, `CoreIntegrationInbox` e projeção de templates para campanhas/Flow Builder.
+
+No schema `messaging`:
+
+- `ProviderConnection` e `ProviderSecret`.
+- `BaileysSessionCredential` e `BaileysSessionKey`, cifradas individualmente.
+- `ConnectionRuntimeLease`.
+- `ApiCredential`.
+- `MessageCommand` e tentativas de envio.
+- `ProviderInboundEvent`.
+- `TemplateProjection`.
+- `GatewayIntegrationInbox` e `GatewayOutbox`.
+- `WebhookEndpoint`.
+- `WebhookEvent`.
+- `WebhookDelivery`.
+- `WebhookDeliveryAttempt`.
+
+Todas as tabelas tenant-scoped terão `companyId`, índices compostos e validação de tenant no repositório, serviço e controller.
+
+O `WebhookModel` atual não representa webhooks externos e possui inconsistências entre model/migration/registro. Antes da mudança, auditar os dados reais. Se estiver em uso, renomear para `FlowWebhookTrigger` preservando registros; se estiver abandonado, descontinuar com migração explícita. Nunca reutilizá-lo para o novo subsistema.
+
+## 3. Funcionalidades, APIs, telas e segurança
+
+### API pública `/api/v1`
+
+Autenticação:
+
+- `Authorization: Bearer dch_live_<tokenId>.<secret>`.
+- Segredo aleatório de 256 bits, mostrado uma única vez.
+- Banco armazena HMAC-SHA256 do segredo com `API_KEY_PEPPER`.
+- Comparação em tempo constante.
+- Somente superadmin cria, restringe ou revoga credenciais.
+- Escopos: `messages:write`, `messages:read`, `connections:read`, `templates:read`, `webhooks:read`, `webhooks:write`.
+- Credencial pode ser restrita a conexões específicas.
+
+Rotas:
+
+- `POST /api/v1/messages/text`
+- `POST /api/v1/messages/media`
+- `POST /api/v1/messages/templates`
+- `POST /api/v1/messages/location`
+- `POST /api/v1/messages/contacts`
+- `POST /api/v1/messages/{messageId}/read`
+- `GET /api/v1/messages/{commandId}`
+- `GET /api/v1/messages`
+- `GET /api/v1/connections`
+- `GET /api/v1/templates`
+
+Campos comuns de envio:
+
+- `connectionId`
+- `to`, sempre normalizado em E.164
+- `ticketId` opcional, validado contra conexão/destinatário
+- `queueId` opcional
+- `replyToMessageId` opcional
+- `clientReference` opcional, máximo 128 caracteres
+- `metadata` opcional, até 20 chaves e 4 KB
+
+Sem `ticketId`, o core reutiliza o ticket aberto do contato/conexão ou cria um novo usando a fila informada/padrão.
+
+Mídia:
+
+- Aceitar JSON com `mediaUrl` ou `multipart/form-data` com `file`; exatamente uma origem.
+- Não aceitar base64.
+- Streaming direto para storage, nunca carregar todo arquivo em memória.
+- Limites: imagem 5 MiB, áudio/vídeo 16 MiB e documento 100 MiB.
+- Validar MIME declarado e assinatura real do arquivo.
+- URLs somente HTTPS, com bloqueio de IP privado, localhost, link-local e metadata endpoints; até dois redirects, revalidados individualmente.
+- Arquivos temporários falhos são eliminados em 24 horas; anexos aceitos seguem a retenção atual das mensagens.
+
+Idempotência:
+
+- `Idempotency-Key` obrigatório nos POSTs, de 8 a 128 caracteres.
+- Unicidade por credencial, rota e chave durante 30 dias.
+- Repetição com o mesmo hash retorna o comando original e `Idempotent-Replayed: true`.
+- Mesma chave com payload diferente retorna `409 IDEMPOTENCY_CONFLICT`.
+
+Resposta inicial:
+
+```json
+{
+  "data": {
+    "id": "cmd_...",
+    "status": "queued",
+    "connectionId": "...",
+    "createdAt": "...",
+    "statusUrl": "/api/v1/messages/cmd_..."
+  },
+  "meta": {
+    "requestId": "req_..."
+  }
+}
+```
+
+Erros seguem `{ "error": { "code", "message", "details", "requestId" } }`.
+
+Rate limit padrão:
+
+- 60 envios/minuto por credencial, burst de 20.
+- 300 leituras/operações administrativas por minuto.
+- Teto de 300 envios/minuto por empresa.
+- `429` com `Retry-After`.
+
+`/api/messages/send` deverá responder `410 Gone` no corte, com link para a documentação v1, sem traduzir ou encaminhar a requisição antiga. `/internal/v1` permanece operacional.
+
+### WhatsApp Cloud API
+
+Wizard:
+
+1. Selecionar “WhatsApp”.
+2. Escolher “WhatsApp via QR — Baileys” ou “WhatsApp Cloud API — Meta”.
+3. No fluxo Meta, solicitar:
+   - nome da caixa;
+   - telefone;
+   - Phone Number ID;
+   - WABA ID;
+   - App ID;
+   - App Secret;
+   - token permanente de System User.
+4. Validar token, telefone, WABA e permissões na Graph API antes de gravar.
+5. Gerar callback `PUBLIC_BASE_URL/webhooks/meta/<opaqueConnectionId>`.
+6. Gerar verify token exclusivo, mostrado uma vez.
+7. Mostrar instruções para configurar webhook e assinatura no app do cliente.
+8. Executar teste e sincronizar templates.
+9. Ativar somente após validação completa.
+
+Callbacks:
+
+- `GET` valida `hub.mode`, verify token e devolve `hub.challenge`.
+- `POST` usa corpo bruto e verifica `X-Hub-Signature-256` com o App Secret antes de persistir.
+- Evento duplicado deve retornar `200` sem gerar nova mensagem.
+- Callback deve responder em até um segundo; processamento ocorre em background.
+- Payload desconhecido é armazenado sanitizado e gera evento observável, nunca é descartado silenciosamente.
+
+Templates:
+
+- Sincronização na criação, manualmente e a cada seis horas.
+- Armazenar nome, idioma, categoria, status e componentes.
+- Somente status aprovado pode ser usado.
+- Campanhas e Flow Builder exigem template quando a política Meta não permite mensagem livre.
+- Erro `TEMPLATE_REQUIRED` abre o seletor de template na interface.
+- Criação e aprovação de templates permanecem fora do DiaChat v1.
+
+Baileys:
+
+- Sessões deixam o JSON em texto aberto e passam para registros cifrados.
+- Migração por conexão: pausar fila, drenar, desconectar core, copiar sessão, iniciar gateway, validar e retomar.
+- Nunca conectar core e gateway ao mesmo número ao mesmo tempo.
+- Rollback exporta o estado atualizado do gateway antes de devolver `runtimeOwner=core`.
+- Baileys deverá ser apresentado como integração não oficial, sem o mesmo SLA/compliance da Meta.
+
+### Webhooks externos
+
+Configuração:
+
+- Nome, habilitado, URL HTTPS, empresa, conexão opcional e eventos.
+- Método fixo `POST`.
+- Filtros por direção, origem, tipo da mensagem e grupo/individual.
+- Exclusão de `origin=api` habilitada por padrão para impedir loops.
+- `addUrlEvents` e `addUrlTypesMessages`, com prévia da URL final.
+- Criar cópia, excluir, testar e rotacionar segredo.
+- Múltiplos destinos por empresa/conexão, como UAZAPI e Chatwoot.
+
+Eventos v1:
+
+- `message.created`
+- `message.status_changed`
+- `conversation.created`
+- `conversation.updated`
+- `contact.created`
+- `contact.updated`
+- `connection.status_changed`
+- `template.status_changed`
+- `campaign.status_changed`
+- `webhook.test`
+
+Envelope:
+
+```json
+{
+  "specVersion": "1.0",
+  "id": "evt_...",
+  "type": "message.created",
+  "occurredAt": "2026-07-24T15:00:00.000Z",
+  "companyId": 10,
+  "connectionId": "...",
+  "provider": "meta_cloud",
+  "origin": "provider",
+  "traceId": "trace_...",
+  "data": {
+    "object": {},
+    "providerPayload": {}
+  }
+}
+```
+
+`data.object` contém a representação canônica. `providerPayload` contém o payload bruto sanitizado, removendo tokens, cookies, app secrets, Authorization, chaves de sessão, binários/base64 e query strings assinadas.
+
+Assinatura:
+
+- `X-DiaChat-Signature: sha256=<hex>`
+- `X-DiaChat-Timestamp: <unix-seconds>`
+- `X-DiaChat-Delivery: <delivery-id>`
+- `X-DiaChat-Event: <event-type>`
+- Assinar exatamente `timestamp.raw_body` com HMAC-SHA256.
+- Documentar comparação em tempo constante e janela recomendada de cinco minutos, seguindo o padrão verificável do [Chatwoot](https://www.chatwoot.com/hc/user-guide/articles/1677693021-how-to-use-webhooks).
+
+Entrega:
+
+- Semântica at-least-once; destinatários deduplicam pelo delivery/event ID.
+- Qualquer `2xx` é sucesso.
+- Timeout de conexão 3 s e total 10 s.
+- Sem redirects.
+- Resposta armazenada limitada a 4 KB e sanitizada.
+- Tentativas: imediata, 30 s, 2 min, 10 min, 1 h e 6 h, com jitter de ±20%.
+- `429` respeita `Retry-After`, limitado a seis horas.
+- Após seis falhas: `DEAD`.
+- Após 50 falhas consecutivas, endpoint é pausado e gera alerta/auditoria.
+- Sem garantia de ordenação durante retries.
+- Replay cria novo delivery ID usando o mesmo evento e a configuração atual.
+- Alteração de URL/segredo não modifica entregas já criadas; cada delivery conserva snapshot e versão de chave.
+- Exclusão desabilita o endpoint, cancela pendências e preserva metadados históricos.
+- Replay após expiração do payload retorna `410`.
+
+Segurança de destino:
+
+- HTTPS obrigatório em produção.
+- Bloquear IPs privados, loopback, link-local e metadata services.
+- Resolver DNS novamente no momento da conexão para impedir DNS rebinding.
+- Limitar concorrência a quatro entregas por endpoint.
+- Nunca enviar credenciais internas ou headers recebidos do provider.
+
+### Telas
+
+Conexões:
+
+- Card WhatsApp conforme imagem.
+- Seletor Baileys/Meta.
+- Formulário Meta completo.
+- Status, provider, telefone, última atividade e último erro.
+- Ações conectar, desconectar, testar, sincronizar templates e revogar.
+- Segredos sempre mascarados e nunca retornados ao navegador após criação.
+
+Webhooks:
+
+- Lista com nome, escopo, URL, eventos, status e saúde.
+- Modal com os campos das imagens: habilitado, URL, eventos, filtros, sufixos de URL e prévia final.
+- Botões salvar, salvar como novo, testar e excluir.
+- Aba de entregas com evento, horário, tentativa, status HTTP, duração, próximo retry, erro e replay.
+- Secret mostrado uma vez e ação separada para rotação.
+
+Administração:
+
+- Superadmin: criar/revogar API keys e restringir scopes/conexões.
+- Admin da empresa: conexões, templates, webhooks e replay de sua empresa.
+- Agente: apenas atendimento e envio permitido pela inbox.
+- Atualizar a tela atual de API para documentação/explorer da v1.
+
+### Segurança, LGPD e observabilidade
+
+- Credenciais e sessões cifradas com AES-256-GCM, nonce aleatório e versão de chave.
+- Rotação de chave por leitura com chave antiga e regravação com chave ativa.
+- TLS obrigatório externamente.
+- Auditoria de criação/revogação de credenciais, alteração de conexões, rotação de segredo, replay e mudanças de webhook.
+- Logs estruturados com `requestId`, `traceId`, `companyId`, `connectionId`, `commandId` e `deliveryId`; nunca conteúdo integral de mensagens ou segredos.
+- Métricas: idade da outbox, tamanho das filas, conexões ativas, latência de envio, falhas por provider, sucesso de webhook, dead letters e reconciliações.
+- Sentry obrigatório porque os logs nativos de publicação do Replit têm retenção limitada. ([monitoramento Replit](https://docs.replit.com/references/publishing/monitoring-a-deployment))
+- `/health/live` verifica processo; `/health/ready` verifica banco, Redis e gateway com timeout curto.
+- Payload provider/webhook: 30 dias. Tentativas e metadados: 180 dias. Mensagens de negócio permanecem sob a política existente.
+- Exclusão LGPD remove/anônimiza payloads e mídias relacionáveis; metadados técnicos restantes ficam pseudonimizados.
+- Produção condicionada a DPA, registro da base legal, informação ao titular e avaliação da transferência internacional, pois a publicação Replit ocorre nos EUA. ([geografia Replit](https://docs.replit.com/references/publishing/publishing-geography))
+
+## 4. Sequência de implementação e rollout
+
+Cada etapa deve usar TDD, revisão independente e PR próprio. Migrações permanecem expansivas até o corte final.
+
+1. **Preflight e baseline**
+   - Congelar inventário de consumidores de `/api/messages/send`, conexões, dados da tabela `Webhooks`, sessões Baileys e chamadas diretas ao provider.
+   - Restaurar snapshot de produção em ambiente seguro de staging.
+   - Registrar ADRs de arquitetura, modelo de segurança e semântica at-least-once.
+   - Gate: inventário aprovado, backup restaurável e comportamento atual reproduzido.
+
+2. **Contratos e esqueleto do gateway**
+   - Criar contratos, enums, envelope, OpenAPI, gateway NestJS e schema Prisma.
+   - Configurar PM2, proxy, health checks, logs e workflows Replit.
+   - Gate: fresh build/deploy no Replit e comunicação core↔gateway autenticada.
+
+3. **Durabilidade**
+   - Implementar outbox/inbox, leases, reconciliador e estados de comandos.
+   - Testar reinício de Redis, core e gateway em todos os pontos transacionais.
+   - Gate: todo comando aceito sobrevive à perda do Redis e reinício dos processos.
+
+4. **Abstração e extração do Baileys**
+   - Criar porta comum, adapter Baileys e suite de conformidade.
+   - Substituir todas as chamadas diretas, incluindo inbox, campanhas, Flow Builder, integrações e respostas automáticas.
+   - Migrar uma conexão canário por vez.
+   - Gate: paridade funcional, nenhum import/send direto fora do adapter e rollback validado.
+
+5. **Provider Meta Cloud**
+   - Implementar credenciais, validação Graph API, callback, assinatura, deduplicação, status e templates.
+   - Integrar inbox, campanhas, Flow Builder e políticas de template.
+   - Gate: enviar/receber todos os tipos v1 com número de teste Meta e processar sent/delivered/read/failed.
+
+6. **API pública**
+   - Implementar credenciais, scopes, rate limits, idempotência, endpoints, uploads e status.
+   - Publicar OpenAPI, exemplos cURL/n8n, catálogo de erros e guia de migração.
+   - Gate: testes de contrato e isolamento multiempresa aprovados.
+
+7. **Webhooks externos**
+   - Implementar endpoints, eventos, filtros, assinatura, snapshots, delivery log, retry, replay, dead-letter e retenção.
+   - Gate: caos/restart sem perda e verificação HMAC em exemplos Node, Python e n8n.
+
+8. **Frontend e integração integral**
+   - Implementar wizard, formulários, templates, API keys, webhooks e deliveries.
+   - Aplicar matriz de capacidades em inbox, campanhas e Flow Builder.
+   - Gate: testes React e smoke test Playwright dos fluxos críticos.
+
+9. **Corte**
+   - Feature flags por empresa/conexão: `runtimeOwner`, Meta, API v1 e webhooks.
+   - Canary interno, depois empresas piloto, depois lote progressivo.
+   - Nunca fazer dual-send nem manter duas sessões Baileys ativas.
+   - Ativar `410` no endpoint legado somente após inventário dos consumidores.
+   - Monitorar 48 horas por lote antes de ampliar.
+   - Rollback: pausar filas, drenar, exportar sessão atual, trocar `runtimeOwner` e retomar no core. Conexões Meta são pausadas, pois o core antigo não possui adapter Meta.
+   - Migrações destrutivas e remoção do código legado somente em release posterior à estabilização.
+
+## 5. Testes, critérios de aceite e premissas
+
+Testes obrigatórios:
+
+- Unitários: schemas, state machines, idempotência, HMAC, redaction, filtros, status, error mapping e capabilities.
+- Provider conformance: cada adapter executa a mesma suite comum.
+- Integração: Prisma/PostgreSQL, Sequelize/PostgreSQL, BullMQ/Redis, outbox/inbox, proxy e storage.
+- Meta: challenge, assinatura inválida, duplicatas, mensagens, mídia, template, status e payload desconhecido.
+- Webhooks: `2xx`, `4xx`, `5xx`, timeout, DNS rebinding, SSRF, retry, pausa, rotação e replay.
+- Segurança: IDOR, credential scope, tenant leakage, replay, headers forjados, uploads maliciosos e logs sem segredos.
+- Caos: matar Redis/gateway/core antes e depois de cada commit; nenhum comando aceito pode desaparecer.
+- UI: permissões, validações, estados, secret show-once e fluxos das telas fornecidas.
+- Replit: primeira publicação, republicação, restart, segredo ausente, banco de produção, App Storage e health check.
+- Carga: 50 requisições assíncronas/s por dez minutos com provider mock; `POST` p95 abaixo de 300 ms e nenhuma perda.
+- Migração: snapshot real anonimizado, dados de webhook legado e ida/volta de sessão Baileys.
+
+Aceite final:
+
+- Zero chamadas diretas de envio fora dos adapters.
+- `202` somente após persistência durável.
+- Duplicata Meta produz uma única mensagem e um único evento lógico.
+- Redis pode ser apagado sem perda de comandos, eventos ou retries.
+- Nenhum teste consegue acessar dados de outra empresa.
+- Webhooks possuem assinatura, histórico persistente, retries, dead-letter e replay.
+- Todos os fluxos existentes funcionam com Baileys após a extração.
+- Meta funciona na inbox, API, campanhas, Flow Builder, contatos e tickets.
+- Templates não aprovados são bloqueados.
+- `/internal/v1` permanece compatível; `/api/messages/send` retorna `410`.
+- Build e deploy Replit são reproduzíveis.
+- Nenhuma vulnerabilidade crítica/alta nova nas dependências.
+- Gate LGPD/DPA concluído antes de usar dados reais.
+
+Premissas e limites:
+
+- Escala v1 de até 20 conexões simultâneas.
+- Um único gateway em Reserved VM; acima dessa escala será necessário shard por `connectionId` em múltiplas Reserved VMs Replit.
+- Baileys e Meta nunca operam simultaneamente sobre o mesmo número.
+- Twilio, Embedded Signup Meta, criação/aprovação de templates, API pública de grupos, chamadas, bloqueios, presence e newsletters ficam fora da v1.
+- Não existe garantia de exactly-once no provider; o sistema oferece comandos idempotentes, processamento durável e estado `unknown` quando a aceitação externa não puder ser determinada.
+- Entregas de webhook são at-least-once e podem chegar fora de ordem.
+- O contrato público do DiaChat é próprio; benchmarks não significam compatibilidade binária com UAZAPI, Chatwoot ou AtendeChat.
