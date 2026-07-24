@@ -1,3 +1,4 @@
+import { sendBaileysSocketMessage } from "./messaging/adapters/baileys/BaileysSocketPort";
 import * as Sentry from "@sentry/node";
 import BullQueue from "bull";
 import { MessageData, SendMessage } from "./helpers/SendMessage";
@@ -826,7 +827,7 @@ async function handleDispatchCampaign(job) {
         const folder = path.resolve(publicFolder, "fileList", String(files.id))
         for (const [index, file] of files.options.entries()) {
           const options = await getMessageOptions(file.path, path.resolve(folder, file.path), file.name);
-          await wbot.sendMessage(chatId, { ...options });
+          await sendBaileysSocketMessage(wbot, chatId, { ...options });
 
           logger.info(`[🚩] - Enviou arquivo: ${file.name} | CampaignShippingId: ${campaignShippingId} CampanhaID: ${campaignId}`);
         };
@@ -843,13 +844,13 @@ async function handleDispatchCampaign(job) {
 
       const options = await getMessageOptions(campaign.mediaName, filePath, body);
       if (Object.keys(options).length) {
-        await wbot.sendMessage(chatId, { ...options });
+        await sendBaileysSocketMessage(wbot, chatId, { ...options });
       }
     }
     else {
       logger.info(`[🚩] - Enviando mensagem de texto da campanha | CampaignShippingId: ${campaignShippingId} CampanhaID: ${campaignId}`);
 
-      await wbot.sendMessage(chatId, {
+      await sendBaileysSocketMessage(wbot, chatId, {
         text: body
       });
     }

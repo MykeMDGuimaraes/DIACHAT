@@ -1,4 +1,7 @@
-import { proto, WASocket } from "baileys";
+import {
+  proto,
+  WASocket
+} from "../messaging/adapters/baileys/BaileysExports";
 // import cacheLayer from "../libs/cache";
 import { getIO } from "../libs/socket";
 import Message from "../models/Message";

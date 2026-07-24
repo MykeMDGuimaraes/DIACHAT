@@ -43,6 +43,10 @@ class MetaCloudCredential extends Model<MetaCloudCredential> {
   phoneNumberId: string;
 
   @AllowNull(false)
+  @Column(DataType.STRING)
+  graphVersion: string;
+
+  @AllowNull(false)
   @Column(DataType.TEXT)
   accessTokenCiphertext: string;
 
@@ -71,6 +75,9 @@ class MetaCloudCredential extends Model<MetaCloudCredential> {
 
   @Column(DataType.TEXT)
   lastError: string;
+
+  @Column(DataType.DATE)
+  revokedAt: Date;
 
   @CreatedAt
   createdAt: Date;

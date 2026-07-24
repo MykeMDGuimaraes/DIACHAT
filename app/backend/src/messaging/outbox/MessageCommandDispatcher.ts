@@ -24,6 +24,25 @@ interface MessageCommandDispatcherDependencies {
   ) => Promise<unknown>;
 }
 
+export const buildMessageSentEvent = (
+  command: any,
+  providerMessageId?: string
+): Record<string, unknown> => ({
+  companyId: command.companyId,
+  eventType: "message.sent",
+  aggregateId: command.messageId || command.id,
+  payload: {
+    commandId: command.id,
+    messageId: command.messageId,
+    whatsappId: command.whatsappId,
+    providerMessageId,
+    kind: command.messageKind,
+    origin: "api"
+  },
+  status: "ready",
+  attemptCount: 0
+});
+
 const createDefaultDependencies = (
   providers: MessagingProvider[]
 ): MessageCommandDispatcherDependencies => ({
@@ -88,6 +107,10 @@ const createDefaultDependencies = (
   markSent: (commandId, eventId, providerMessageId) =>
     sequelize.transaction(async transaction => {
       const completedAt = new Date();
+      const command = await MessageCommand.findByPk(commandId, {
+        transaction,
+        lock: transaction.LOCK.UPDATE
+      });
       await MessageCommand.update(
         {
           status: "sent",
@@ -101,6 +124,12 @@ const createDefaultDependencies = (
         { status: "completed", leaseExpiresAt: null },
         { where: { id: eventId, status: "processing" }, transaction }
       );
+      if (command) {
+        await MessagingOutboxEvent.create(
+          buildMessageSentEvent(command, providerMessageId) as any,
+          { transaction }
+        );
+      }
     }),
   markUnknown: (commandId, eventId, reason) =>
     sequelize.transaction(async transaction => {

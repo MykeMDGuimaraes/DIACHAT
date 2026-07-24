@@ -90,4 +90,40 @@ describe("MetaGraphApiClient", () => {
       }
     });
   });
+
+  it("sends media and template commands using their dedicated Graph payloads", async () => {
+    const request = jest.fn().mockResolvedValue({ data: { messages: [{ id: "wamid.2" }] } });
+    const client = new MetaGraphApiClient(
+      { graphVersion: "v23.0", apiBaseUrl: "https://graph.facebook.com" },
+      { request }
+    );
+
+    await client.sendMessage({
+      phoneNumberId: "phone_1",
+      accessToken: "access-token",
+      recipient: "5511999999999",
+      kind: "image",
+      payload: { link: "https://cdn.example.com/photo.jpg", caption: "Foto" }
+    });
+    await client.sendMessage({
+      phoneNumberId: "phone_1",
+      accessToken: "access-token",
+      recipient: "5511999999999",
+      kind: "template",
+      payload: { name: "pedido_pronto", language: "pt_BR", components: [] }
+    });
+
+    expect(request).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      body: expect.objectContaining({
+        type: "image",
+        image: { link: "https://cdn.example.com/photo.jpg", caption: "Foto" }
+      })
+    }));
+    expect(request).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      body: expect.objectContaining({
+        type: "template",
+        template: { name: "pedido_pronto", language: { code: "pt_BR" }, components: [] }
+      })
+    }));
+  });
 });

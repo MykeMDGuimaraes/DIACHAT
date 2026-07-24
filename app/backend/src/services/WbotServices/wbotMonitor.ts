@@ -1,8 +1,9 @@
+import { sendBaileysSocketMessage } from "../../messaging/adapters/baileys/BaileysSocketPort";
 import {
   WASocket,
   BinaryNode,
   Contact as BContact,
-} from "baileys";
+} from "../../messaging/adapters/baileys/BaileysExports";
 import * as Sentry from "@sentry/node";
 
 import { Op } from "sequelize";
@@ -55,7 +56,7 @@ const wbotMonitor = async (
 
           const company = await Company.findByPk(companyId);
 
-          await wbot.sendMessage(node.attrs.from, {
+          await sendBaileysSocketMessage(wbot, node.attrs.from, {
             text:
               translatedMessage[company.language],
           });

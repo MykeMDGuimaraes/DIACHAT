@@ -1,7 +1,12 @@
+import { sendBaileysSocketMessage } from "../../messaging/adapters/baileys/BaileysSocketPort";
 import axios, { AxiosRequestConfig } from "axios";
 import Ticket from "../../models/Ticket";
 import QueueIntegrations from "../../models/QueueIntegrations";
-import { WASocket, delay, proto } from "baileys";
+import {
+  WASocket,
+  delay,
+  proto
+} from "../../messaging/adapters/baileys/BaileysExports";
 import { getBodyMessage } from "../WbotServices/wbotMessageListener";
 import { logger } from "../../utils/logger";
 import { isNil } from "lodash";
@@ -145,7 +150,7 @@ const typebotListener = async ({
             }
 
             if (messages?.length === 0) {
-                await wbot.sendMessage(`${number}@c.us`, { text: typebotUnknownMessage });
+                await sendBaileysSocketMessage(wbot, `${number}@c.us`, { text: typebotUnknownMessage });
             } else {
                 for (const message of messages) {
                     if (message.type === 'text') {
@@ -291,7 +296,7 @@ const typebotListener = async ({
                         await wbot.sendPresenceUpdate('paused', msg.key.remoteJid)
 
 
-                        await wbot.sendMessage(msg.key.remoteJid, { text: formattedText });
+                        await sendBaileysSocketMessage(wbot, msg.key.remoteJid, { text: formattedText });
                     }
 
                     if (message.type === 'audio') {
@@ -307,7 +312,7 @@ const typebotListener = async ({
                                 ptt: true
                             },
                         }
-                        await wbot.sendMessage(msg.key.remoteJid, media);
+                        await sendBaileysSocketMessage(wbot, msg.key.remoteJid, media);
 
                     }
 
@@ -324,7 +329,7 @@ const typebotListener = async ({
                     //         caption: ""
 
                     //     }
-                    //     await wbot.sendMessage(msg.key.remoteJid, media);
+                    //     await sendBaileysSocketMessage(wbot, msg.key.remoteJid, media);
                     // }
 
                     if (message.type === 'image') {
@@ -339,7 +344,7 @@ const typebotListener = async ({
                             },
 
                         }
-                        await wbot.sendMessage(msg.key.remoteJid, media);
+                        await sendBaileysSocketMessage(wbot, msg.key.remoteJid, media);
                     }
 
                     // if (message.type === 'video' ) {
@@ -354,7 +359,7 @@ const typebotListener = async ({
                     //         },
 
                     //     }
-                    //     await wbot.sendMessage(msg.key.remoteJid, media);
+                    //     await sendBaileysSocketMessage(wbot, msg.key.remoteJid, media);
                     // }
                 }
                 if (input) {
@@ -370,7 +375,7 @@ const typebotListener = async ({
                         await wbot.sendPresenceUpdate('composing', msg.key.remoteJid)
                         await delay(typebotDelayMessage)
                         await wbot.sendPresenceUpdate('paused', msg.key.remoteJid)
-                        await wbot.sendMessage(msg.key.remoteJid, { text: formattedText });
+                        await sendBaileysSocketMessage(wbot, msg.key.remoteJid, { text: formattedText });
 
                     }
                 }
@@ -385,7 +390,7 @@ const typebotListener = async ({
 
             await ticket.reload();
 
-            await wbot.sendMessage(`${number}@c.us`, { text: typebotRestartMessage })
+            await sendBaileysSocketMessage(wbot, `${number}@c.us`, { text: typebotRestartMessage })
 
         }
         if (body === typebotKeywordFinish) {

@@ -1,4 +1,4 @@
-import MessageCommandDispatcher from "../MessageCommandDispatcher";
+import MessageCommandDispatcher, { buildMessageSentEvent } from "../MessageCommandDispatcher";
 
 describe("MessageCommandDispatcher", () => {
   const claimed = {
@@ -51,5 +51,23 @@ describe("MessageCommandDispatcher", () => {
     });
 
     await expect(dispatcher.dispatchOne()).resolves.toEqual({ status: "idle" });
+  });
+
+  it("builds the durable customer webhook event after provider acknowledgement", () => {
+    expect(buildMessageSentEvent({
+      id: "cmd_1",
+      companyId: 7,
+      whatsappId: 42,
+      messageId: "msg_1",
+      messageKind: "image"
+    }, "wamid.1")).toEqual(expect.objectContaining({
+      eventType: "message.sent",
+      aggregateId: "msg_1",
+      payload: expect.objectContaining({
+        providerMessageId: "wamid.1",
+        kind: "image",
+        origin: "api"
+      })
+    }));
   });
 });

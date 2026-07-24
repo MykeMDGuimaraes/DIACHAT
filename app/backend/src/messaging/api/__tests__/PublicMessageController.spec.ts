@@ -66,4 +66,30 @@ describe("PublicMessageController", () => {
     expect(res.set).toHaveBeenCalledWith("Idempotent-Replayed", "true");
     expect(res.status).toHaveBeenCalledWith(200);
   });
+
+  it("forwards a supported media payload to the durable command service", async () => {
+    const create = jest.fn().mockResolvedValue({
+      command: { id: "cmd_media", status: "queued" },
+      message: { id: "msg_media" },
+      replayed: false
+    });
+    const handler = createPublicTextMessageHandler({ create });
+    const req: any = {
+      apiCredential: { id: "cred_1", companyId: 10, connectionIds: [2] },
+      body: {
+        connectionId: 2,
+        to: "5511999999999",
+        type: "image",
+        media: { link: "https://cdn.example.com/photo.jpg", caption: "Foto" }
+      },
+      header: jest.fn().mockReturnValue("request-media-123")
+    };
+
+    await handler(req, response());
+
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      kind: "image",
+      payload: { link: "https://cdn.example.com/photo.jpg", caption: "Foto" }
+    }));
+  });
 });

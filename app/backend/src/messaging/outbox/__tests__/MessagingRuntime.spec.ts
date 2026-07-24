@@ -38,7 +38,8 @@ describe("MessagingRuntime", () => {
       dispatched: 1,
       processedInbox: 1,
       webhookDeliveriesCreated: 2,
-      webhooksDispatched: 1
+      webhooksDispatched: 1,
+      capacitySamplesObserved: 0
     });
     expect(events).toEqual(["recover", "inbox", "dispatch"]);
   });

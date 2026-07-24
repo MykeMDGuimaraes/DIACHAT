@@ -45,6 +45,14 @@ class MessagingInboxEvent extends Model<MessagingInboxEvent> {
   @Column(DataType.DATE)
   processedAt: Date;
 
+  @Default(0)
+  @AllowNull(false)
+  @Column(DataType.INTEGER)
+  attemptCount: number;
+
+  @Column(DataType.DATE)
+  leaseExpiresAt: Date;
+
   @Column(DataType.TEXT)
   lastError: string;
 

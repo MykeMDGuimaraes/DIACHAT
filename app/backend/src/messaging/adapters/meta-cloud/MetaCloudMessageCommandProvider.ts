@@ -6,24 +6,24 @@ import {
   loadMessagingKeyring,
   MessagingKeyring
 } from "../../security/MessagingSecretCipher";
-import MetaGraphApiClient, { MetaTextMessageInput } from "./MetaGraphApiClient";
+import MetaGraphApiClient, { MetaMessageInput, MetaTextMessageInput } from "./MetaGraphApiClient";
 
 interface MetaCloudMessageCommandProviderDependencies {
   findCredential(companyId: number, whatsappId: number): Promise<any>;
   decryptSecret(encryptedSecret: string, keyring: MessagingKeyring): string;
   getKeyring(): MessagingKeyring;
   sendText(input: MetaTextMessageInput): Promise<{ providerMessageId?: string }>;
+  sendMessage?(input: MetaMessageInput): Promise<{ providerMessageId?: string }>;
 }
 
-const defaultDependencies = (): MetaCloudMessageCommandProviderDependencies => {
-  return {
-    findCredential: (companyId, whatsappId) =>
-      MetaCloudCredential.findOne({ where: { companyId, whatsappId } }),
-    decryptSecret: decryptMessagingSecret,
-    getKeyring: loadMessagingKeyring,
-    sendText: input => new MetaGraphApiClient().sendText(input)
-  };
-};
+const defaultDependencies = (): MetaCloudMessageCommandProviderDependencies => ({
+  findCredential: (companyId, whatsappId) =>
+    MetaCloudCredential.findOne({ where: { companyId, whatsappId } }),
+  decryptSecret: decryptMessagingSecret,
+  getKeyring: loadMessagingKeyring,
+  sendText: input => new MetaGraphApiClient().sendText(input),
+  sendMessage: input => new MetaGraphApiClient().sendMessage(input)
+});
 
 class MetaCloudMessageCommandProvider implements MessagingProvider {
   readonly provider = "meta_cloud";
@@ -35,25 +35,50 @@ class MetaCloudMessageCommandProvider implements MessagingProvider {
   }
 
   async send(command: DispatchableMessageCommand): Promise<{ providerMessageId?: string }> {
-    const text = command.requestPayload.text;
-    if (command.messageKind !== "text" || typeof text !== "string" || !text.trim()) {
-      throw new AppError("Payload de texto invÃ¡lido", 400);
+    const supported = ["text", "image", "audio", "video", "document", "template"];
+    if (!supported.includes(command.messageKind)) {
+      throw new AppError("Tipo de mensagem Meta nao suportado", 400);
     }
 
     const credential = await this.dependencies.findCredential(command.companyId, command.whatsappId);
     if (!credential) {
-      throw new AppError("Credenciais Meta do canal nÃ£o encontradas", 404);
+      throw new AppError("Credenciais Meta do canal nao encontradas", 404);
+    }
+    if (
+      credential.validationStatus === "REVOKED" ||
+      credential.revokedAt
+    ) {
+      throw new AppError("Credenciais Meta do canal foram revogadas", 409);
     }
     const accessToken = this.dependencies.decryptSecret(
       credential.accessTokenCiphertext,
       this.dependencies.getKeyring()
     );
 
-    return this.dependencies.sendText({
+    if (command.messageKind === "text") {
+      const text = command.requestPayload.text;
+      if (typeof text !== "string" || !text.trim()) {
+        throw new AppError("Payload de texto invalido", 400);
+      }
+      return this.dependencies.sendText({
+        phoneNumberId: credential.phoneNumberId,
+        accessToken,
+        recipient: command.recipient,
+        text,
+        ...(credential.graphVersion ? { graphVersion: credential.graphVersion } : {})
+      });
+    }
+
+    if (!this.dependencies.sendMessage) {
+      throw new AppError("Envio Meta indisponivel", 500);
+    }
+    return this.dependencies.sendMessage({
       phoneNumberId: credential.phoneNumberId,
       accessToken,
       recipient: command.recipient,
-      text
+      kind: command.messageKind as MetaMessageInput["kind"],
+      payload: command.requestPayload,
+      ...(credential.graphVersion ? { graphVersion: credential.graphVersion } : {})
     });
   }
 }

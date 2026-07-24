@@ -7,6 +7,8 @@ import WebhookRecoveryService from "../webhooks/WebhookRecoveryService";
 import MessageCommandRecoveryService from "../application/MessageCommandRecoveryService";
 import MessageCommandDispatcher from "./MessageCommandDispatcher";
 import MessagingOutboxRecoveryService from "./MessagingOutboxRecoveryService";
+import MessagingCapacityObserver from "../operations/MessagingCapacityObserver";
+import MetaInboxRecoveryService from "../channels/meta-cloud/MetaInboxRecoveryService";
 
 interface RecoveryRunner {
   recover: () => Promise<{ recovered: number }>;
@@ -28,6 +30,10 @@ interface WebhookDispatchRunner {
   dispatchOne: () => Promise<{ status: "idle" | "delivered" | "retry" | "dead_letter" }>;
 }
 
+interface CapacityObserverRunner {
+  observeOne: () => Promise<{ status: "idle" | "observed" }>;
+}
+
 class MessagingRuntime {
   constructor(
     private readonly recovery: RecoveryRunner,
@@ -35,15 +41,23 @@ class MessagingRuntime {
     private readonly batchSize = 25,
     private readonly inbox: InboxRunner = { processOne: async () => ({ status: "idle" }) },
     private readonly webhookFanout: WebhookFanoutRunner = { fanoutOne: async () => ({ status: "idle", deliveries: 0 }) },
-    private readonly webhookDispatcher: WebhookDispatchRunner = { dispatchOne: async () => ({ status: "idle" }) }
+    private readonly webhookDispatcher: WebhookDispatchRunner = { dispatchOne: async () => ({ status: "idle" }) },
+    private readonly capacityObserver: CapacityObserverRunner = { observeOne: async () => ({ status: "idle" }) }
   ) {}
 
-  async runOnce(): Promise<{ recovered: number; dispatched: number; processedInbox: number; webhookDeliveriesCreated: number; webhooksDispatched: number }> {
+  async runOnce(): Promise<{ recovered: number; dispatched: number; processedInbox: number; webhookDeliveriesCreated: number; webhooksDispatched: number; capacitySamplesObserved: number }> {
     const { recovered } = await this.recovery.recover();
     let dispatched = 0;
     let processedInbox = 0;
     let webhookDeliveriesCreated = 0;
     let webhooksDispatched = 0;
+    let capacitySamplesObserved = 0;
+
+    for (let index = 0; index < this.batchSize; index += 1) {
+      const result = await this.capacityObserver.observeOne();
+      if (result.status === "idle") break;
+      capacitySamplesObserved += 1;
+    }
 
     for (let index = 0; index < this.batchSize; index += 1) {
       const result = await this.inbox.processOne();
@@ -71,7 +85,7 @@ class MessagingRuntime {
       webhooksDispatched += 1;
     }
 
-    return { recovered, dispatched, processedInbox, webhookDeliveriesCreated, webhooksDispatched };
+    return { recovered, dispatched, processedInbox, webhookDeliveriesCreated, webhooksDispatched, capacitySamplesObserved };
   }
 }
 
@@ -82,13 +96,15 @@ export const createMessagingRuntime = (): MessagingRuntime =>
         const commands = await new MessageCommandRecoveryService().recover();
         const events = await new MessagingOutboxRecoveryService().recover();
         const webhooks = await new WebhookRecoveryService().recover();
+        const inbox = await new MetaInboxRecoveryService().recover();
         return {
           recovered:
             commands.recovered +
             events.completed +
             events.requeued +
             webhooks.deliveries +
-            webhooks.events
+            webhooks.events +
+            inbox.recovered
         };
       }
     },
@@ -99,7 +115,8 @@ export const createMessagingRuntime = (): MessagingRuntime =>
     25,
     new MetaInboxProcessor(),
     new WebhookFanoutService(),
-    new WebhookDeliveryDispatcher()
+    new WebhookDeliveryDispatcher(),
+    new MessagingCapacityObserver()
   );
 
 export default MessagingRuntime;

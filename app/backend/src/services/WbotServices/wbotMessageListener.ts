@@ -1,3 +1,4 @@
+import { sendBaileysSocketMessage } from "../../messaging/adapters/baileys/BaileysSocketPort";
 import path, { join } from "path";
 import { promisify } from "util";
 import { readFile, writeFile } from "fs";
@@ -16,7 +17,7 @@ import {
   WAMessageStubType,
   WAMessageUpdate,
   WASocket
-} from "baileys";
+} from "../../messaging/adapters/baileys/BaileysExports";
 import Contact from "../../models/Contact";
 import Ticket from "../../models/Ticket";
 import Message from "../../models/Message";
@@ -252,7 +253,7 @@ export const sendMessageImage = async (
 ) => {
   let sentMessage;
   try {
-    sentMessage = await wbot.sendMessage(
+    sentMessage = await sendBaileysSocketMessage(wbot,
       `${contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`,
       {
         image: url
@@ -264,7 +265,7 @@ export const sendMessageImage = async (
       }
     );
   } catch (error) {
-    sentMessage = await wbot.sendMessage(
+    sentMessage = await sendBaileysSocketMessage(wbot,
       `${contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`,
       {
         text: formatBody(
@@ -286,7 +287,7 @@ export const sendMessageLink = async (
 ) => {
   let sentMessage;
   try {
-    sentMessage = await wbot.sendMessage(
+    sentMessage = await sendBaileysSocketMessage(wbot,
       `${contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`,
       {
         document: url
@@ -298,7 +299,7 @@ export const sendMessageLink = async (
       }
     );
   } catch (error) {
-    sentMessage = await wbot.sendMessage(
+    sentMessage = await sendBaileysSocketMessage(wbot,
       `${contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`,
       {
         text: formatBody("Não consegui enviar o PDF, tente novamente!", contact)
@@ -755,14 +756,14 @@ const handleOpenAi = async (
         .trim();
     }
 
-    const sentMessage = await wbot.sendMessage(msg.key.remoteJid!, {
+    const sentMessage = await sendBaileysSocketMessage(wbot, msg.key.remoteJid!, {
       text: response!
     });
     await verifyMessage(sentMessage!, ticket, contact);
 
     /*
     if (prompt.voice === "texto") {
-      const sentMessage = await wbot.sendMessage(msg.key.remoteJid!, {
+      const sentMessage = await sendBaileysSocketMessage(wbot, msg.key.remoteJid!, {
         text: response!
       });
       await verifyMessage(sentMessage!, ticket, contact);
@@ -777,7 +778,7 @@ const handleOpenAi = async (
         "mp3"
       ).then(async () => {
         try {
-          const sendMessage = await wbot.sendMessage(msg.key.remoteJid!, {
+          const sendMessage = await sendBaileysSocketMessage(wbot, msg.key.remoteJid!, {
             audio: { url: `${publicFolder}/${fileNameWithOutExtension}.mp3` },
             mimetype: "audio/mpeg",
             ptt: true
@@ -826,7 +827,7 @@ const handleOpenAi = async (
         .trim();
     }
     /*if (prompt.voice === "texto") {
-      const sentMessage = await wbot.sendMessage(msg.key.remoteJid!, {
+      const sentMessage = await sendBaileysSocketMessage(wbot, msg.key.remoteJid!, {
         text: response!
       });
       await verifyMessage(sentMessage!, ticket, contact);
@@ -841,7 +842,7 @@ const handleOpenAi = async (
         "mp3"
       ).then(async () => {
         try {
-          const sendMessage = await wbot.sendMessage(msg.key.remoteJid!, {
+          const sendMessage = await sendBaileysSocketMessage(wbot, msg.key.remoteJid!, {
             audio: { url: `${publicFolder}/${fileNameWithOutExtension}.mp3` },
             mimetype: "audio/mpeg",
             ptt: true
@@ -1105,7 +1106,7 @@ const verifyQueue = async (
     ) {
       const body = formatBody(`${greetingMessage}`, contact);
 
-      await wbot.sendMessage(
+      await sendBaileysSocketMessage(wbot,
         `${contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`,
         {
           text: body
@@ -1185,7 +1186,7 @@ const verifyQueue = async (
       text: formatBody(`\u200e${greetingMessage}\n\n${options}`, contact)
     };
 
-    const sendMsg = await wbot.sendMessage(
+    const sendMsg = await sendBaileysSocketMessage(wbot,
       `${contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`,
       textMessage
     );
@@ -1236,7 +1237,7 @@ const verifyQueue = async (
             `\u200e ${queue.outOfHoursMessage}\n\n*[ # ]* - Voltar ao Menu Principal`,
             ticket.contact
           );
-          const sentMessage = await wbot.sendMessage(
+          const sentMessage = await sendBaileysSocketMessage(wbot,
             `${contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`,
             {
               text: body
@@ -1294,7 +1295,7 @@ const verifyQueue = async (
         ticket.contact
       );
       if (choosenQueue.greetingMessage) {
-        const sentMessage = await wbot.sendMessage(
+        const sentMessage = await sendBaileysSocketMessage(wbot,
           `${contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`,
           {
             text: body
@@ -1535,7 +1536,7 @@ const handleChartbot = async (
     //     sections
     //   };
 
-    //   const sendMsg = await wbot.sendMessage(
+    //   const sendMsg = await sendBaileysSocketMessage(wbot,
     //     `${ticket.contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`,
     //     listMessage
     //   );
@@ -1564,7 +1565,7 @@ const handleChartbot = async (
         headerType: 4
       };
 
-      const sendMsg = await wbot.sendMessage(
+      const sendMsg = await sendBaileysSocketMessage(wbot,
         `${ticket.contact.number}@${
           ticket.isGroup ? "g.us" : "s.whatsapp.net"
         }`,
@@ -1590,7 +1591,7 @@ const handleChartbot = async (
         )
       };
 
-      const sendMsg = await wbot.sendMessage(
+      const sendMsg = await sendBaileysSocketMessage(wbot,
         `${ticket.contact.number}@${
           ticket.isGroup ? "g.us" : "s.whatsapp.net"
         }`,
@@ -1659,7 +1660,7 @@ const handleChartbot = async (
           sections
         };
 
-        const sendMsg = await wbot.sendMessage(
+        const sendMsg = await sendBaileysSocketMessage(wbot,
           `${ticket.contact.number}@${
             ticket.isGroup ? "g.us" : "s.whatsapp.net"
           }`,
@@ -1690,7 +1691,7 @@ const handleChartbot = async (
           headerType: 4
         };
 
-        const sendMsg = await wbot.sendMessage(
+        const sendMsg = await sendBaileysSocketMessage(wbot,
           `${ticket.contact.number}@${
             ticket.isGroup ? "g.us" : "s.whatsapp.net"
           }`,
@@ -1715,7 +1716,7 @@ const handleChartbot = async (
           )
         };
 
-        const sendMsg = await wbot.sendMessage(
+        const sendMsg = await sendBaileysSocketMessage(wbot,
           `${ticket.contact.number}@${
             ticket.isGroup ? "g.us" : "s.whatsapp.net"
           }`,
@@ -2402,7 +2403,7 @@ const handleMessage = async (
 
           const debouncedSentMessage = debounce(
             async () => {
-              await wbot.sendMessage(
+              await sendBaileysSocketMessage(wbot,
                 `${ticket.contact.number}@${
                   ticket.isGroup ? "g.us" : "s.whatsapp.net"
                 }`,
@@ -2453,7 +2454,7 @@ const handleMessage = async (
               const body = `${queue.outOfHoursMessage}`;
               const debouncedSentMessage = debounce(
                 async () => {
-                  await wbot.sendMessage(
+                  await sendBaileysSocketMessage(wbot,
                     `${ticket.contact.number}@${
                       ticket.isGroup ? "g.us" : "s.whatsapp.net"
                     }`,
@@ -2780,7 +2781,7 @@ const handleMessage = async (
             const body = queue.outOfHoursMessage;
             const debouncedSentMessage = debounce(
               async () => {
-                await wbot.sendMessage(
+                await sendBaileysSocketMessage(wbot,
                   `${ticket.contact.number}@${
                     ticket.isGroup ? "g.us" : "s.whatsapp.net"
                   }`,
@@ -2823,7 +2824,7 @@ const handleMessage = async (
       if (whatsapp.greetingMessage) {
         const debouncedSentMessage = debounce(
           async () => {
-            await wbot.sendMessage(
+            await sendBaileysSocketMessage(wbot,
               `${ticket.contact.number}@${
                 ticket.isGroup ? "g.us" : "s.whatsapp.net"
               }`,

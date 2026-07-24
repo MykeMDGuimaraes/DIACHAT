@@ -1,5 +1,8 @@
-import { proto, WASocket } from "baileys";
-import WALegacySocket from "baileys"
+import { sendBaileysSocketMessage } from "../../messaging/adapters/baileys/BaileysSocketPort";
+import {
+  proto,
+  WASocket
+} from "../../messaging/adapters/baileys/BaileysExports";
 import AppError from "../../errors/AppError";
 import GetTicketWbot from "../../helpers/GetTicketWbot";
 import GetWbotMessage from "../../helpers/GetWbotMessage";
@@ -31,7 +34,7 @@ const DeleteWhatsAppMessage = async (messageId: string): Promise<Message> => {
 
     const menssageDelete = messageToDelete as Message;
 
-    await (wbot as WASocket).sendMessage(menssageDelete.remoteJid, {
+    await sendBaileysSocketMessage(wbot as WASocket, menssageDelete.remoteJid, {
       delete: {
         id: menssageDelete.id,
         remoteJid: menssageDelete.remoteJid,

@@ -21,6 +21,7 @@ export interface MetaConnectionInput {
   accessToken: string;
   wabaId: string;
   phoneNumberId: string;
+  graphVersion?: string;
 }
 
 export interface MetaConnectionValidation {
@@ -32,6 +33,18 @@ export interface MetaTextMessageInput {
   accessToken: string;
   recipient: string;
   text: string;
+  graphVersion?: string;
+}
+
+export type MetaMessageKind = "text" | "image" | "audio" | "video" | "document" | "template";
+
+export interface MetaMessageInput {
+  phoneNumberId: string;
+  accessToken: string;
+  recipient: string;
+  kind: MetaMessageKind;
+  payload: Record<string, any>;
+  graphVersion?: string;
 }
 
 interface MetaDebugTokenResponse {
@@ -52,6 +65,11 @@ interface MetaWabaPhoneNumbersResponse {
 
 interface MetaSendMessageResponse {
   messages?: Array<{ id?: string }>;
+}
+
+interface MetaMediaMetadataResponse {
+  url?: string;
+  mime_type?: string;
 }
 
 class HttpsMetaGraphTransport implements MetaGraphTransport {
@@ -129,10 +147,14 @@ class MetaGraphApiClient {
   async validateConnection(
     input: MetaConnectionInput
   ): Promise<MetaConnectionValidation> {
+    const graphVersion = input.graphVersion || this.config.graphVersion;
+    if (!/^v\d+\.\d+$/.test(graphVersion)) {
+      throw new AppError("Versao Graph invalida", 400);
+    }
     const appAccessToken = `${input.appId}|${input.appSecret}`;
     const debugToken = await this.transport.request<MetaDebugTokenResponse>({
       method: "GET",
-      path: `/${this.config.graphVersion}/debug_token`,
+      path: `/${graphVersion}/debug_token`,
       accessToken: appAccessToken,
       query: { input_token: input.accessToken }
     });
@@ -146,7 +168,7 @@ class MetaGraphApiClient {
 
     const phoneNumber = await this.transport.request<MetaPhoneNumberResponse>({
       method: "GET",
-      path: `/${this.config.graphVersion}/${input.phoneNumberId}`,
+      path: `/${graphVersion}/${input.phoneNumberId}`,
       accessToken: input.accessToken,
       query: { fields: "id,display_phone_number" }
     });
@@ -157,7 +179,7 @@ class MetaGraphApiClient {
 
     const wabaPhoneNumbers = await this.transport.request<MetaWabaPhoneNumbersResponse>({
       method: "GET",
-      path: `/${this.config.graphVersion}/${input.wabaId}/phone_numbers`,
+      path: `/${graphVersion}/${input.wabaId}/phone_numbers`,
       accessToken: input.accessToken,
       query: { fields: "id" }
     });
@@ -173,19 +195,66 @@ class MetaGraphApiClient {
   }
 
   async sendText(input: MetaTextMessageInput): Promise<{ providerMessageId?: string }> {
+    return this.sendMessage({
+      ...input,
+      kind: "text",
+      payload: { text: input.text }
+    });
+  }
+
+  async sendMessage(input: MetaMessageInput): Promise<{ providerMessageId?: string }> {
+    const graphVersion = input.graphVersion || this.config.graphVersion;
+    if (!/^v\d+\.\d+$/.test(graphVersion)) {
+      throw new AppError("Versao Graph invalida", 400);
+    }
+    let content: Record<string, unknown>;
+    if (input.kind === "text") {
+      content = { body: input.payload.text, preview_url: false };
+    } else if (input.kind === "template") {
+      content = {
+        name: input.payload.name,
+        language: { code: input.payload.language },
+        components: input.payload.components || []
+      };
+    } else {
+      content = {
+        link: input.payload.link,
+        ...(input.payload.caption ? { caption: input.payload.caption } : {}),
+        ...(input.kind === "document" && input.payload.fileName
+          ? { filename: input.payload.fileName }
+          : {})
+      };
+    }
     const response = await this.transport.request<MetaSendMessageResponse>({
       method: "POST",
-      path: `/${this.config.graphVersion}/${input.phoneNumberId}/messages`,
+      path: `/${graphVersion}/${input.phoneNumberId}/messages`,
       accessToken: input.accessToken,
       body: {
         messaging_product: "whatsapp",
         to: input.recipient,
-        type: "text",
-        text: { body: input.text, preview_url: false }
+        type: input.kind,
+        [input.kind]: content
       }
     });
 
     return { providerMessageId: response.data.messages?.[0]?.id };
+  }
+
+  async getMediaMetadata(input: {
+    mediaId: string;
+    accessToken: string;
+    graphVersion?: string;
+  }): Promise<{ url: string; mimeType?: string }> {
+    const graphVersion = input.graphVersion || this.config.graphVersion;
+    const response = await this.transport.request<MetaMediaMetadataResponse>({
+      method: "GET",
+      path: `/${graphVersion}/${input.mediaId}`,
+      accessToken: input.accessToken
+    });
+    if (!response.data.url || !/^https:\/\//i.test(response.data.url)) {
+      throw new AppError("URL de midia Meta invalida", 502);
+    }
+    return { url: response.data.url, mimeType: response.data.mime_type };
   }
 }
 

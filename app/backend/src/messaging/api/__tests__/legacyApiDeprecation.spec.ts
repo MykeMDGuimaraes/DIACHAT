@@ -24,4 +24,34 @@ describe("legacyApiDeprecation", () => {
     );
     expect(next).toHaveBeenCalled();
   });
+
+  it("returns 410 only after sunset and fourteen quiet days", async () => {
+    const createAudit = jest.fn().mockResolvedValue(undefined);
+    const countRecentUsage = jest.fn().mockResolvedValue(0);
+    const middleware = createLegacyApiDeprecation(
+      createAudit,
+      "Wed, 01 Jan 2025 00:00:00 GMT",
+      countRecentUsage
+    );
+    const req: any = {
+      originalUrl: "/api/messages/send",
+      params: { whatsappId: "2" },
+      user: { companyId: 7 }
+    };
+    const res: any = {
+      set: jest.fn(),
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn()
+    };
+    const next = jest.fn();
+
+    await middleware(req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(410);
+    expect(res.json).toHaveBeenCalledWith({
+      error: "LEGACY_ENDPOINT_GONE",
+      successor: "/api/v1/messages"
+    });
+    expect(next).not.toHaveBeenCalled();
+  });
 });

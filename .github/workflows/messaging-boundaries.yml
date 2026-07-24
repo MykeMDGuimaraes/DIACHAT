@@ -1,0 +1,26 @@
+name: Messaging boundaries
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+      - codex/messaging-v1
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app/backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: app/backend/package-lock.json
+      - run: npm ci
+      - run: npm run check:messaging-boundaries
+      - run: npm run build

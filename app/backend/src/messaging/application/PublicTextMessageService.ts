@@ -16,7 +16,9 @@ export interface CreatePublicTextMessageInput {
   idempotencyScope: string;
   idempotencyKey: string;
   recipient: string;
-  text: string;
+  text?: string;
+  kind?: "text" | "image" | "audio" | "video" | "document" | "template";
+  payload?: Record<string, any>;
 }
 
 interface PublicTextMessageDependencies {
@@ -85,11 +87,13 @@ class PublicTextMessageService {
     recipient: string,
     provider = "baileys"
   ): string {
+    const kind = input.kind || "text";
+    const payload = kind === "text" ? { text: input.text } : input.payload;
     return createRequestFingerprint({
       provider,
-      messageKind: "text",
+      messageKind: kind,
       recipient,
-      requestPayload: { text: input.text }
+      requestPayload: payload
     });
   }
 
@@ -100,9 +104,29 @@ class PublicTextMessageService {
   }> {
     const idempotencyKey = validateIdempotencyKey(input.idempotencyKey);
     const recipient = input.recipient.replace(/\D/g, "");
-    if (recipient.length < 10 || recipient.length > 15 || !input.text.trim()) {
+    const kind = input.kind || "text";
+    const payload: Record<string, any> =
+      kind === "text" ? { text: input.text } : { ...(input.payload || {}) };
+    const supportedKinds = ["text", "image", "audio", "video", "document", "template"];
+    const validText = kind !== "text" ||
+      (typeof input.text === "string" && input.text.trim().length > 0);
+    const validMedia = !["image", "audio", "video", "document"].includes(kind) ||
+      (typeof payload.link === "string" && /^https:\/\//i.test(payload.link));
+    const validTemplate = kind !== "template" ||
+      (typeof payload.name === "string" && typeof payload.language === "string");
+    if (
+      recipient.length < 10 ||
+      recipient.length > 15 ||
+      !supportedKinds.includes(kind) ||
+      !validText ||
+      !validMedia ||
+      !validTemplate
+    ) {
       throw new AppError("Mensagem ou destinatario invalidos", 400);
     }
+    const preview = kind === "text"
+      ? String(input.text)
+      : String(payload.caption || `[${kind}]`);
 
     const normalizedInput = { ...input, idempotencyKey };
     let requestFingerprint = "";
@@ -118,6 +142,12 @@ class PublicTextMessageService {
         throw new AppError("Canal de WhatsApp nao encontrado", 404);
       }
       const provider = whatsapp.channelType === "meta_cloud" ? "meta_cloud" : "baileys";
+      if (kind === "template" && provider !== "meta_cloud") {
+        throw new AppError(
+          "Templates estao disponiveis somente em canais Meta Cloud",
+          400
+        );
+      }
       requestFingerprint = this.fingerprint(normalizedInput, recipient, provider);
 
       const existing = await this.dependencies.findCommand(normalizedInput, transaction);
@@ -160,7 +190,7 @@ class PublicTextMessageService {
             whatsappId: normalizedInput.whatsappId,
             status: "pending",
             unreadMessages: 0,
-            lastMessage: normalizedInput.text,
+            lastMessage: preview,
             isGroup: false
           },
           transaction
@@ -168,7 +198,7 @@ class PublicTextMessageService {
       } else {
         await this.dependencies.updateTicket(
           ticket,
-          { lastMessage: normalizedInput.text },
+          { lastMessage: preview },
           transaction
         );
       }
@@ -178,11 +208,13 @@ class PublicTextMessageService {
         {
           id: commandId,
           remoteJid: `${recipient}@s.whatsapp.net`,
-          dataJson: JSON.stringify({ text: normalizedInput.text, origin: "api" }),
+          dataJson: JSON.stringify({ kind, ...payload, origin: "api" }),
           ack: 0,
           read: false,
           fromMe: true,
-          body: normalizedInput.text,
+          body: preview,
+          mediaType: kind === "text" || kind === "template" ? undefined : kind,
+          mediaUrl: payload.link,
           ticketId: ticket.id,
           contactId: contact.id,
           companyId: normalizedInput.companyId
@@ -195,7 +227,7 @@ class PublicTextMessageService {
           companyId: normalizedInput.companyId,
           whatsappId: normalizedInput.whatsappId,
           provider,
-          messageKind: "text",
+          messageKind: kind,
           recipient,
           idempotencyScope: normalizedInput.idempotencyScope,
           idempotencyKey,
@@ -203,7 +235,7 @@ class PublicTextMessageService {
           status: "queued",
           attemptCount: 0,
           messageId: message.id,
-          requestPayload: { ticketId: ticket.id, text: normalizedInput.text }
+          requestPayload: { ticketId: ticket.id, ...payload }
         },
         transaction
       );

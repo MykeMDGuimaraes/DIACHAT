@@ -5,6 +5,7 @@ describe("MetaInboxProcessor", () => {
     const persistMessage = jest.fn();
     const persistStatus = jest.fn();
     const complete = jest.fn();
+    const resolveMedia = jest.fn().mockResolvedValue(undefined);
     const processor = new MetaInboxProcessor({
       claimNext: jest.fn().mockResolvedValue({
         id: "inbox_1",
@@ -19,6 +20,7 @@ describe("MetaInboxProcessor", () => {
       }),
       persistMessage,
       persistStatus,
+      resolveMedia,
       complete,
       release: jest.fn()
     });
@@ -35,6 +37,7 @@ describe("MetaInboxProcessor", () => {
       claimNext: jest.fn().mockResolvedValue({ id: "inbox_1", companyId: 7, whatsappId: 42, payload: { entry: [] } }),
       persistMessage: jest.fn().mockRejectedValue(new Error("temporary")),
       persistStatus: jest.fn(),
+      resolveMedia: jest.fn(),
       complete: jest.fn(),
       release
     });

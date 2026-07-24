@@ -1,5 +1,5 @@
 import * as Sentry from "@sentry/node";
-import type { WAMessage } from "baileys";
+import type { WAMessage } from "../../messaging/adapters/baileys/BaileysExports";
 import AppError from "../../errors/AppError";
 import Message from "../../models/Message";
 import Ticket from "../../models/Ticket";

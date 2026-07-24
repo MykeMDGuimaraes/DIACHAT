@@ -2,8 +2,12 @@ import type {
   AuthenticationCreds,
   AuthenticationState,
   SignalDataTypeMap
-} from "baileys";
-import { BufferJSON, initAuthCreds, proto } from "baileys";
+} from "../messaging/adapters/baileys/BaileysExports";
+import {
+  BufferJSON,
+  initAuthCreds,
+  proto
+} from "../messaging/adapters/baileys/BaileysExports";
 import Whatsapp from "../models/Whatsapp";
 
 const KEY_MAP: { [T in keyof SignalDataTypeMap]: string } = {

@@ -1,4 +1,9 @@
-import { MessageUpsertType, proto, WASocket } from "baileys";
+import { sendBaileysSocketMessage } from "../../messaging/adapters/baileys/BaileysSocketPort";
+import {
+  MessageUpsertType,
+  proto,
+  WASocket
+} from "../../messaging/adapters/baileys/BaileysExports";
 import {
   convertTextToSpeechAndSaveToFile,
   getBodyMessage,
@@ -174,7 +179,7 @@ export const handleOpenAi = async (
       console.log(173, "OpenAiService");
       logger.info(chat.data.choices[0].message);
       logger.info(response);
-      const sentMessage = await wbot.sendMessage(msg.key.remoteJid!, {
+      const sentMessage = await sendBaileysSocketMessage(wbot, msg.key.remoteJid!, {
         text: `\u200e ${response!}`
       });
       await verifyMessage(sentMessage!, ticket, contact);
@@ -191,7 +196,7 @@ export const handleOpenAi = async (
       ).then(async () => {
         try {
           console.log(194, "OpenAiService");
-          const sendMessage = await wbot.sendMessage(msg.key.remoteJid!, {
+          const sendMessage = await sendBaileysSocketMessage(wbot, msg.key.remoteJid!, {
             audio: { url: `${publicFolder}/${fileNameWithOutExtension}.mp3` },
             mimetype: "audio/mpeg",
             ptt: true
@@ -259,7 +264,7 @@ export const handleOpenAi = async (
         .trim();
     }
     if (openAiSettings.voice === "texto") {
-      const sentMessage = await wbot.sendMessage(msg.key.remoteJid!, {
+      const sentMessage = await sendBaileysSocketMessage(wbot, msg.key.remoteJid!, {
         text: `\u200e ${response!}`
       });
       await verifyMessage(sentMessage!, ticket, contact);
@@ -274,7 +279,7 @@ export const handleOpenAi = async (
         "mp3"
       ).then(async () => {
         try {
-          const sendMessage = await wbot.sendMessage(msg.key.remoteJid!, {
+          const sendMessage = await sendBaileysSocketMessage(wbot, msg.key.remoteJid!, {
             audio: { url: `${publicFolder}/${fileNameWithOutExtension}.mp3` },
             mimetype: "audio/mpeg",
             ptt: true

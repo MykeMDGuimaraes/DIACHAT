@@ -52,6 +52,7 @@ import MetaCloudCredential from "../messaging/persistence/models/MetaCloudCreden
 import MessagingInboxEvent from "../messaging/persistence/models/MessagingInboxEvent";
 import WebhookSubscription from "../messaging/persistence/models/WebhookSubscription";
 import WebhookDelivery from "../messaging/persistence/models/WebhookDelivery";
+import MessagingCapacitySample from "../messaging/persistence/models/MessagingCapacitySample";
 
 // eslint-disable-next-line
 const dbConfig = require("../config/database");
@@ -113,6 +114,7 @@ const models = [
   MessagingInboxEvent,
   WebhookSubscription,
   WebhookDelivery,
+  MessagingCapacitySample,
 ];
 
 sequelize.addModels(models);

@@ -1,5 +1,4 @@
-import { proto } from "baileys";
-import WALegacySocket from "baileys"
+import { proto } from "../messaging/adapters/baileys/BaileysExports";
 import Ticket from "../models/Ticket";
 import GetTicketWbot from "./GetTicketWbot";
 import AppError from "../errors/AppError";

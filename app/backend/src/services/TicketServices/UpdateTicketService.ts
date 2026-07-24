@@ -1,3 +1,4 @@
+import { sendBaileysSocketMessage } from "../../messaging/adapters/baileys/BaileysSocketPort";
 import moment from "moment";
 import * as Sentry from "@sentry/node";
 import CheckContactOpenTickets from "../../helpers/CheckContactOpenTickets";
@@ -188,7 +189,7 @@ const UpdateTicketService = async ({
           'es': "*Mensaje automático*:\nHas sido transferido al departamento *" + queue?.name + "*\npor favor espera, ¡te atenderemos pronto!"
         }
 
-        const queueChangedMessage = await wbot.sendMessage(
+        const queueChangedMessage = await sendBaileysSocketMessage(wbot,
           `${ticket.contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`,
           {
             text: translatedMessage[language]
@@ -210,7 +211,7 @@ const UpdateTicketService = async ({
               'es': "*Mensaje automático*:\nHas sido transferido al agente *" + nome.name + "*\npor favor espera, ¡te atenderemos pronto!"
           }
 
-          const queueChangedMessage = await wbot.sendMessage(
+          const queueChangedMessage = await sendBaileysSocketMessage(wbot,
             `${ticket.contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`,
             {
               text: translatedMessage[language]
@@ -233,7 +234,7 @@ const UpdateTicketService = async ({
               'es': "*Mensaje automático*:\nHas sido transferido al departamento *" + queue?.name + "* y serás atendido por *" + nome.name + "*\npor favor espera, ¡te atenderemos pronto!"
             }
 
-            const queueChangedMessage = await wbot.sendMessage(
+            const queueChangedMessage = await sendBaileysSocketMessage(wbot,
               `${ticket.contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`,
               {
                 text: translatedMessage[language]
@@ -253,7 +254,7 @@ const UpdateTicketService = async ({
                 'es': "*Mensaje automático*:\nHas sido transferido al departamento *" + queue?.name + "*\npor favor espera, ¡te atenderemos pronto!"
               }
 
-              const queueChangedMessage = await wbot.sendMessage(
+              const queueChangedMessage = await sendBaileysSocketMessage(wbot,
                 `${ticket.contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`,
                 {
                   text: translatedMessage[language]

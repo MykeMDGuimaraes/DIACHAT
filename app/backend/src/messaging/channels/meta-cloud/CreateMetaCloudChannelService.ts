@@ -15,6 +15,7 @@ import CreateWhatsAppService from "../../../services/WhatsappService/CreateWhats
 export interface CreateMetaCloudChannelInput extends MetaConnectionInput {
   companyId: number;
   name: string;
+  graphVersion: string;
 }
 
 interface CreatedWhatsapp {
@@ -70,6 +71,9 @@ export const createMetaCloudChannel = async (
   input: CreateMetaCloudChannelInput,
   dependencies: CreateMetaCloudChannelDependencies = defaultDependencies()
 ): Promise<CreatedMetaCloudChannel> => {
+  if (!/^v\d+\.\d+$/.test(input.graphVersion)) {
+    throw new Error("graphVersion invalida");
+  }
   const validation = await dependencies.validateConnection(input);
   const { whatsapp } = await dependencies.createWhatsapp({
     companyId: input.companyId,
@@ -88,6 +92,7 @@ export const createMetaCloudChannel = async (
     appId: input.appId,
     wabaId: input.wabaId,
     phoneNumberId: input.phoneNumberId,
+    graphVersion: input.graphVersion,
     accessTokenCiphertext: dependencies.encryptSecret(input.accessToken, dependencies.keyring),
     appSecretCiphertext: dependencies.encryptSecret(input.appSecret, dependencies.keyring),
     verifyTokenHash: dependencies.hashVerifyToken(verifyToken),

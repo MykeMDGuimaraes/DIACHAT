@@ -139,4 +139,38 @@ describe("PublicTextMessageService", () => {
       expect.anything()
     );
   });
+
+  it("persists a media command with its immutable provider payload", async () => {
+    const createCommand = jest.fn().mockResolvedValue({ id: "cmd_2", status: "queued" });
+    const service = new PublicTextMessageService({
+      transaction: async callback => callback({}),
+      findCommand: jest.fn().mockResolvedValue(null),
+      findWhatsapp: jest.fn().mockResolvedValue({ id: 2, channelType: "meta_cloud" }),
+      findContact: jest.fn().mockResolvedValue({ id: 3 }),
+      createContact: jest.fn(),
+      findTicket: jest.fn().mockResolvedValue({ id: 4 }),
+      createTicket: jest.fn(),
+      updateTicket: jest.fn(),
+      createMessage: jest.fn().mockResolvedValue({ id: "msg_2" }),
+      createCommand,
+      createOutboxEvent: jest.fn()
+    });
+    jest.spyOn(service, "createCommandId").mockReturnValue("cmd_2");
+
+    await service.create({
+      ...input,
+      text: undefined as any,
+      kind: "image",
+      payload: { link: "https://cdn.example.com/photo.jpg", caption: "Foto" }
+    });
+
+    expect(createCommand).toHaveBeenCalledWith(expect.objectContaining({
+      messageKind: "image",
+      requestPayload: {
+        ticketId: 4,
+        link: "https://cdn.example.com/photo.jpg",
+        caption: "Foto"
+      }
+    }), expect.anything());
+  });
 });

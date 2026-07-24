@@ -41,7 +41,7 @@ import {logger} from "../../utils/logger";
 import { delay } from "bluebird";
 import typebotListener from "../TypebotServices/typebotListener";
 import { getWbot } from "../../libs/wbot";
-import { proto } from "baileys";
+import { proto } from "../../messaging/adapters/baileys/BaileysExports";
 import { handleOpenAi } from "../IntegrationsServices/OpenAiService";
 import { IOpenAi } from "../../@types/openai";
 

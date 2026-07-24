@@ -11,7 +11,8 @@ describe("createMetaCloudChannel", () => {
     appSecret: "app-secret",
     accessToken: "access-token",
     wabaId: "waba_1",
-    phoneNumberId: "phone_1"
+    phoneNumberId: "phone_1",
+    graphVersion: "v23.0"
   };
 
   it("validates the submitted credentials and persists only encrypted secrets", async () => {
@@ -47,6 +48,7 @@ describe("createMetaCloudChannel", () => {
         appId: "app_1",
         wabaId: "waba_1",
         phoneNumberId: "phone_1",
+        graphVersion: "v23.0",
         accessTokenCiphertext: "cipher:access-token",
         appSecretCiphertext: "cipher:app-secret",
         verifyTokenHash: "verify-hash",

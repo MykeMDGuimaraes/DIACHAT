@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 
 import AppError from "../../../errors/AppError";
 import { createMetaCloudChannel } from "./CreateMetaCloudChannelService";
+import MetaCloudChannelAdminService from "./MetaCloudChannelAdminService";
 
 const publicBackendUrl = (): string => {
   const backendUrl = process.env.BACKEND_URL;
@@ -22,7 +23,8 @@ export const createMetaCloudChannelHandler = () => async (
     appSecret,
     accessToken,
     wabaId,
-    phoneNumberId
+    phoneNumberId,
+    graphVersion
   } = req.body;
   const backendUrl = publicBackendUrl();
 
@@ -33,7 +35,8 @@ export const createMetaCloudChannelHandler = () => async (
     appSecret,
     accessToken,
     wabaId,
-    phoneNumberId
+    phoneNumberId,
+    graphVersion
   });
 
   return res.status(201).json({
@@ -42,4 +45,31 @@ export const createMetaCloudChannelHandler = () => async (
     verifyToken: channel.verifyToken,
     callbackUrl: `${backendUrl}/api/v1/channels/meta-cloud/${channel.credentialPublicId}/webhook`
   });
+};
+
+export const listMetaCloudChannelsHandler = async (
+  req: Request,
+  res: Response
+): Promise<Response> =>
+  res.json(await new MetaCloudChannelAdminService().list(req.user.companyId));
+
+export const rotateMetaCloudChannelHandler = async (
+  req: Request,
+  res: Response
+): Promise<Response> =>
+  res.json(await new MetaCloudChannelAdminService().rotate(
+    req.user.companyId,
+    Number(req.params.whatsappId),
+    req.body
+  ));
+
+export const revokeMetaCloudChannelHandler = async (
+  req: Request,
+  res: Response
+): Promise<Response> => {
+  await new MetaCloudChannelAdminService().revoke(
+    req.user.companyId,
+    Number(req.params.whatsappId)
+  );
+  return res.status(204).send();
 };

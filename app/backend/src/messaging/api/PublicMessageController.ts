@@ -9,7 +9,9 @@ interface PublicTextMessageCreator {
     idempotencyScope: string;
     idempotencyKey: string;
     recipient: string;
-    text: string;
+    text?: string;
+    kind?: "text" | "image" | "audio" | "video" | "document" | "template";
+    payload?: Record<string, any>;
   }) => Promise<{ command: any; message: any; replayed: boolean }>;
 }
 
@@ -30,13 +32,20 @@ export const createPublicTextMessageHandler = (
     throw new AppError("Canal de WhatsApp nao autorizado", 403);
   }
 
+  const messageType = req.body.type || "text";
   const result = await service.create({
     companyId: credential.companyId,
     whatsappId: connectionId,
     idempotencyScope: credential.id,
     idempotencyKey,
     recipient: req.body.to,
-    text: req.body.text
+    text: req.body.text,
+    ...(messageType === "text"
+      ? {}
+      : {
+          kind: messageType,
+          payload: messageType === "template" ? req.body.template : req.body.media
+        })
   });
 
   if (result.replayed) {
