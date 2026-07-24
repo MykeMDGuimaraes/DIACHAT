@@ -171,16 +171,22 @@ const MainListItems = (props) => {
 
   useEffect(() => {
     async function fetchData() {
-      const companyId = user.companyId;
-      const planConfigs = await getPlanCompany(undefined, companyId);
+      try {
+        const companyId = user.companyId;
+        if (!companyId) return;
+        const planConfigs = await getPlanCompany(undefined, companyId);
 
-      setShowCampaigns(planConfigs.plan.useCampaigns);
-      setShowKanban(planConfigs.plan.useKanban);
-      setShowOpenAi(planConfigs.plan.useOpenAi);
-      setShowIntegrations(planConfigs.plan.useIntegrations);
-      setShowSchedules(planConfigs.plan.useSchedules);
-      setShowInternalChat(planConfigs.plan.useInternalChat);
-      setShowExternalApi(planConfigs.plan.useExternalApi);
+        setShowCampaigns(planConfigs.plan.useCampaigns);
+        setShowKanban(planConfigs.plan.useKanban);
+        setShowOpenAi(planConfigs.plan.useOpenAi);
+        setShowIntegrations(planConfigs.plan.useIntegrations);
+        setShowSchedules(planConfigs.plan.useSchedules);
+        setShowInternalChat(planConfigs.plan.useInternalChat);
+        setShowExternalApi(planConfigs.plan.useExternalApi);
+      } catch (err) {
+        // Sessão expirada ou sem permissão: ignora, o usuário será levado ao login.
+        console.warn("Não foi possível carregar as configurações do plano:", err?.message);
+      }
     }
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
