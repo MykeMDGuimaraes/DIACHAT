@@ -2,12 +2,17 @@ import { randomBytes } from "crypto";
 
 import AppError from "../../errors/AppError";
 import WebhookSubscription from "../persistence/models/WebhookSubscription";
-import { encryptMessagingSecret, loadMessagingKeyring, MessagingKeyring } from "../security/MessagingSecretCipher";
+import {
+  encryptMessagingSecret,
+  loadMessagingKeyring,
+  MessagingKeyring
+} from "../security/MessagingSecretCipher";
 import { validateWebhookUrl } from "./WebhookUrlPolicy";
 
 const supportedEvents = new Set([
   "message.received",
   "message.sent",
+  "message.failed",
   "message.status.updated",
   "ticket.created",
   "ticket.updated",
@@ -43,8 +48,12 @@ export const createWebhookSubscription = async (
   dependencies: CreateWebhookSubscriptionDependencies = defaultDependencies()
 ): Promise<{ id: string; signingSecret: string }> => {
   validateWebhookUrl(input.url);
-  if (!input.name?.trim() || !input.events?.length || input.events.some(event => !supportedEvents.has(event))) {
-    throw new AppError("ConfiguraÃ§Ã£o de webhook invÃ¡lida", 400);
+  if (
+    !input.name?.trim() ||
+    !input.events?.length ||
+    input.events.some(event => !supportedEvents.has(event))
+  ) {
+    throw new AppError("Configuração de webhook inválida", 400);
   }
 
   const signingSecret = dependencies.generateSecret();
@@ -57,7 +66,10 @@ export const createWebhookSubscription = async (
     connectionIds: [...new Set(input.connectionIds || [])],
     messageKinds: [...new Set(input.messageKinds || [])],
     includeApiOrigin: input.includeApiOrigin === true,
-    secretCiphertext: dependencies.encryptSecret(signingSecret, dependencies.keyring),
+    secretCiphertext: dependencies.encryptSecret(
+      signingSecret,
+      dependencies.keyring
+    ),
     keyVersion: dependencies.keyring.activeKeyId,
     consecutiveFailures: 0
   });
@@ -84,22 +96,24 @@ interface UpdateWebhookSubscriptionDependencies {
   keyring: MessagingKeyring;
 }
 
-const defaultUpdateDependencies = (): UpdateWebhookSubscriptionDependencies => ({
-  find: (companyId, id) => WebhookSubscription.findOne({ where: { id, companyId } }),
-  generateSecret: () => `dchwhsec_${randomBytes(32).toString("base64url")}`,
-  encryptSecret: encryptMessagingSecret,
-  keyring: loadMessagingKeyring()
-});
+const defaultUpdateDependencies =
+  (): UpdateWebhookSubscriptionDependencies => ({
+    find: (companyId, id) =>
+      WebhookSubscription.findOne({ where: { id, companyId } }),
+    generateSecret: () => `dchwhsec_${randomBytes(32).toString("base64url")}`,
+    encryptSecret: encryptMessagingSecret,
+    keyring: loadMessagingKeyring()
+  });
 
 export const updateWebhookSubscription = async (
   input: UpdateWebhookSubscriptionInput,
   dependencies: UpdateWebhookSubscriptionDependencies = defaultUpdateDependencies()
 ): Promise<{ id: string; signingSecret?: string }> => {
   const subscription = await dependencies.find(input.companyId, input.id);
-  if (!subscription) throw new AppError("Webhook nÃ£o encontrado", 404);
+  if (!subscription) throw new AppError("Webhook não encontrado", 404);
   if (input.url) validateWebhookUrl(input.url);
   if (input.events?.some(event => !supportedEvents.has(event))) {
-    throw new AppError("Evento de webhook invÃ¡lido", 400);
+    throw new AppError("Evento de webhook inválido", 400);
   }
 
   const changes: Record<string, unknown> = {};
@@ -107,12 +121,17 @@ export const updateWebhookSubscription = async (
     if (input[key] !== undefined) changes[key] = input[key];
   }
   if (input.events) changes.events = [...new Set(input.events)];
-  if (input.connectionIds) changes.connectionIds = [...new Set(input.connectionIds)];
-  if (input.messageKinds) changes.messageKinds = [...new Set(input.messageKinds)];
+  if (input.connectionIds)
+    changes.connectionIds = [...new Set(input.connectionIds)];
+  if (input.messageKinds)
+    changes.messageKinds = [...new Set(input.messageKinds)];
   let signingSecret: string | undefined;
   if (input.rotateSecret) {
     signingSecret = dependencies.generateSecret();
-    changes.secretCiphertext = dependencies.encryptSecret(signingSecret, dependencies.keyring);
+    changes.secretCiphertext = dependencies.encryptSecret(
+      signingSecret,
+      dependencies.keyring
+    );
     changes.keyVersion = dependencies.keyring.activeKeyId;
   }
   await subscription.update(changes);

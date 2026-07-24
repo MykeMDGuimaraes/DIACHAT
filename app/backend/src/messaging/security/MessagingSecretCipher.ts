@@ -5,8 +5,8 @@ export interface MessagingKeyring {
   keys: Record<string, string>;
 }
 
-const invalidSecret = (): Error => new Error("Segredo de mensageria invÃ¡lido");
-const invalidKeyring = (): Error => new Error("Keyring de mensageria invÃ¡lido");
+const invalidSecret = (): Error => new Error("Segredo de mensageria inválido");
+const invalidKeyring = (): Error => new Error("Keyring de mensageria inválido");
 
 export const loadMessagingKeyring = (
   environment: Record<string, string | undefined> = process.env
@@ -28,7 +28,10 @@ export const loadMessagingKeyring = (
   }
 
   try {
-    getKey(activeKeyId.toLowerCase(), { activeKeyId: activeKeyId.toLowerCase(), keys });
+    getKey(activeKeyId.toLowerCase(), {
+      activeKeyId: activeKeyId.toLowerCase(),
+      keys
+    });
   } catch (_) {
     throw invalidKeyring();
   }
@@ -49,12 +52,18 @@ const getKey = (keyId: string, keyring: MessagingKeyring): Buffer => {
   return key;
 };
 
-export const encryptMessagingSecret = (secret: string, keyring: MessagingKeyring): string => {
+export const encryptMessagingSecret = (
+  secret: string,
+  keyring: MessagingKeyring
+): string => {
   const keyId = keyring.activeKeyId;
   const key = getKey(keyId, keyring);
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", key, iv);
-  const ciphertext = Buffer.concat([cipher.update(secret, "utf8"), cipher.final()]);
+  const ciphertext = Buffer.concat([
+    cipher.update(secret, "utf8"),
+    cipher.final()
+  ]);
   const tag = cipher.getAuthTag();
 
   return [
@@ -65,9 +74,13 @@ export const encryptMessagingSecret = (secret: string, keyring: MessagingKeyring
   ].join(".");
 };
 
-export const decryptMessagingSecret = (encryptedSecret: string, keyring: MessagingKeyring): string => {
+export const decryptMessagingSecret = (
+  encryptedSecret: string,
+  keyring: MessagingKeyring
+): string => {
   try {
-    const [keyId, encodedIv, encodedTag, encodedCiphertext, extra] = encryptedSecret.split(".");
+    const [keyId, encodedIv, encodedTag, encodedCiphertext, extra] =
+      encryptedSecret.split(".");
     if (!keyId || !encodedIv || !encodedTag || !encodedCiphertext || extra) {
       throw invalidSecret();
     }
@@ -82,7 +95,10 @@ export const decryptMessagingSecret = (encryptedSecret: string, keyring: Messagi
 
     const decipher = createDecipheriv("aes-256-gcm", key, iv);
     decipher.setAuthTag(tag);
-    return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");
+    return Buffer.concat([
+      decipher.update(ciphertext),
+      decipher.final()
+    ]).toString("utf8");
   } catch (_) {
     throw invalidSecret();
   }

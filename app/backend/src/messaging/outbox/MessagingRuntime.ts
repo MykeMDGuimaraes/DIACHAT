@@ -4,9 +4,8 @@ import MetaInboxProcessor from "../channels/meta-cloud/MetaInboxProcessor";
 import WebhookDeliveryDispatcher from "../webhooks/WebhookDeliveryDispatcher";
 import WebhookFanoutService from "../webhooks/WebhookFanoutService";
 import WebhookRecoveryService from "../webhooks/WebhookRecoveryService";
-import MessageCommandRecoveryService from "../application/MessageCommandRecoveryService";
 import MessageCommandDispatcher from "./MessageCommandDispatcher";
-import MessagingOutboxRecoveryService from "./MessagingOutboxRecoveryService";
+import OutboundPairRecoveryService from "./OutboundPairRecoveryService";
 import MessagingCapacityObserver from "../operations/MessagingCapacityObserver";
 import MetaInboxRecoveryService from "../channels/meta-cloud/MetaInboxRecoveryService";
 
@@ -15,7 +14,7 @@ interface RecoveryRunner {
 }
 
 interface DispatchRunner {
-  dispatchOne: () => Promise<{ status: "idle" | "sent" | "unknown" }>;
+  dispatchOne: () => Promise<{ status: string }>;
 }
 
 interface InboxRunner {
@@ -27,7 +26,9 @@ interface WebhookFanoutRunner {
 }
 
 interface WebhookDispatchRunner {
-  dispatchOne: () => Promise<{ status: "idle" | "delivered" | "retry" | "dead_letter" }>;
+  dispatchOne: () => Promise<{
+    status: "idle" | "delivered" | "retry" | "dead_letter";
+  }>;
 }
 
 interface CapacityObserverRunner {
@@ -39,13 +40,28 @@ class MessagingRuntime {
     private readonly recovery: RecoveryRunner,
     private readonly dispatcher: DispatchRunner,
     private readonly batchSize = 25,
-    private readonly inbox: InboxRunner = { processOne: async () => ({ status: "idle" }) },
-    private readonly webhookFanout: WebhookFanoutRunner = { fanoutOne: async () => ({ status: "idle", deliveries: 0 }) },
-    private readonly webhookDispatcher: WebhookDispatchRunner = { dispatchOne: async () => ({ status: "idle" }) },
-    private readonly capacityObserver: CapacityObserverRunner = { observeOne: async () => ({ status: "idle" }) }
+    private readonly inbox: InboxRunner = {
+      processOne: async () => ({ status: "idle" })
+    },
+    private readonly webhookFanout: WebhookFanoutRunner = {
+      fanoutOne: async () => ({ status: "idle", deliveries: 0 })
+    },
+    private readonly webhookDispatcher: WebhookDispatchRunner = {
+      dispatchOne: async () => ({ status: "idle" })
+    },
+    private readonly capacityObserver: CapacityObserverRunner = {
+      observeOne: async () => ({ status: "idle" })
+    }
   ) {}
 
-  async runOnce(): Promise<{ recovered: number; dispatched: number; processedInbox: number; webhookDeliveriesCreated: number; webhooksDispatched: number; capacitySamplesObserved: number }> {
+  async runOnce(): Promise<{
+    recovered: number;
+    dispatched: number;
+    processedInbox: number;
+    webhookDeliveriesCreated: number;
+    webhooksDispatched: number;
+    capacitySamplesObserved: number;
+  }> {
     const { recovered } = await this.recovery.recover();
     let dispatched = 0;
     let processedInbox = 0;
@@ -85,7 +101,14 @@ class MessagingRuntime {
       webhooksDispatched += 1;
     }
 
-    return { recovered, dispatched, processedInbox, webhookDeliveriesCreated, webhooksDispatched, capacitySamplesObserved };
+    return {
+      recovered,
+      dispatched,
+      processedInbox,
+      webhookDeliveriesCreated,
+      webhooksDispatched,
+      capacitySamplesObserved
+    };
   }
 }
 
@@ -93,15 +116,12 @@ export const createMessagingRuntime = (): MessagingRuntime =>
   new MessagingRuntime(
     {
       recover: async () => {
-        const commands = await new MessageCommandRecoveryService().recover();
-        const events = await new MessagingOutboxRecoveryService().recover();
+        const outbound = await new OutboundPairRecoveryService().recover();
         const webhooks = await new WebhookRecoveryService().recover();
         const inbox = await new MetaInboxRecoveryService().recover();
         return {
           recovered:
-            commands.recovered +
-            events.completed +
-            events.requeued +
+            outbound.recovered +
             webhooks.deliveries +
             webhooks.events +
             inbox.recovered

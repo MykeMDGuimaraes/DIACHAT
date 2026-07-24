@@ -27,7 +27,9 @@ interface CreatedCredential {
 }
 
 export interface CreateMetaCloudChannelDependencies {
-  validateConnection(input: MetaConnectionInput): Promise<MetaConnectionValidation>;
+  validateConnection(
+    input: MetaConnectionInput
+  ): Promise<MetaConnectionValidation>;
   createWhatsapp(input: Record<string, unknown>): Promise<CreatedWhatsapp>;
   createCredential(input: Record<string, unknown>): Promise<CreatedCredential>;
   encryptSecret(secret: string, keyring: MessagingKeyring): string;
@@ -46,7 +48,7 @@ export interface CreatedMetaCloudChannel {
 const loadVerifyTokenPepper = (): string => {
   const pepper = process.env.MESSAGING_WEBHOOK_VERIFY_TOKEN_PEPPER;
   if (!pepper) {
-    throw new Error("MESSAGING_WEBHOOK_VERIFY_TOKEN_PEPPER nÃ£o configurado");
+    throw new Error("MESSAGING_WEBHOOK_VERIFY_TOKEN_PEPPER não configurado");
   }
   return pepper;
 };
@@ -93,8 +95,14 @@ export const createMetaCloudChannel = async (
     wabaId: input.wabaId,
     phoneNumberId: input.phoneNumberId,
     graphVersion: input.graphVersion,
-    accessTokenCiphertext: dependencies.encryptSecret(input.accessToken, dependencies.keyring),
-    appSecretCiphertext: dependencies.encryptSecret(input.appSecret, dependencies.keyring),
+    accessTokenCiphertext: dependencies.encryptSecret(
+      input.accessToken,
+      dependencies.keyring
+    ),
+    appSecretCiphertext: dependencies.encryptSecret(
+      input.appSecret,
+      dependencies.keyring
+    ),
     verifyTokenHash: dependencies.hashVerifyToken(verifyToken),
     keyVersion: dependencies.keyring.activeKeyId,
     validationStatus: "PENDING_WEBHOOK",

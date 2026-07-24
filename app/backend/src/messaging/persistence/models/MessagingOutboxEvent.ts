@@ -51,6 +51,9 @@ class MessagingOutboxEvent extends Model<MessagingOutboxEvent> {
   @Column(DataType.DATE)
   leaseExpiresAt: Date;
 
+  @Column(DataType.UUID)
+  leaseToken: string;
+
   @Column(DataType.TEXT)
   lastError: string;
 

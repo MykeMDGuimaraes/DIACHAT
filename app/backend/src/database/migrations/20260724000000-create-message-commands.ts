@@ -4,7 +4,9 @@ const table = { tableName: "MessageCommands", schema: "messaging" };
 
 module.exports = {
   up: async (queryInterface: QueryInterface) => {
-    await queryInterface.sequelize.query("CREATE SCHEMA IF NOT EXISTS messaging;");
+    await queryInterface.sequelize.query(
+      "CREATE SCHEMA IF NOT EXISTS messaging;"
+    );
 
     await queryInterface.createTable(table, {
       id: {
@@ -15,14 +17,20 @@ module.exports = {
       companyId: {
         type: DataTypes.INTEGER,
         allowNull: false,
-        references: { model: "Companies", key: "id" },
+        references: {
+          model: { tableName: "Companies", schema: "public" },
+          key: "id"
+        },
         onUpdate: "CASCADE",
         onDelete: "CASCADE"
       },
       whatsappId: {
         type: DataTypes.INTEGER,
         allowNull: false,
-        references: { model: "Whatsapps", key: "id" },
+        references: {
+          model: { tableName: "Whatsapps", schema: "public" },
+          key: "id"
+        },
         onUpdate: "CASCADE",
         onDelete: "CASCADE"
       },
@@ -46,7 +54,10 @@ module.exports = {
       messageId: {
         type: DataTypes.STRING,
         allowNull: true,
-        references: { model: "Messages", key: "id" },
+        references: {
+          model: { tableName: "Messages", schema: "public" },
+          key: "id"
+        },
         onUpdate: "CASCADE",
         onDelete: "SET NULL"
       },

@@ -6,7 +6,7 @@ import { StartAllWhatsAppsSessions } from "./services/WbotServices/StartAllWhats
 import Company from "./models/Company";
 import { startQueueProcess } from "./queues";
 import { TransferTicketQueue } from "./wbotTransferTicketQueue";
-import { startMessagingRuntime } from "./messaging/outbox/startMessagingRuntime";
+import { startMessagingRuntime } from "./messaging/public/runtime";
 import cron from "node-cron";
 
 const server = app.listen(process.env.PORT, async () => {
@@ -27,17 +27,14 @@ const server = app.listen(process.env.PORT, async () => {
 });
 
 cron.schedule("* * * * *", async () => {
-
   try {
     // console.log("Running a job at 01:00 at America/Sao_Paulo timezone")
     logger.info(`Serviço de transferencia de tickets iniciado`);
 
     await TransferTicketQueue();
-  }
-  catch (error) {
+  } catch (error) {
     logger.error(error);
   }
-
 });
 
 initIO(server);

@@ -1,4 +1,4 @@
-import { WASocket } from "../messaging/adapters/baileys/BaileysExports";
+import { WASocket } from "../messaging/public/baileys";
 import { getWbot } from "../libs/wbot";
 import GetDefaultWhatsApp from "./GetDefaultWhatsApp";
 import Ticket from "../models/Ticket";

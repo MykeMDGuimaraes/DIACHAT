@@ -1,10 +1,7 @@
-jest.mock(
-  "../../../messaging/adapters/baileys/getBaileysTicketMessagingProvider",
-  () => ({
-    __esModule: true,
-    default: { sendText: jest.fn() }
-  })
-);
+jest.mock("../../../messaging/public/baileys", () => ({
+  __esModule: true,
+  baileysTicketMessagingProvider: { sendText: jest.fn() }
+}));
 
 jest.mock("../../../helpers/GetTicketWbot", () => ({
   __esModule: true,
@@ -12,7 +9,7 @@ jest.mock("../../../helpers/GetTicketWbot", () => ({
 }));
 
 import SendWhatsAppMessage from "../SendWhatsAppMessage";
-import baileysTicketMessagingProvider from "../../../messaging/adapters/baileys/getBaileysTicketMessagingProvider";
+import { baileysTicketMessagingProvider } from "../../../messaging/public/baileys";
 
 describe("SendWhatsAppMessage", () => {
   it("delegates ticket text delivery to the messaging adapter", async () => {
@@ -26,9 +23,9 @@ describe("SendWhatsAppMessage", () => {
       sentMessage
     );
 
-    await expect(
-      SendWhatsAppMessage({ body: "Olá", ticket })
-    ).resolves.toBe(sentMessage);
+    await expect(SendWhatsAppMessage({ body: "Olá", ticket })).resolves.toBe(
+      sentMessage
+    );
 
     expect(baileysTicketMessagingProvider.sendText).toHaveBeenCalledWith({
       ticket,

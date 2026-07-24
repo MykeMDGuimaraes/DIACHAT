@@ -1,8 +1,5 @@
-import { sendBaileysSocketMessage } from "../../messaging/adapters/baileys/BaileysSocketPort";
-import {
-  WAMessage,
-  AnyMessageContent
-} from "../../messaging/adapters/baileys/BaileysExports";
+import { sendBaileysSocketMessage } from "../../messaging/public/baileys";
+import { WAMessage, AnyMessageContent } from "../../messaging/public/baileys";
 import * as Sentry from "@sentry/node";
 import fs from "fs";
 import { exec } from "child_process";
@@ -175,7 +172,8 @@ const SendWhatsAppMedia = async ({
       };
     }
 
-    const sentMessage = await sendBaileysSocketMessage(wbot,
+    const sentMessage = await sendBaileysSocketMessage(
+      wbot,
       `${ticket.contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`,
       {
         ...options

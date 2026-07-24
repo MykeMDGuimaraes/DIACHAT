@@ -31,12 +31,14 @@ interface IngestMetaWebhookDependencies {
 
 const defaultDependencies: IngestMetaWebhookDependencies = {
   transaction: callback => sequelize.transaction(callback),
-  findCredential: publicId => MetaCloudCredential.findOne({ where: { publicId } }),
+  findCredential: publicId =>
+    MetaCloudCredential.findOne({ where: { publicId } }),
   decryptSecret: decryptMessagingSecret,
   getKeyring: loadMessagingKeyring,
   findInbox: (dedupeKey, transaction) =>
     MessagingInboxEvent.findOne({ where: { dedupeKey }, transaction }),
-  createInbox: (data, transaction) => MessagingInboxEvent.create(data as any, { transaction }),
+  createInbox: (data, transaction) =>
+    MessagingInboxEvent.create(data as any, { transaction }),
   createOutbox: (data, transaction) =>
     MessagingOutboxEvent.create(data as any, { transaction })
 };
@@ -45,9 +47,11 @@ export const ingestMetaWebhook = async (
   input: IngestMetaWebhookInput,
   dependencies: IngestMetaWebhookDependencies = defaultDependencies
 ): Promise<{ accepted: true; duplicate: boolean }> => {
-  const credential = await dependencies.findCredential(input.credentialPublicId);
+  const credential = await dependencies.findCredential(
+    input.credentialPublicId
+  );
   if (!credential) {
-    throw new AppError("Canal Meta nÃ£o encontrado", 404);
+    throw new AppError("Canal Meta não encontrado", 404);
   }
 
   const appSecret = dependencies.decryptSecret(
@@ -55,7 +59,7 @@ export const ingestMetaWebhook = async (
     dependencies.getKeyring()
   );
   if (!verifyMetaWebhookSignature(appSecret, input.rawBody, input.signature)) {
-    throw new AppError("Assinatura Meta invÃ¡lida", 403);
+    throw new AppError("Assinatura Meta inválida", 403);
   }
 
   const dedupeKey = createHash("sha256")

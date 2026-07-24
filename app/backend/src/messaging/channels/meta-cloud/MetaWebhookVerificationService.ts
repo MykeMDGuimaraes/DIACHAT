@@ -17,14 +17,18 @@ interface MetaWebhookVerificationDependencies {
 }
 
 const defaultDependencies: MetaWebhookVerificationDependencies = {
-  findCredential: publicId => MetaCloudCredential.findOne({ where: { publicId } }),
+  findCredential: publicId =>
+    MetaCloudCredential.findOne({ where: { publicId } }),
   hashVerifyToken: hashMetaWebhookVerifyToken
 };
 
 const matchesHash = (left: string, right: string): boolean => {
   const leftBuffer = Buffer.from(left, "utf8");
   const rightBuffer = Buffer.from(right, "utf8");
-  return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer);
+  return (
+    leftBuffer.length === rightBuffer.length &&
+    timingSafeEqual(leftBuffer, rightBuffer)
+  );
 };
 
 export const verifyMetaWebhookChallenge = async (
@@ -32,16 +36,23 @@ export const verifyMetaWebhookChallenge = async (
   dependencies: MetaWebhookVerificationDependencies = defaultDependencies
 ): Promise<string> => {
   if (input.mode !== "subscribe" || !input.verifyToken || !input.challenge) {
-    throw new AppError("Desafio Meta invÃ¡lido", 403);
+    throw new AppError("Desafio Meta inválido", 403);
   }
 
-  const credential = await dependencies.findCredential(input.credentialPublicId);
+  const credential = await dependencies.findCredential(
+    input.credentialPublicId
+  );
   if (!credential) {
-    throw new AppError("Canal Meta nÃ£o encontrado", 404);
+    throw new AppError("Canal Meta não encontrado", 404);
   }
 
-  if (!matchesHash(dependencies.hashVerifyToken(input.verifyToken), credential.verifyTokenHash)) {
-    throw new AppError("Verify token Meta invÃ¡lido", 403);
+  if (
+    !matchesHash(
+      dependencies.hashVerifyToken(input.verifyToken),
+      credential.verifyTokenHash
+    )
+  ) {
+    throw new AppError("Verify token Meta inválido", 403);
   }
 
   await credential.update({

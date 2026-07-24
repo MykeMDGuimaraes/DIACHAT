@@ -21,6 +21,7 @@ import toastError from "../../errors/toastError";
 const supportedEvents = [
   "message.received",
   "message.sent",
+  "message.failed",
   "message.status.updated",
   "ticket.created",
   "ticket.updated",

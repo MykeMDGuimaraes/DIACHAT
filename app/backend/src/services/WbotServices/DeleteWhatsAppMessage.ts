@@ -1,8 +1,5 @@
-import { sendBaileysSocketMessage } from "../../messaging/adapters/baileys/BaileysSocketPort";
-import {
-  proto,
-  WASocket
-} from "../../messaging/adapters/baileys/BaileysExports";
+import { sendBaileysSocketMessage } from "../../messaging/public/baileys";
+import { proto, WASocket } from "../../messaging/public/baileys";
 import AppError from "../../errors/AppError";
 import GetTicketWbot from "../../helpers/GetTicketWbot";
 import GetWbotMessage from "../../helpers/GetWbotMessage";
@@ -42,7 +39,6 @@ const DeleteWhatsAppMessage = async (messageId: string): Promise<Message> => {
         fromMe: menssageDelete.fromMe
       }
     });
-
   } catch (err) {
     throw new AppError("ERR_DELETE_WAPP_MSG");
   }

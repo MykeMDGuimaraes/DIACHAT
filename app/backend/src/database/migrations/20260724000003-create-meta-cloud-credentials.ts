@@ -22,14 +22,20 @@ module.exports = {
       companyId: {
         type: DataTypes.INTEGER,
         allowNull: false,
-        references: { model: "Companies", key: "id" },
+        references: {
+          model: { tableName: "Companies", schema: "public" },
+          key: "id"
+        },
         onUpdate: "CASCADE",
         onDelete: "CASCADE"
       },
       whatsappId: {
         type: DataTypes.INTEGER,
         allowNull: false,
-        references: { model: "Whatsapps", key: "id" },
+        references: {
+          model: { tableName: "Whatsapps", schema: "public" },
+          key: "id"
+        },
         onUpdate: "CASCADE",
         onDelete: "CASCADE"
       },

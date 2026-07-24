@@ -11,6 +11,11 @@ import {
 } from "./MessagingRetentionService";
 import MessagingCapacitySample from "../persistence/models/MessagingCapacitySample";
 import AuditLog from "../../models/AuditLog";
+import {
+  MESSAGE_COMMAND_ERROR_CODE,
+  MESSAGE_COMMAND_STATUS,
+  OUTBOX_EVENT_STATUS
+} from "../domain/MessagingStates";
 
 const oldestAgeSeconds = (createdAt?: Date | null): number =>
   createdAt
@@ -35,42 +40,101 @@ const graphLifecycle = () => {
 class MessagingMetricsService {
   async collect(companyId?: number): Promise<Record<string, unknown>> {
     const companyWhere = companyId ? { companyId } : {};
+    const now = new Date();
     const [
       commandsQueued,
-      commandsLeased,
+      commandsInFlight,
       commandsUnknown,
+      commandsFailed,
+      commandsDeadLetter,
+      commandsExpiredLeases,
       outboxReady,
-      outboxLeased,
+      outboxInFlight,
+      outboxDeadLetter,
+      outboxExpiredLeases,
       inboxPending,
       webhookReady,
       webhookDead,
       pausedSubscriptions,
       oldestCommand,
       oldestOutbox,
-      oldestWebhook
-      ,
+      oldestWebhook,
       capacityReady,
       capacityObservedLastMinute,
       oldestCapacity
     ] = await Promise.all([
-      MessageCommand.count({ where: { ...companyWhere, status: "queued" } }),
-      MessageCommand.count({ where: { ...companyWhere, status: "leased" } }),
-      MessageCommand.count({ where: { ...companyWhere, status: "unknown" } }),
-      MessagingOutboxEvent.count({ where: { ...companyWhere, status: "ready" } }),
-      MessagingOutboxEvent.count({ where: { ...companyWhere, status: "leased" } }),
-      MessagingInboxEvent.count({ where: { ...companyWhere, status: "received" } }),
+      MessageCommand.count({
+        where: { ...companyWhere, status: MESSAGE_COMMAND_STATUS.QUEUED }
+      }),
+      MessageCommand.count({
+        where: { ...companyWhere, status: MESSAGE_COMMAND_STATUS.SENDING }
+      }),
+      MessageCommand.count({
+        where: { ...companyWhere, status: MESSAGE_COMMAND_STATUS.UNKNOWN }
+      }),
+      MessageCommand.count({
+        where: { ...companyWhere, status: MESSAGE_COMMAND_STATUS.FAILED }
+      }),
+      MessageCommand.count({
+        where: {
+          ...companyWhere,
+          status: MESSAGE_COMMAND_STATUS.FAILED,
+          errorCode: MESSAGE_COMMAND_ERROR_CODE.SEND_RETRY_EXHAUSTED
+        }
+      }),
+      MessageCommand.count({
+        where: {
+          ...companyWhere,
+          status: MESSAGE_COMMAND_STATUS.SENDING,
+          leaseExpiresAt: { [Op.lte]: now }
+        }
+      }),
+      MessagingOutboxEvent.count({
+        where: { ...companyWhere, status: OUTBOX_EVENT_STATUS.READY }
+      }),
+      MessagingOutboxEvent.count({
+        where: { ...companyWhere, status: OUTBOX_EVENT_STATUS.PROCESSING }
+      }),
+      MessagingOutboxEvent.count({
+        where: { ...companyWhere, status: OUTBOX_EVENT_STATUS.DEAD_LETTER }
+      }),
+      MessagingOutboxEvent.count({
+        where: {
+          ...companyWhere,
+          status: OUTBOX_EVENT_STATUS.PROCESSING,
+          leaseExpiresAt: { [Op.lte]: now }
+        }
+      }),
+      MessagingInboxEvent.count({
+        where: { ...companyWhere, status: "received" }
+      }),
       WebhookDelivery.count({ where: { ...companyWhere, status: "ready" } }),
-      WebhookDelivery.count({ where: { ...companyWhere, status: "dead_letter" } }),
+      WebhookDelivery.count({
+        where: { ...companyWhere, status: "dead_letter" }
+      }),
       WebhookSubscription.count({
         where: { ...companyWhere, pausedAt: { [Op.not]: null } }
       }),
       MessageCommand.findOne({
-        where: { ...companyWhere, status: { [Op.in]: ["queued", "leased"] } },
+        where: {
+          ...companyWhere,
+          status: {
+            [Op.in]: [
+              MESSAGE_COMMAND_STATUS.QUEUED,
+              MESSAGE_COMMAND_STATUS.SENDING
+            ]
+          }
+        },
         attributes: ["createdAt"],
         order: [["createdAt", "ASC"]]
       }),
       MessagingOutboxEvent.findOne({
-        where: { ...companyWhere, status: { [Op.in]: ["ready", "leased"] } },
+        where: {
+          ...companyWhere,
+          status: {
+            [Op.in]: [OUTBOX_EVENT_STATUS.READY, OUTBOX_EVENT_STATUS.PROCESSING]
+          }
+        },
         attributes: ["createdAt"],
         order: [["createdAt", "ASC"]]
       }),
@@ -115,8 +179,7 @@ class MessagingMetricsService {
       })
     ]);
     const configuredLegacySunset = new Date(
-      process.env.LEGACY_MESSAGES_API_SUNSET_AT ||
-        "2026-09-22T00:00:00.000Z"
+      process.env.LEGACY_MESSAGES_API_SUNSET_AT || "2026-09-22T00:00:00.000Z"
     );
     const legacySunset = Number.isNaN(configuredLegacySunset.getTime())
       ? new Date("2026-09-22T00:00:00.000Z")
@@ -126,14 +189,22 @@ class MessagingMetricsService {
       companyId: companyId || null,
       commands: {
         queued: commandsQueued,
-        leased: commandsLeased,
+        inFlight: commandsInFlight,
         unknown: commandsUnknown,
+        failed: commandsFailed,
+        deadLetter: commandsDeadLetter,
+        expiredLeases: commandsExpiredLeases,
         oldestPendingSeconds: oldestAgeSeconds(oldestCommand?.createdAt)
       },
       outbox: {
         ready: outboxReady,
-        leased: outboxLeased,
+        inFlight: outboxInFlight,
+        deadLetter: outboxDeadLetter,
+        expiredLeases: outboxExpiredLeases,
         oldestPendingSeconds: oldestAgeSeconds(oldestOutbox?.createdAt)
+      },
+      alerts: {
+        deadLetter: commandsDeadLetter > 0 || outboxDeadLetter > 0
       },
       inbox: { pending: inboxPending },
       webhooks: {
@@ -163,8 +234,7 @@ class MessagingMetricsService {
           ? oldestAgeSeconds(new Date(lastRetentionResult.ranAt))
           : null
       },
-      metaGraph: graphLifecycle()
-      ,
+      metaGraph: graphLifecycle(),
       legacyApi: {
         sunsetAt: legacySunset.toISOString(),
         callsLast14Days: legacyCallsLast14Days,

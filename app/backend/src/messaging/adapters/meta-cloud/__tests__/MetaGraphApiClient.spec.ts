@@ -4,8 +4,12 @@ describe("MetaGraphApiClient", () => {
   it("validates the company app, number and WABA through the real Graph API contract", async () => {
     const request = jest
       .fn()
-      .mockResolvedValueOnce({ data: { data: { is_valid: true, app_id: "app_1" } } })
-      .mockResolvedValueOnce({ data: { id: "phone_1", display_phone_number: "+55 11 99999-9999" } })
+      .mockResolvedValueOnce({
+        data: { data: { is_valid: true, app_id: "app_1" } }
+      })
+      .mockResolvedValueOnce({
+        data: { id: "phone_1", display_phone_number: "+55 11 99999-9999" }
+      })
       .mockResolvedValueOnce({ data: { data: [{ id: "phone_1" }] } });
     const client = new MetaGraphApiClient(
       { graphVersion: "v23.0", apiBaseUrl: "https://graph.facebook.com" },
@@ -45,7 +49,9 @@ describe("MetaGraphApiClient", () => {
       {
         request: jest
           .fn()
-          .mockResolvedValueOnce({ data: { data: { is_valid: true, app_id: "app_1" } } })
+          .mockResolvedValueOnce({
+            data: { data: { is_valid: true, app_id: "app_1" } }
+          })
           .mockResolvedValueOnce({ data: { id: "phone_1" } })
           .mockResolvedValueOnce({ data: { data: [{ id: "other_phone" }] } })
       }
@@ -63,7 +69,9 @@ describe("MetaGraphApiClient", () => {
   });
 
   it("sends a text message through the submitted phone number", async () => {
-    const request = jest.fn().mockResolvedValue({ data: { messages: [{ id: "wamid.1" }] } });
+    const request = jest
+      .fn()
+      .mockResolvedValue({ data: { messages: [{ id: "wamid.1" }] } });
     const client = new MetaGraphApiClient(
       { graphVersion: "v23.0", apiBaseUrl: "https://graph.facebook.com" },
       { request }
@@ -74,7 +82,7 @@ describe("MetaGraphApiClient", () => {
         phoneNumberId: "phone_1",
         accessToken: "access-token",
         recipient: "5511999999999",
-        text: "OlÃ¡"
+        text: "Olá"
       })
     ).resolves.toEqual({ providerMessageId: "wamid.1" });
 
@@ -86,13 +94,15 @@ describe("MetaGraphApiClient", () => {
         messaging_product: "whatsapp",
         to: "5511999999999",
         type: "text",
-        text: { body: "OlÃ¡", preview_url: false }
+        text: { body: "Olá", preview_url: false }
       }
     });
   });
 
   it("sends media and template commands using their dedicated Graph payloads", async () => {
-    const request = jest.fn().mockResolvedValue({ data: { messages: [{ id: "wamid.2" }] } });
+    const request = jest
+      .fn()
+      .mockResolvedValue({ data: { messages: [{ id: "wamid.2" }] } });
     const client = new MetaGraphApiClient(
       { graphVersion: "v23.0", apiBaseUrl: "https://graph.facebook.com" },
       { request }
@@ -113,17 +123,27 @@ describe("MetaGraphApiClient", () => {
       payload: { name: "pedido_pronto", language: "pt_BR", components: [] }
     });
 
-    expect(request).toHaveBeenNthCalledWith(1, expect.objectContaining({
-      body: expect.objectContaining({
-        type: "image",
-        image: { link: "https://cdn.example.com/photo.jpg", caption: "Foto" }
+    expect(request).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        body: expect.objectContaining({
+          type: "image",
+          image: { link: "https://cdn.example.com/photo.jpg", caption: "Foto" }
+        })
       })
-    }));
-    expect(request).toHaveBeenNthCalledWith(2, expect.objectContaining({
-      body: expect.objectContaining({
-        type: "template",
-        template: { name: "pedido_pronto", language: { code: "pt_BR" }, components: [] }
+    );
+    expect(request).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        body: expect.objectContaining({
+          type: "template",
+          template: {
+            name: "pedido_pronto",
+            language: { code: "pt_BR" },
+            components: []
+          }
+        })
       })
-    }));
+    );
   });
 });

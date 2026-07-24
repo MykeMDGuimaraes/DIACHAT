@@ -9,9 +9,11 @@ describe("loadMetaGraphConfig", () => {
   });
 
   it("rejects a missing or moving Graph API version", () => {
-    expect(() => loadMetaGraphConfig({})).toThrow("META_GRAPH_VERSION invÃ¡lida");
+    expect(() => loadMetaGraphConfig({})).toThrow(
+      "META_GRAPH_VERSION inválida"
+    );
     expect(() => loadMetaGraphConfig({ META_GRAPH_VERSION: "latest" })).toThrow(
-      "META_GRAPH_VERSION invÃ¡lida"
+      "META_GRAPH_VERSION inválida"
     );
   });
 });

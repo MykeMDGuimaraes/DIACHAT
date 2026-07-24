@@ -10,7 +10,7 @@ import { ApiV1Error } from "../controllers/InternalV1Controller";
 import {
   messagingCapacityProbe,
   messagingMetrics
-} from "../messaging/operations/MessagingOperationsController";
+} from "../messaging/public/http";
 
 const upload = multer(uploadConfig);
 

@@ -1,4 +1,4 @@
-import { sendBaileysSocketMessage } from "../../messaging/adapters/baileys/BaileysSocketPort";
+import { sendBaileysSocketMessage } from "../../messaging/public/baileys";
 import path, { join } from "path";
 import { promisify } from "util";
 import { readFile, writeFile } from "fs";
@@ -17,7 +17,7 @@ import {
   WAMessageStubType,
   WAMessageUpdate,
   WASocket
-} from "../../messaging/adapters/baileys/BaileysExports";
+} from "../../messaging/public/baileys";
 import Contact from "../../models/Contact";
 import Ticket from "../../models/Ticket";
 import Message from "../../models/Message";
@@ -70,7 +70,7 @@ import { IConnections, INodes } from "../WebhookService/DispatchWebHookService";
 import { ActionsWebhookService } from "../WebhookService/ActionsWebhookService";
 import { WebhookModel } from "../../models/Webhook";
 
-import {differenceInMilliseconds} from "date-fns";
+import { differenceInMilliseconds } from "date-fns";
 import Whatsapp from "../../models/Whatsapp";
 
 import axios from "axios";
@@ -111,11 +111,11 @@ const getTypeMessage = (msg: proto.IWebMessageInfo): string => {
 };
 
 function hasCaption(title: string, fileName: string) {
-  if(!title || !fileName) return false;
+  if (!title || !fileName) return false;
 
-  const fileNameExtension = fileName.substring(fileName.lastIndexOf('.') + 1);
+  const fileNameExtension = fileName.substring(fileName.lastIndexOf(".") + 1);
 
-  return !fileName.includes(`${title}.${fileNameExtension}`)
+  return !fileName.includes(`${title}.${fileNameExtension}`);
 }
 
 export function validaCpfCnpj(val) {
@@ -253,7 +253,8 @@ export const sendMessageImage = async (
 ) => {
   let sentMessage;
   try {
-    sentMessage = await sendBaileysSocketMessage(wbot,
+    sentMessage = await sendBaileysSocketMessage(
+      wbot,
       `${contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`,
       {
         image: url
@@ -265,7 +266,8 @@ export const sendMessageImage = async (
       }
     );
   } catch (error) {
-    sentMessage = await sendBaileysSocketMessage(wbot,
+    sentMessage = await sendBaileysSocketMessage(
+      wbot,
       `${contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`,
       {
         text: formatBody(
@@ -287,7 +289,8 @@ export const sendMessageLink = async (
 ) => {
   let sentMessage;
   try {
-    sentMessage = await sendBaileysSocketMessage(wbot,
+    sentMessage = await sendBaileysSocketMessage(
+      wbot,
       `${contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`,
       {
         document: url
@@ -299,7 +302,8 @@ export const sendMessageLink = async (
       }
     );
   } catch (error) {
-    sentMessage = await sendBaileysSocketMessage(wbot,
+    sentMessage = await sendBaileysSocketMessage(
+      wbot,
       `${contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`,
       {
         text: formatBody("Não consegui enviar o PDF, tente novamente!", contact)
@@ -649,8 +653,6 @@ export const keepOnlySpecifiedChars = (str: string) => {
   return str.replace(/[^a-zA-Z0-9áéíóúÁÉÍÓÚâêîôûÂÊÎÔÛãõÃÕçÇ!?.,;:\s]/g, "");
 };
 
-
-
 const handleOpenAi = async (
   msg: proto.IWebMessageInfo,
   wbot: Session,
@@ -660,7 +662,6 @@ const handleOpenAi = async (
   ticketTraking: TicketTraking = null,
   openAiSettings = null
 ): Promise<void> => {
-
   // REGRA PARA DESABILITAR O BOT PARA ALGUM CONTATO
   if (contact.disableBot) {
     return;
@@ -672,8 +673,7 @@ const handleOpenAi = async (
 
   let { prompt } = await ShowWhatsAppService(wbot.id, ticket.companyId);
 
-  if( openAiSettings )
-    prompt = openAiSettings;
+  if (openAiSettings) prompt = openAiSettings;
 
   if (!prompt && !isNil(ticket?.queue?.prompt)) {
     prompt = ticket.queue.prompt;
@@ -756,9 +756,13 @@ const handleOpenAi = async (
         .trim();
     }
 
-    const sentMessage = await sendBaileysSocketMessage(wbot, msg.key.remoteJid!, {
-      text: response!
-    });
+    const sentMessage = await sendBaileysSocketMessage(
+      wbot,
+      msg.key.remoteJid!,
+      {
+        text: response!
+      }
+    );
     await verifyMessage(sentMessage!, ticket, contact);
 
     /*
@@ -896,7 +900,7 @@ export const verifyMediaMessage = async (
   try {
     await writeFileAsync(
       join(__dirname, "..", "..", "..", "public", media.filename),
-      Buffer.from(media.data, 'base64')
+      Buffer.from(media.data, "base64")
     );
   } catch (err) {
     Sentry.captureException(err);
@@ -906,7 +910,11 @@ export const verifyMediaMessage = async (
   const body = getBodyMessage(msg);
 
   const hasCap = hasCaption(body, media.filename);
-  const bodyMessage = body ? hasCap ? formatBody(body, ticket.contact) : "-" : "-";
+  const bodyMessage = body
+    ? hasCap
+      ? formatBody(body, ticket.contact)
+      : "-"
+    : "-";
 
   const messageData = {
     id: msg.key.id,
@@ -922,7 +930,7 @@ export const verifyMediaMessage = async (
     remoteJid: msg.key.remoteJid,
     participant: msg.key.participant,
     dataJson: JSON.stringify(msg),
-    ticketTrakingId: ticketTraking?.id,
+    ticketTrakingId: ticketTraking?.id
   };
 
   await ticket.update({
@@ -1086,7 +1094,6 @@ const verifyQueue = async (
   contact: Contact,
   mediaSent?: Message | undefined
 ) => {
-
   const companyId = ticket.companyId;
 
   const { queues, greetingMessage, maxUseBotQueues, timeUseBotQueues } =
@@ -1106,7 +1113,8 @@ const verifyQueue = async (
     ) {
       const body = formatBody(`${greetingMessage}`, contact);
 
-      await sendBaileysSocketMessage(wbot,
+      await sendBaileysSocketMessage(
+        wbot,
         `${contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`,
         {
           text: body
@@ -1186,7 +1194,8 @@ const verifyQueue = async (
       text: formatBody(`\u200e${greetingMessage}\n\n${options}`, contact)
     };
 
-    const sendMsg = await sendBaileysSocketMessage(wbot,
+    const sendMsg = await sendBaileysSocketMessage(
+      wbot,
       `${contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`,
       textMessage
     );
@@ -1237,7 +1246,8 @@ const verifyQueue = async (
             `\u200e ${queue.outOfHoursMessage}\n\n*[ # ]* - Voltar ao Menu Principal`,
             ticket.contact
           );
-          const sentMessage = await sendBaileysSocketMessage(wbot,
+          const sentMessage = await sendBaileysSocketMessage(
+            wbot,
             `${contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`,
             {
               text: body
@@ -1295,7 +1305,8 @@ const verifyQueue = async (
         ticket.contact
       );
       if (choosenQueue.greetingMessage) {
-        const sentMessage = await sendBaileysSocketMessage(wbot,
+        const sentMessage = await sendBaileysSocketMessage(
+          wbot,
           `${contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`,
           {
             text: body
@@ -1565,7 +1576,8 @@ const handleChartbot = async (
         headerType: 4
       };
 
-      const sendMsg = await sendBaileysSocketMessage(wbot,
+      const sendMsg = await sendBaileysSocketMessage(
+        wbot,
         `${ticket.contact.number}@${
           ticket.isGroup ? "g.us" : "s.whatsapp.net"
         }`,
@@ -1591,7 +1603,8 @@ const handleChartbot = async (
         )
       };
 
-      const sendMsg = await sendBaileysSocketMessage(wbot,
+      const sendMsg = await sendBaileysSocketMessage(
+        wbot,
         `${ticket.contact.number}@${
           ticket.isGroup ? "g.us" : "s.whatsapp.net"
         }`,
@@ -1660,7 +1673,8 @@ const handleChartbot = async (
           sections
         };
 
-        const sendMsg = await sendBaileysSocketMessage(wbot,
+        const sendMsg = await sendBaileysSocketMessage(
+          wbot,
           `${ticket.contact.number}@${
             ticket.isGroup ? "g.us" : "s.whatsapp.net"
           }`,
@@ -1691,7 +1705,8 @@ const handleChartbot = async (
           headerType: 4
         };
 
-        const sendMsg = await sendBaileysSocketMessage(wbot,
+        const sendMsg = await sendBaileysSocketMessage(
+          wbot,
           `${ticket.contact.number}@${
             ticket.isGroup ? "g.us" : "s.whatsapp.net"
           }`,
@@ -1716,7 +1731,8 @@ const handleChartbot = async (
           )
         };
 
-        const sendMsg = await sendBaileysSocketMessage(wbot,
+        const sendMsg = await sendBaileysSocketMessage(
+          wbot,
           `${ticket.contact.number}@${
             ticket.isGroup ? "g.us" : "s.whatsapp.net"
           }`,
@@ -1784,7 +1800,6 @@ const flowbuilderIntegration = async (
   */
 
   if (!msg.key.fromMe && ticket.status === "closed") {
-
     console.log("===== CHANGE =====");
     await ticket.update({ status: "pending" });
     await ticket.reload({
@@ -1828,7 +1843,8 @@ const flowbuilderIntegration = async (
   // Welcome flow
   if (
     !isFirstMsg &&
-    listPhrase.filter(item => item.phrase.toLowerCase() === body.toLowerCase()).length === 0
+    listPhrase.filter(item => item.phrase.toLowerCase() === body.toLowerCase())
+      .length === 0
   ) {
     const flow = await FlowBuilderModel.findOne({
       where: {
@@ -1901,7 +1917,8 @@ const flowbuilderIntegration = async (
 
   // Flow with not found phrase
   if (
-    listPhrase.filter(item => item.phrase.toLowerCase() === body.toLowerCase()).length === 0 &&
+    listPhrase.filter(item => item.phrase.toLowerCase() === body.toLowerCase())
+      .length === 0 &&
     diferencaEmMilissegundos >= seisHorasEmMilissegundos &&
     isFirstMsg
   ) {
@@ -1942,9 +1959,13 @@ const flowbuilderIntegration = async (
   }
 
   // Campaign fluxo
-  if (listPhrase.filter(item => item.phrase.toLowerCase() === body.toLowerCase()).length !== 0) {
-
-    const flowDispar = listPhrase.filter(item => item.phrase.toLowerCase() === body.toLowerCase())[0];
+  if (
+    listPhrase.filter(item => item.phrase.toLowerCase() === body.toLowerCase())
+      .length !== 0
+  ) {
+    const flowDispar = listPhrase.filter(
+      item => item.phrase.toLowerCase() === body.toLowerCase()
+    )[0];
     const flow = await FlowBuilderModel.findOne({
       where: {
         id: flowDispar.flowId
@@ -2122,7 +2143,7 @@ export const handleMessageIntegration = async (
   isMenu: boolean = null,
   whatsapp: Whatsapp = null,
   contact: Contact = null,
-  isFirstMsg: Ticket | null = null,
+  isFirstMsg: Ticket | null = null
 ): Promise<void> => {
   const msgType = getTypeMessage(msg);
 
@@ -2141,9 +2162,8 @@ export const handleMessageIntegration = async (
     console.log("entrou no typebot");
     // await typebots(ticket, msg, wbot, queueIntegration);
     await typebotListener({ ticket, msg, wbot, typebot: queueIntegration });
-  } else if(queueIntegration.type === "flowbuilder") {
+  } else if (queueIntegration.type === "flowbuilder") {
     if (!isMenu) {
-
       await flowbuilderIntegration(
         msg,
         wbot,
@@ -2154,7 +2174,6 @@ export const handleMessageIntegration = async (
         isFirstMsg
       );
     } else {
-
       if (
         !isNaN(parseInt(ticket.lastMessage)) &&
         ticket.status !== "open" &&
@@ -2231,7 +2250,6 @@ const flowBuilderQueue = async (
   //const integrations = await ShowQueueIntegrationService(whatsapp.integrationId, companyId);
   //await handleMessageIntegration(msg, wbot, integrations, ticket, companyId, true, whatsapp);
 };
-
 
 const handleMessage = async (
   msg: proto.IWebMessageInfo,
@@ -2354,7 +2372,6 @@ const handleMessage = async (
 
     try {
       if (!msg.key.fromMe) {
-
         if (ticketTraking !== null && verifyRating(ticketTraking)) {
           handleRating(parseFloat(bodyMessage), ticket, ticketTraking);
           return;
@@ -2403,7 +2420,8 @@ const handleMessage = async (
 
           const debouncedSentMessage = debounce(
             async () => {
-              await sendBaileysSocketMessage(wbot,
+              await sendBaileysSocketMessage(
+                wbot,
                 `${ticket.contact.number}@${
                   ticket.isGroup ? "g.us" : "s.whatsapp.net"
                 }`,
@@ -2454,7 +2472,8 @@ const handleMessage = async (
               const body = `${queue.outOfHoursMessage}`;
               const debouncedSentMessage = debounce(
                 async () => {
-                  await sendBaileysSocketMessage(wbot,
+                  await sendBaileysSocketMessage(
+                    wbot,
                     `${ticket.contact.number}@${
                       ticket.isGroup ? "g.us" : "s.whatsapp.net"
                     }`,
@@ -2593,7 +2612,7 @@ const handleMessage = async (
         contact,
         mediaSent,
         ticketTraking,
-        openAiSettings,
+        openAiSettings
       );
 
       return;
@@ -2620,7 +2639,6 @@ const handleMessage = async (
       !isNil(whatsapp.integrationId) &&
       !ticket.useIntegration
     ) {
-
       const integrations = await ShowQueueIntegrationService(
         whatsapp.integrationId,
         companyId
@@ -2721,7 +2739,6 @@ const handleMessage = async (
       !isNil(whatsapp.integrationId) &&
       !ticket.useIntegration
     ) {
-
       const integrations = await ShowQueueIntegrationService(
         whatsapp.integrationId,
         companyId
@@ -2781,7 +2798,8 @@ const handleMessage = async (
             const body = queue.outOfHoursMessage;
             const debouncedSentMessage = debounce(
               async () => {
-                await sendBaileysSocketMessage(wbot,
+                await sendBaileysSocketMessage(
+                  wbot,
                   `${ticket.contact.number}@${
                     ticket.isGroup ? "g.us" : "s.whatsapp.net"
                   }`,
@@ -2824,7 +2842,8 @@ const handleMessage = async (
       if (whatsapp.greetingMessage) {
         const debouncedSentMessage = debounce(
           async () => {
-            await sendBaileysSocketMessage(wbot,
+            await sendBaileysSocketMessage(
+              wbot,
               `${ticket.contact.number}@${
                 ticket.isGroup ? "g.us" : "s.whatsapp.net"
               }`,
@@ -2852,7 +2871,6 @@ const handleMessage = async (
         await handleChartbot(ticket, msg, wbot, dontReadTheFirstQuestion);
       }
     }
-
   } catch (err) {
     console.log(err);
     Sentry.captureException(err);

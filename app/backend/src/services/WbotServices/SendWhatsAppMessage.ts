@@ -1,9 +1,9 @@
 import * as Sentry from "@sentry/node";
-import type { WAMessage } from "../../messaging/adapters/baileys/BaileysExports";
+import type { WAMessage } from "../../messaging/public/baileys";
 import AppError from "../../errors/AppError";
 import Message from "../../models/Message";
 import Ticket from "../../models/Ticket";
-import baileysTicketMessagingProvider from "../../messaging/adapters/baileys/getBaileysTicketMessagingProvider";
+import { baileysTicketMessagingProvider } from "../../messaging/public/baileys";
 
 import formatBody from "../../helpers/Mustache";
 
@@ -21,23 +21,22 @@ const SendWhatsAppMessage = async ({
   let quoted: WAMessage | undefined;
 
   if (quotedMsg) {
-      const chatMessages = await Message.findOne({
-        where: {
-          id: quotedMsg.id
-        }
-      });
-
-      if (chatMessages) {
-        const msgFound = JSON.parse(chatMessages.dataJson);
-
-        quoted = {
-          key: msgFound.key,
-          message: {
-            extendedTextMessage: msgFound.message.extendedTextMessage
-          }
-        } as WAMessage;
+    const chatMessages = await Message.findOne({
+      where: {
+        id: quotedMsg.id
       }
-    
+    });
+
+    if (chatMessages) {
+      const msgFound = JSON.parse(chatMessages.dataJson);
+
+      quoted = {
+        key: msgFound.key,
+        message: {
+          extendedTextMessage: msgFound.message.extendedTextMessage
+        }
+      } as WAMessage;
+    }
   }
 
   try {

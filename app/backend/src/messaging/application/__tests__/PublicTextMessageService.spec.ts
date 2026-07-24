@@ -7,13 +7,15 @@ describe("PublicTextMessageService", () => {
     idempotencyScope: "credential_1",
     idempotencyKey: "request-12345678",
     recipient: "+55 (11) 99999-9999",
-    text: "OlÃ¡"
+    text: "Olá"
   };
 
   it("persists the customer message, command and outbox event in one transaction", async () => {
     const transaction = { id: "tx_1" };
     const createMessage = jest.fn().mockResolvedValue({ id: "msg_1" });
-    const createCommand = jest.fn().mockResolvedValue({ id: "cmd_1", status: "queued" });
+    const createCommand = jest
+      .fn()
+      .mockResolvedValue({ id: "cmd_1", status: "queued" });
     const createOutboxEvent = jest.fn();
     const service = new PublicTextMessageService({
       transaction: async callback => callback(transaction),
@@ -42,7 +44,7 @@ describe("PublicTextMessageService", () => {
         ticketId: 4,
         contactId: 3,
         fromMe: true,
-        body: "OlÃ¡"
+        body: "Olá"
       }),
       transaction
     );
@@ -51,7 +53,7 @@ describe("PublicTextMessageService", () => {
         id: "cmd_1",
         messageId: "msg_1",
         recipient: "5511999999999",
-        requestPayload: { ticketId: 4, text: "OlÃ¡" }
+        requestPayload: { ticketId: 4, text: "Olá" }
       }),
       transaction
     );
@@ -65,7 +67,11 @@ describe("PublicTextMessageService", () => {
   });
 
   it("returns a replay without creating another message", async () => {
-    const existing = { id: "cmd_1", requestFingerprint: "same", messageId: "msg_1" };
+    const existing = {
+      id: "cmd_1",
+      requestFingerprint: "same",
+      messageId: "msg_1"
+    };
     const service = new PublicTextMessageService({
       transaction: async callback => callback({}),
       findCommand: jest.fn().mockResolvedValue(existing),
@@ -89,13 +95,20 @@ describe("PublicTextMessageService", () => {
   });
 
   it("returns the winning command when a concurrent insert hits the unique idempotency index", async () => {
-    const existing = { id: "cmd_1", requestFingerprint: "same", messageId: "msg_1" };
+    const existing = {
+      id: "cmd_1",
+      requestFingerprint: "same",
+      messageId: "msg_1"
+    };
     const service = new PublicTextMessageService({
       transaction: async callback => {
         await callback({});
         throw { name: "SequelizeUniqueConstraintError" };
       },
-      findCommand: jest.fn().mockResolvedValueOnce(null).mockResolvedValue(existing),
+      findCommand: jest
+        .fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValue(existing),
       findWhatsapp: jest.fn().mockResolvedValue({ id: 2 }),
       findContact: jest.fn().mockResolvedValue({ id: 3 }),
       createContact: jest.fn(),
@@ -116,11 +129,15 @@ describe("PublicTextMessageService", () => {
   });
 
   it("routes a text command to Meta Cloud when the selected channel is official", async () => {
-    const createCommand = jest.fn().mockResolvedValue({ id: "cmd_1", status: "queued" });
+    const createCommand = jest
+      .fn()
+      .mockResolvedValue({ id: "cmd_1", status: "queued" });
     const service = new PublicTextMessageService({
       transaction: async callback => callback({}),
       findCommand: jest.fn().mockResolvedValue(null),
-      findWhatsapp: jest.fn().mockResolvedValue({ id: 2, channelType: "meta_cloud" }),
+      findWhatsapp: jest
+        .fn()
+        .mockResolvedValue({ id: 2, channelType: "meta_cloud" }),
       findContact: jest.fn().mockResolvedValue({ id: 3 }),
       createContact: jest.fn(),
       findTicket: jest.fn().mockResolvedValue({ id: 4 }),
@@ -141,11 +158,15 @@ describe("PublicTextMessageService", () => {
   });
 
   it("persists a media command with its immutable provider payload", async () => {
-    const createCommand = jest.fn().mockResolvedValue({ id: "cmd_2", status: "queued" });
+    const createCommand = jest
+      .fn()
+      .mockResolvedValue({ id: "cmd_2", status: "queued" });
     const service = new PublicTextMessageService({
       transaction: async callback => callback({}),
       findCommand: jest.fn().mockResolvedValue(null),
-      findWhatsapp: jest.fn().mockResolvedValue({ id: 2, channelType: "meta_cloud" }),
+      findWhatsapp: jest
+        .fn()
+        .mockResolvedValue({ id: 2, channelType: "meta_cloud" }),
       findContact: jest.fn().mockResolvedValue({ id: 3 }),
       createContact: jest.fn(),
       findTicket: jest.fn().mockResolvedValue({ id: 4 }),
@@ -164,13 +185,16 @@ describe("PublicTextMessageService", () => {
       payload: { link: "https://cdn.example.com/photo.jpg", caption: "Foto" }
     });
 
-    expect(createCommand).toHaveBeenCalledWith(expect.objectContaining({
-      messageKind: "image",
-      requestPayload: {
-        ticketId: 4,
-        link: "https://cdn.example.com/photo.jpg",
-        caption: "Foto"
-      }
-    }), expect.anything());
+    expect(createCommand).toHaveBeenCalledWith(
+      expect.objectContaining({
+        messageKind: "image",
+        requestPayload: {
+          ticketId: 4,
+          link: "https://cdn.example.com/photo.jpg",
+          caption: "Foto"
+        }
+      }),
+      expect.anything()
+    );
   });
 });

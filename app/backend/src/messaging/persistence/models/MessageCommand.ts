@@ -62,6 +62,9 @@ class MessageCommand extends Model<MessageCommand> {
   @Column(DataType.DATE)
   leaseExpiresAt: Date;
 
+  @Column(DataType.UUID)
+  leaseToken: string;
+
   @Column(DataType.STRING)
   messageId: string;
 

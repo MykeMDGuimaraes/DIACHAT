@@ -1,4 +1,4 @@
-import { sendBaileysSocketMessage } from "../messaging/adapters/baileys/BaileysSocketPort";
+import { sendBaileysSocketMessage } from "../messaging/public/baileys";
 import Whatsapp from "../models/Whatsapp";
 import GetWhatsappWbot from "./GetWhatsappWbot";
 import fs from "fs";

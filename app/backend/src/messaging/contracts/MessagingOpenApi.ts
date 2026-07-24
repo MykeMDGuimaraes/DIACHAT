@@ -161,7 +161,9 @@ export const messagingOpenApi = {
       post: {
         summary: "Valida credenciais e cria canal Meta",
         security: [{ Session: [] }],
-        responses: { "201": { description: "Canal e verify token de exibição única" } }
+        responses: {
+          "201": { description: "Canal e verify token de exibição única" }
+        }
       }
     },
     "/channels/meta-cloud/{whatsappId}/credentials": {
@@ -253,9 +255,24 @@ export const messagingOpenApi = {
             schema: { type: "string", format: "uuid" }
           }
         ],
-        responses: { "202": { description: "Entrega pronta para nova tentativa" } }
+        responses: {
+          "202": { description: "Entrega pronta para nova tentativa" }
+        }
       }
     }
+  },
+  "x-webhook-events": {
+    description:
+      "Eventos entregues por webhook. `message.failed` sinaliza falha terminal de envio (permanente ou esgotamento de tentativas); `message.status.updated` com status `unknown` sinaliza resultado ambíguo que não será reenviado automaticamente.",
+    events: [
+      "message.received",
+      "message.sent",
+      "message.failed",
+      "message.status.updated",
+      "ticket.created",
+      "ticket.updated",
+      "contact.updated"
+    ]
   },
   "x-webhook-signature": {
     algorithm: "HMAC-SHA256",

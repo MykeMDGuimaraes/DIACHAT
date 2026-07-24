@@ -11,7 +11,8 @@ const unsafeIpv4 = (host: string): boolean => {
     (first === 172 && second >= 16 && second <= 31) ||
     (first === 192 && second === 0 && (third === 0 || third === 2)) ||
     (first === 192 && second === 168) ||
-    (first === 198 && (second === 18 || second === 19 || (second === 51 && third === 100))) ||
+    (first === 198 &&
+      (second === 18 || second === 19 || (second === 51 && third === 100))) ||
     (first === 203 && second === 0 && third === 113) ||
     first >= 224
   );
@@ -29,7 +30,8 @@ export const validateResolvedAddress = (address: string): void => {
   if (version === 6) {
     const first = parseInt(normalized.split(":")[0] || "0", 16);
     const globalUnicast = first >= 0x2000 && first <= 0x3fff;
-    const documentation = normalized.startsWith("2001:db8:") || normalized === "2001:db8::";
+    const documentation =
+      normalized.startsWith("2001:db8:") || normalized === "2001:db8::";
     if (globalUnicast && !documentation) return;
   }
   throw new Error("Destino de webhook privado ou especial");
@@ -40,10 +42,15 @@ export const validateWebhookUrl = (value: string): URL => {
   try {
     url = new URL(value);
   } catch (_) {
-    throw new Error("URL de webhook invÃ¡lida");
+    throw new Error("URL de webhook inválida");
   }
 
-  if (url.protocol !== "https:" || url.username || url.password || !url.hostname) {
+  if (
+    url.protocol !== "https:" ||
+    url.username ||
+    url.password ||
+    !url.hostname
+  ) {
     throw new Error("URL de webhook insegura");
   }
 

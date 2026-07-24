@@ -23,7 +23,7 @@ describe("PublicMessageController", () => {
         scopes: ["messages:write"],
         connectionIds: [2]
       },
-      body: { connectionId: 2, to: "5511999999999", text: "OlÃ¡" },
+      body: { connectionId: 2, to: "5511999999999", text: "Olá" },
       header: jest.fn().mockReturnValue("request-12345678")
     };
     const res = response();
@@ -36,7 +36,7 @@ describe("PublicMessageController", () => {
       idempotencyScope: "cred_1",
       idempotencyKey: "request-12345678",
       recipient: "5511999999999",
-      text: "OlÃ¡"
+      text: "Olá"
     });
     expect(res.status).toHaveBeenCalledWith(202);
     expect(res.json).toHaveBeenCalledWith({
@@ -56,7 +56,7 @@ describe("PublicMessageController", () => {
     });
     const req: any = {
       apiCredential: { id: "cred_1", companyId: 10, connectionIds: [2] },
-      body: { connectionId: 2, to: "5511999999999", text: "OlÃ¡" },
+      body: { connectionId: 2, to: "5511999999999", text: "Olá" },
       header: jest.fn().mockReturnValue("request-12345678")
     };
     const res = response();
@@ -87,9 +87,11 @@ describe("PublicMessageController", () => {
 
     await handler(req, response());
 
-    expect(create).toHaveBeenCalledWith(expect.objectContaining({
-      kind: "image",
-      payload: { link: "https://cdn.example.com/photo.jpg", caption: "Foto" }
-    }));
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "image",
+        payload: { link: "https://cdn.example.com/photo.jpg", caption: "Foto" }
+      })
+    );
   });
 });

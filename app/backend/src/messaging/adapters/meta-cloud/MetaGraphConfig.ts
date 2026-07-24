@@ -8,7 +8,7 @@ export const loadMetaGraphConfig = (
 ): MetaGraphConfig => {
   const graphVersion = environment.META_GRAPH_VERSION;
   if (!graphVersion || !/^v\d+\.\d+$/.test(graphVersion)) {
-    throw new Error("META_GRAPH_VERSION invÃ¡lida");
+    throw new Error("META_GRAPH_VERSION inválida");
   }
 
   return { graphVersion, apiBaseUrl: "https://graph.facebook.com" };

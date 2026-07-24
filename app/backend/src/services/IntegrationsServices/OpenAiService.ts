@@ -1,9 +1,9 @@
-import { sendBaileysSocketMessage } from "../../messaging/adapters/baileys/BaileysSocketPort";
+import { sendBaileysSocketMessage } from "../../messaging/public/baileys";
 import {
   MessageUpsertType,
   proto,
   WASocket
-} from "../../messaging/adapters/baileys/BaileysExports";
+} from "../../messaging/public/baileys";
 import {
   convertTextToSpeechAndSaveToFile,
   getBodyMessage,
@@ -18,7 +18,7 @@ import { isNil, isNull } from "lodash";
 import fs from "fs";
 import path, { join } from "path";
 
-import OpenAI, {Configuration, OpenAIApi} from "openai";
+import OpenAI, { Configuration, OpenAIApi } from "openai";
 import Ticket from "../../models/Ticket";
 import Contact from "../../models/Contact";
 import Message from "../../models/Message";
@@ -179,9 +179,13 @@ export const handleOpenAi = async (
       console.log(173, "OpenAiService");
       logger.info(chat.data.choices[0].message);
       logger.info(response);
-      const sentMessage = await sendBaileysSocketMessage(wbot, msg.key.remoteJid!, {
-        text: `\u200e ${response!}`
-      });
+      const sentMessage = await sendBaileysSocketMessage(
+        wbot,
+        msg.key.remoteJid!,
+        {
+          text: `\u200e ${response!}`
+        }
+      );
       await verifyMessage(sentMessage!, ticket, contact);
     } else {
       console.log(179, "OpenAiService");
@@ -196,11 +200,15 @@ export const handleOpenAi = async (
       ).then(async () => {
         try {
           console.log(194, "OpenAiService");
-          const sendMessage = await sendBaileysSocketMessage(wbot, msg.key.remoteJid!, {
-            audio: { url: `${publicFolder}/${fileNameWithOutExtension}.mp3` },
-            mimetype: "audio/mpeg",
-            ptt: true
-          });
+          const sendMessage = await sendBaileysSocketMessage(
+            wbot,
+            msg.key.remoteJid!,
+            {
+              audio: { url: `${publicFolder}/${fileNameWithOutExtension}.mp3` },
+              mimetype: "audio/mpeg",
+              ptt: true
+            }
+          );
           await verifyMediaMessage(
             sendMessage!,
             ticket,
@@ -264,9 +272,13 @@ export const handleOpenAi = async (
         .trim();
     }
     if (openAiSettings.voice === "texto") {
-      const sentMessage = await sendBaileysSocketMessage(wbot, msg.key.remoteJid!, {
-        text: `\u200e ${response!}`
-      });
+      const sentMessage = await sendBaileysSocketMessage(
+        wbot,
+        msg.key.remoteJid!,
+        {
+          text: `\u200e ${response!}`
+        }
+      );
       await verifyMessage(sentMessage!, ticket, contact);
     } else {
       const fileNameWithOutExtension = `${ticket.id}_${Date.now()}`;
@@ -279,11 +291,15 @@ export const handleOpenAi = async (
         "mp3"
       ).then(async () => {
         try {
-          const sendMessage = await sendBaileysSocketMessage(wbot, msg.key.remoteJid!, {
-            audio: { url: `${publicFolder}/${fileNameWithOutExtension}.mp3` },
-            mimetype: "audio/mpeg",
-            ptt: true
-          });
+          const sendMessage = await sendBaileysSocketMessage(
+            wbot,
+            msg.key.remoteJid!,
+            {
+              audio: { url: `${publicFolder}/${fileNameWithOutExtension}.mp3` },
+              mimetype: "audio/mpeg",
+              ptt: true
+            }
+          );
           await verifyMediaMessage(
             sendMessage!,
             ticket,

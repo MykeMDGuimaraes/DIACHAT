@@ -1,7 +1,42 @@
 import https from "https";
 
 import AppError from "../../../errors/AppError";
+import { SEND_TIMEOUT_MS } from "../../domain/MessagingStates";
 import { loadMetaGraphConfig, MetaGraphConfig } from "./MetaGraphConfig";
+
+export type MetaGraphFailurePhase =
+  | "before_transmission"
+  | "after_transmission"
+  | "response";
+
+export class MetaGraphTransportError extends Error {
+  readonly phase: MetaGraphFailurePhase;
+
+  readonly statusCode?: number;
+
+  readonly retryAfterHeader?: string;
+
+  readonly errorBody?: Record<string, unknown>;
+
+  readonly cause?: string;
+
+  constructor(input: {
+    message: string;
+    phase: MetaGraphFailurePhase;
+    statusCode?: number;
+    retryAfterHeader?: string;
+    errorBody?: Record<string, unknown>;
+    cause?: string;
+  }) {
+    super(input.message);
+    this.name = "MetaGraphTransportError";
+    this.phase = input.phase;
+    this.statusCode = input.statusCode;
+    this.retryAfterHeader = input.retryAfterHeader;
+    this.errorBody = input.errorBody;
+    this.cause = input.cause;
+  }
+}
 
 export interface MetaGraphRequest {
   method: "GET" | "POST";
@@ -36,7 +71,13 @@ export interface MetaTextMessageInput {
   graphVersion?: string;
 }
 
-export type MetaMessageKind = "text" | "image" | "audio" | "video" | "document" | "template";
+export type MetaMessageKind =
+  | "text"
+  | "image"
+  | "audio"
+  | "video"
+  | "document"
+  | "template";
 
 export interface MetaMessageInput {
   phoneNumberId: string;
@@ -86,6 +127,7 @@ class HttpsMetaGraphTransport implements MetaGraphTransport {
     });
 
     const payload = request.body ? JSON.stringify(request.body) : undefined;
+    let transmitted = false;
 
     return new Promise((resolve, reject) => {
       const remoteRequest = https.request(
@@ -104,25 +146,79 @@ class HttpsMetaGraphTransport implements MetaGraphTransport {
           }
         },
         response => {
+          transmitted = true;
           const chunks: Buffer[] = [];
           response.on("data", chunk => chunks.push(Buffer.from(chunk)));
           response.on("end", () => {
             const rawBody = Buffer.concat(chunks).toString("utf8");
-            if (response.statusCode && (response.statusCode < 200 || response.statusCode >= 300)) {
-              reject(new AppError("Falha na comunicaÃ§Ã£o com a Meta", 502));
+            const retryAfterHeader = Array.isArray(
+              response.headers["retry-after"]
+            )
+              ? response.headers["retry-after"][0]
+              : response.headers["retry-after"];
+            if (
+              response.statusCode &&
+              (response.statusCode < 200 || response.statusCode >= 300)
+            ) {
+              let errorBody: Record<string, unknown> | undefined;
+              try {
+                errorBody = rawBody ? JSON.parse(rawBody) : undefined;
+              } catch (_error) {
+                errorBody = undefined;
+              }
+              reject(
+                new MetaGraphTransportError({
+                  message: `Meta Graph API respondeu ${response.statusCode}`,
+                  phase: "response",
+                  statusCode: response.statusCode,
+                  retryAfterHeader,
+                  errorBody
+                })
+              );
               return;
             }
 
             try {
-              resolve({ data: rawBody ? (JSON.parse(rawBody) as T) : ({} as T) });
+              resolve({
+                data: rawBody ? (JSON.parse(rawBody) as T) : ({} as T)
+              });
             } catch (_error) {
-              reject(new AppError("Resposta invÃ¡lida da Meta", 502));
+              reject(
+                new MetaGraphTransportError({
+                  message: "Resposta 2xx ilegivel da Meta",
+                  phase: "after_transmission",
+                  statusCode: response.statusCode
+                })
+              );
             }
           });
         }
       );
 
-      remoteRequest.on("error", () => reject(new AppError("Falha na comunicaÃ§Ã£o com a Meta", 502)));
+      remoteRequest.setTimeout(SEND_TIMEOUT_MS, () => {
+        remoteRequest.destroy(
+          new MetaGraphTransportError({
+            message: "Timeout na chamada a Meta",
+            phase: transmitted ? "after_transmission" : "before_transmission",
+            cause: "ETIMEDOUT"
+          })
+        );
+      });
+
+      remoteRequest.on("error", error => {
+        if (error instanceof MetaGraphTransportError) {
+          reject(error);
+          return;
+        }
+        const code = (error as NodeJS.ErrnoException).code || "ECONNFAILED";
+        reject(
+          new MetaGraphTransportError({
+            message: `Falha de rede na chamada a Meta (${code})`,
+            phase: transmitted ? "after_transmission" : "before_transmission",
+            cause: code
+          })
+        );
+      });
       if (payload) {
         remoteRequest.write(payload);
       }
@@ -138,10 +234,25 @@ class MetaGraphApiClient {
 
   constructor(
     config: MetaGraphConfig = loadMetaGraphConfig(),
-    transport: MetaGraphTransport = new HttpsMetaGraphTransport(config.apiBaseUrl)
+    transport: MetaGraphTransport = new HttpsMetaGraphTransport(
+      config.apiBaseUrl
+    )
   ) {
     this.config = config;
     this.transport = transport;
+  }
+
+  private async requestOrAppError<T>(
+    request: MetaGraphRequest
+  ): Promise<{ data: T }> {
+    try {
+      return await this.transport.request<T>(request);
+    } catch (error) {
+      if (error instanceof MetaGraphTransportError) {
+        throw new AppError("Falha na comunicacao com a Meta", 502);
+      }
+      throw error;
+    }
   }
 
   async validateConnection(
@@ -152,7 +263,7 @@ class MetaGraphApiClient {
       throw new AppError("Versao Graph invalida", 400);
     }
     const appAccessToken = `${input.appId}|${input.appSecret}`;
-    const debugToken = await this.transport.request<MetaDebugTokenResponse>({
+    const debugToken = await this.requestOrAppError<MetaDebugTokenResponse>({
       method: "GET",
       path: `/${graphVersion}/debug_token`,
       accessToken: appAccessToken,
@@ -163,10 +274,10 @@ class MetaGraphApiClient {
       !debugToken.data.data?.is_valid ||
       String(debugToken.data.data.app_id) !== input.appId
     ) {
-      throw new AppError("Token Meta invÃ¡lido para este aplicativo", 400);
+      throw new AppError("Token Meta inválido para este aplicativo", 400);
     }
 
-    const phoneNumber = await this.transport.request<MetaPhoneNumberResponse>({
+    const phoneNumber = await this.requestOrAppError<MetaPhoneNumberResponse>({
       method: "GET",
       path: `/${graphVersion}/${input.phoneNumberId}`,
       accessToken: input.accessToken,
@@ -174,27 +285,33 @@ class MetaGraphApiClient {
     });
 
     if (phoneNumber.data.id !== input.phoneNumberId) {
-      throw new AppError("NÃºmero Meta invÃ¡lido", 400);
+      throw new AppError("Número Meta inválido", 400);
     }
 
-    const wabaPhoneNumbers = await this.transport.request<MetaWabaPhoneNumbersResponse>({
-      method: "GET",
-      path: `/${graphVersion}/${input.wabaId}/phone_numbers`,
-      accessToken: input.accessToken,
-      query: { fields: "id" }
-    });
+    const wabaPhoneNumbers =
+      await this.requestOrAppError<MetaWabaPhoneNumbersResponse>({
+        method: "GET",
+        path: `/${graphVersion}/${input.wabaId}/phone_numbers`,
+        accessToken: input.accessToken,
+        query: { fields: "id" }
+      });
 
     const belongsToWaba = (wabaPhoneNumbers.data.data || []).some(
       phone => phone.id === input.phoneNumberId
     );
     if (!belongsToWaba) {
-      throw new AppError("O nÃºmero nÃ£o pertence Ã  conta WhatsApp Business informada", 400);
+      throw new AppError(
+        "O número não pertence à conta WhatsApp Business informada",
+        400
+      );
     }
 
     return { displayPhoneNumber: phoneNumber.data.display_phone_number };
   }
 
-  async sendText(input: MetaTextMessageInput): Promise<{ providerMessageId?: string }> {
+  async sendText(
+    input: MetaTextMessageInput
+  ): Promise<{ providerMessageId?: string }> {
     return this.sendMessage({
       ...input,
       kind: "text",
@@ -202,7 +319,9 @@ class MetaGraphApiClient {
     });
   }
 
-  async sendMessage(input: MetaMessageInput): Promise<{ providerMessageId?: string }> {
+  async sendMessage(
+    input: MetaMessageInput
+  ): Promise<{ providerMessageId?: string }> {
     const graphVersion = input.graphVersion || this.config.graphVersion;
     if (!/^v\d+\.\d+$/.test(graphVersion)) {
       throw new AppError("Versao Graph invalida", 400);
@@ -246,7 +365,7 @@ class MetaGraphApiClient {
     graphVersion?: string;
   }): Promise<{ url: string; mimeType?: string }> {
     const graphVersion = input.graphVersion || this.config.graphVersion;
-    const response = await this.transport.request<MetaMediaMetadataResponse>({
+    const response = await this.requestOrAppError<MetaMediaMetadataResponse>({
       method: "GET",
       path: `/${graphVersion}/${input.mediaId}`,
       accessToken: input.accessToken

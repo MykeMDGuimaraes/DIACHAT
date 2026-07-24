@@ -34,14 +34,14 @@ import { getIO } from "../../libs/socket";
 import UpdateTicketService from "../TicketServices/UpdateTicketService";
 import FindOrCreateATicketTrakingService from "../TicketServices/FindOrCreateATicketTrakingService";
 import ShowTicketUUIDService from "../TicketServices/ShowTicketFromUUIDService";
-import {logger} from "../../utils/logger";
+import { logger } from "../../utils/logger";
 ///import CreateLogTicketService from "../TicketServices/CreateLogTicketService";
 //import CompaniesSettings from "../../models/CompaniesSettings";
 //import ShowWhatsAppService from "../WhatsappService/ShowWhatsAppService";
 import { delay } from "bluebird";
 import typebotListener from "../TypebotServices/typebotListener";
 import { getWbot } from "../../libs/wbot";
-import { proto } from "../../messaging/adapters/baileys/BaileysExports";
+import { proto } from "../../messaging/public/baileys";
 import { handleOpenAi } from "../IntegrationsServices/OpenAiService";
 import { IOpenAi } from "../../@types/openai";
 
@@ -215,10 +215,9 @@ export const ActionsWebhookService = async (
       }
 
       if (nodeSelected.type === "message") {
-
         let msg;
 
-        const webhook = ticket.dataWebhook
+        const webhook = ticket.dataWebhook;
 
         if (webhook && webhook.hasOwnProperty("variables")) {
           msg = {
@@ -234,7 +233,6 @@ export const ActionsWebhookService = async (
           number: numberClient,
           body: msg.body
         });
-
 
         //TESTE BOTÃO
         //await SendMessageFlow(whatsapp, {
@@ -483,21 +481,17 @@ export const ActionsWebhookService = async (
             await SendMessage(whatsapp, {
               number: numberClient,
               body: "",
-              mediaPath:
-                process.env.BACKEND_URL.includes("http://localhost")
-                  ? `${__dirname.split("src")[0].split("\\").join("/")}public/${
-                      nodeSelected.data.elements.filter(
-                        item => item.number === elementNowSelected
-                      )[0].value
-                    }`
-                  : `${__dirname
-                      .split("dist")[0]
-                      .split("\\")
-                      .join("/")}public/${
-                      nodeSelected.data.elements.filter(
-                        item => item.number === elementNowSelected
-                      )[0].value
-                    }`
+              mediaPath: process.env.BACKEND_URL.includes("http://localhost")
+                ? `${__dirname.split("src")[0].split("\\").join("/")}public/${
+                    nodeSelected.data.elements.filter(
+                      item => item.number === elementNowSelected
+                    )[0].value
+                  }`
+                : `${__dirname.split("dist")[0].split("\\").join("/")}public/${
+                    nodeSelected.data.elements.filter(
+                      item => item.number === elementNowSelected
+                    )[0].value
+                  }`
             });
             await intervalWhats("1");
           }

@@ -5,7 +5,8 @@ import {
   MessagingKeyring
 } from "../MessagingSecretCipher";
 
-const key = (seed: string): string => Buffer.from(seed.repeat(32).slice(0, 32)).toString("base64");
+const key = (seed: string): string =>
+  Buffer.from(seed.repeat(32).slice(0, 32)).toString("base64");
 
 describe("MessagingSecretCipher", () => {
   it("encrypts with the active key and decrypts a secret", () => {
@@ -16,7 +17,9 @@ describe("MessagingSecretCipher", () => {
 
     const encrypted = encryptMessagingSecret("access-token", keyring);
 
-    expect(encrypted).toMatch(/^v2\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
+    expect(encrypted).toMatch(
+      /^v2\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/
+    );
     expect(decryptMessagingSecret(encrypted, keyring)).toBe("access-token");
   });
 
@@ -31,15 +34,22 @@ describe("MessagingSecretCipher", () => {
       keys: { v1: key("a"), v2: key("b") }
     };
 
-    expect(decryptMessagingSecret(encrypted, rotatedKeyring)).toBe("app-secret");
+    expect(decryptMessagingSecret(encrypted, rotatedKeyring)).toBe(
+      "app-secret"
+    );
   });
 
   it("rejects a modified ciphertext", () => {
-    const keyring: MessagingKeyring = { activeKeyId: "v1", keys: { v1: key("a") } };
+    const keyring: MessagingKeyring = {
+      activeKeyId: "v1",
+      keys: { v1: key("a") }
+    };
     const encrypted = encryptMessagingSecret("token", keyring);
     const modified = `${encrypted.slice(0, -1)}x`;
 
-    expect(() => decryptMessagingSecret(modified, keyring)).toThrow("Segredo de mensageria invÃ¡lido");
+    expect(() => decryptMessagingSecret(modified, keyring)).toThrow(
+      "Segredo de mensageria inválido"
+    );
   });
 
   it("loads a versioned keyring from environment variables", () => {
@@ -56,8 +66,8 @@ describe("MessagingSecretCipher", () => {
   });
 
   it("fails startup configuration when the active key is absent", () => {
-    expect(() => loadMessagingKeyring({ MESSAGING_ENCRYPTION_ACTIVE_KEY_ID: "v2" })).toThrow(
-      "Keyring de mensageria invÃ¡lido"
-    );
+    expect(() =>
+      loadMessagingKeyring({ MESSAGING_ENCRYPTION_ACTIVE_KEY_ID: "v2" })
+    ).toThrow("Keyring de mensageria inválido");
   });
 });
