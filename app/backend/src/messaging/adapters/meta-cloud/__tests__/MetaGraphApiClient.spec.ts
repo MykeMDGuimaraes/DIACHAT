@@ -61,4 +61,33 @@ describe("MetaGraphApiClient", () => {
       })
     ).rejects.toMatchObject({ statusCode: 400 });
   });
+
+  it("sends a text message through the submitted phone number", async () => {
+    const request = jest.fn().mockResolvedValue({ data: { messages: [{ id: "wamid.1" }] } });
+    const client = new MetaGraphApiClient(
+      { graphVersion: "v23.0", apiBaseUrl: "https://graph.facebook.com" },
+      { request }
+    );
+
+    await expect(
+      client.sendText({
+        phoneNumberId: "phone_1",
+        accessToken: "access-token",
+        recipient: "5511999999999",
+        text: "OlÃ¡"
+      })
+    ).resolves.toEqual({ providerMessageId: "wamid.1" });
+
+    expect(request).toHaveBeenCalledWith({
+      method: "POST",
+      path: "/v23.0/phone_1/messages",
+      accessToken: "access-token",
+      body: {
+        messaging_product: "whatsapp",
+        to: "5511999999999",
+        type: "text",
+        text: { body: "OlÃ¡", preview_url: false }
+      }
+    });
+  });
 });

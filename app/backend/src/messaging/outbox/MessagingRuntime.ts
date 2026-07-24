@@ -1,4 +1,5 @@
 import BaileysMessageCommandProvider from "../adapters/baileys/BaileysMessageCommandProvider";
+import MetaCloudMessageCommandProvider from "../adapters/meta-cloud/MetaCloudMessageCommandProvider";
 import MessageCommandRecoveryService from "../application/MessageCommandRecoveryService";
 import MessageCommandDispatcher from "./MessageCommandDispatcher";
 import MessagingOutboxRecoveryService from "./MessagingOutboxRecoveryService";
@@ -45,7 +46,10 @@ export const createMessagingRuntime = (): MessagingRuntime =>
         };
       }
     },
-    new MessageCommandDispatcher(undefined, [new BaileysMessageCommandProvider()])
+    new MessageCommandDispatcher(undefined, [
+      new BaileysMessageCommandProvider(),
+      new MetaCloudMessageCommandProvider()
+    ])
   );
 
 export default MessagingRuntime;

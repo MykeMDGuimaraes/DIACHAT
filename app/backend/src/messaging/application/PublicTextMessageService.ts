@@ -80,9 +80,13 @@ class PublicTextMessageService {
     return uuidv4();
   }
 
-  fingerprint(input: CreatePublicTextMessageInput, recipient: string): string {
+  fingerprint(
+    input: CreatePublicTextMessageInput,
+    recipient: string,
+    provider = "baileys"
+  ): string {
     return createRequestFingerprint({
-      provider: "baileys",
+      provider,
       messageKind: "text",
       recipient,
       requestPayload: { text: input.text }
@@ -101,18 +105,10 @@ class PublicTextMessageService {
     }
 
     const normalizedInput = { ...input, idempotencyKey };
-    const requestFingerprint = this.fingerprint(normalizedInput, recipient);
+    let requestFingerprint = "";
 
     try {
       return await this.dependencies.transaction(async transaction => {
-      const existing = await this.dependencies.findCommand(normalizedInput, transaction);
-      if (existing) {
-        if (existing.requestFingerprint !== requestFingerprint) {
-          throw new AppError("IDEMPOTENCY_CONFLICT", 409);
-        }
-        return { command: existing, message: null, replayed: true };
-      }
-
       const whatsapp = await this.dependencies.findWhatsapp(
         normalizedInput.whatsappId,
         normalizedInput.companyId,
@@ -120,6 +116,16 @@ class PublicTextMessageService {
       );
       if (!whatsapp) {
         throw new AppError("Canal de WhatsApp nao encontrado", 404);
+      }
+      const provider = whatsapp.channelType === "meta_cloud" ? "meta_cloud" : "baileys";
+      requestFingerprint = this.fingerprint(normalizedInput, recipient, provider);
+
+      const existing = await this.dependencies.findCommand(normalizedInput, transaction);
+      if (existing) {
+        if (existing.requestFingerprint !== requestFingerprint) {
+          throw new AppError("IDEMPOTENCY_CONFLICT", 409);
+        }
+        return { command: existing, message: null, replayed: true };
       }
 
       let contact = await this.dependencies.findContact(
@@ -188,7 +194,7 @@ class PublicTextMessageService {
           id: commandId,
           companyId: normalizedInput.companyId,
           whatsappId: normalizedInput.whatsappId,
-          provider: "baileys",
+          provider,
           messageKind: "text",
           recipient,
           idempotencyScope: normalizedInput.idempotencyScope,

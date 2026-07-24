@@ -27,6 +27,13 @@ export interface MetaConnectionValidation {
   displayPhoneNumber?: string;
 }
 
+export interface MetaTextMessageInput {
+  phoneNumberId: string;
+  accessToken: string;
+  recipient: string;
+  text: string;
+}
+
 interface MetaDebugTokenResponse {
   data?: {
     is_valid?: boolean;
@@ -41,6 +48,10 @@ interface MetaPhoneNumberResponse {
 
 interface MetaWabaPhoneNumbersResponse {
   data?: Array<{ id?: string }>;
+}
+
+interface MetaSendMessageResponse {
+  messages?: Array<{ id?: string }>;
 }
 
 class HttpsMetaGraphTransport implements MetaGraphTransport {
@@ -159,6 +170,22 @@ class MetaGraphApiClient {
     }
 
     return { displayPhoneNumber: phoneNumber.data.display_phone_number };
+  }
+
+  async sendText(input: MetaTextMessageInput): Promise<{ providerMessageId?: string }> {
+    const response = await this.transport.request<MetaSendMessageResponse>({
+      method: "POST",
+      path: `/${this.config.graphVersion}/${input.phoneNumberId}/messages`,
+      accessToken: input.accessToken,
+      body: {
+        messaging_product: "whatsapp",
+        to: input.recipient,
+        type: "text",
+        text: { body: input.text, preview_url: false }
+      }
+    });
+
+    return { providerMessageId: response.data.messages?.[0]?.id };
   }
 }
 

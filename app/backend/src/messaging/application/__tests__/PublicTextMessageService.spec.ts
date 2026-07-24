@@ -69,7 +69,7 @@ describe("PublicTextMessageService", () => {
     const service = new PublicTextMessageService({
       transaction: async callback => callback({}),
       findCommand: jest.fn().mockResolvedValue(existing),
-      findWhatsapp: jest.fn(),
+      findWhatsapp: jest.fn().mockResolvedValue({ id: 2 }),
       findContact: jest.fn(),
       createContact: jest.fn(),
       findTicket: jest.fn(),
@@ -91,16 +91,19 @@ describe("PublicTextMessageService", () => {
   it("returns the winning command when a concurrent insert hits the unique idempotency index", async () => {
     const existing = { id: "cmd_1", requestFingerprint: "same", messageId: "msg_1" };
     const service = new PublicTextMessageService({
-      transaction: jest.fn().mockRejectedValue({ name: "SequelizeUniqueConstraintError" }),
-      findCommand: jest.fn().mockResolvedValue(existing),
-      findWhatsapp: jest.fn(),
-      findContact: jest.fn(),
+      transaction: async callback => {
+        await callback({});
+        throw { name: "SequelizeUniqueConstraintError" };
+      },
+      findCommand: jest.fn().mockResolvedValueOnce(null).mockResolvedValue(existing),
+      findWhatsapp: jest.fn().mockResolvedValue({ id: 2 }),
+      findContact: jest.fn().mockResolvedValue({ id: 3 }),
       createContact: jest.fn(),
-      findTicket: jest.fn(),
+      findTicket: jest.fn().mockResolvedValue({ id: 4 }),
       createTicket: jest.fn(),
       updateTicket: jest.fn(),
-      createMessage: jest.fn(),
-      createCommand: jest.fn(),
+      createMessage: jest.fn().mockResolvedValue({ id: "msg_1" }),
+      createCommand: jest.fn().mockResolvedValue({ id: "cmd_1" }),
       createOutboxEvent: jest.fn()
     });
     jest.spyOn(service, "fingerprint").mockReturnValue("same");
@@ -110,5 +113,30 @@ describe("PublicTextMessageService", () => {
       message: null,
       replayed: true
     });
+  });
+
+  it("routes a text command to Meta Cloud when the selected channel is official", async () => {
+    const createCommand = jest.fn().mockResolvedValue({ id: "cmd_1", status: "queued" });
+    const service = new PublicTextMessageService({
+      transaction: async callback => callback({}),
+      findCommand: jest.fn().mockResolvedValue(null),
+      findWhatsapp: jest.fn().mockResolvedValue({ id: 2, channelType: "meta_cloud" }),
+      findContact: jest.fn().mockResolvedValue({ id: 3 }),
+      createContact: jest.fn(),
+      findTicket: jest.fn().mockResolvedValue({ id: 4 }),
+      createTicket: jest.fn(),
+      updateTicket: jest.fn(),
+      createMessage: jest.fn().mockResolvedValue({ id: "msg_1" }),
+      createCommand,
+      createOutboxEvent: jest.fn()
+    });
+    jest.spyOn(service, "createCommandId").mockReturnValue("cmd_1");
+
+    await service.create(input);
+
+    expect(createCommand).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: "meta_cloud" }),
+      expect.anything()
+    );
   });
 });
