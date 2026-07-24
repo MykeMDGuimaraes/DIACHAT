@@ -4,6 +4,10 @@ import { createIssueApiCredentialHandler } from "../messaging/api/ApiCredentialC
 import { createPublicTextMessageHandler } from "../messaging/api/PublicMessageController";
 import requireApiScope from "../messaging/api/requireApiScope";
 import { createMetaCloudChannelHandler } from "../messaging/channels/meta-cloud/MetaCloudChannelController";
+import {
+  receiveMetaWebhookHandler,
+  verifyMetaWebhookHandler
+} from "../messaging/channels/meta-cloud/MetaWebhookController";
 import isAuth from "../middleware/isAuth";
 
 const messagingApiRoutes = Router();
@@ -14,6 +18,15 @@ messagingApiRoutes.post(
   "/channels/meta-cloud",
   isAuth,
   createMetaCloudChannelHandler()
+);
+
+messagingApiRoutes.get(
+  "/channels/meta-cloud/:credentialPublicId/webhook",
+  verifyMetaWebhookHandler
+);
+messagingApiRoutes.post(
+  "/channels/meta-cloud/:credentialPublicId/webhook",
+  receiveMetaWebhookHandler
 );
 
 messagingApiRoutes.post(

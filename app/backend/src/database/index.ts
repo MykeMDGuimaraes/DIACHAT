@@ -49,6 +49,7 @@ import MessageCommand from "../messaging/persistence/models/MessageCommand";
 import ApiCredential from "../messaging/persistence/models/ApiCredential";
 import MessagingOutboxEvent from "../messaging/persistence/models/MessagingOutboxEvent";
 import MetaCloudCredential from "../messaging/persistence/models/MetaCloudCredential";
+import MessagingInboxEvent from "../messaging/persistence/models/MessagingInboxEvent";
 
 // eslint-disable-next-line
 const dbConfig = require("../config/database");
@@ -107,6 +108,7 @@ const models = [
   ApiCredential,
   MessagingOutboxEvent,
   MetaCloudCredential,
+  MessagingInboxEvent,
 ];
 
 sequelize.addModels(models);

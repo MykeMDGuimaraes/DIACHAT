@@ -27,7 +27,12 @@ app.set("queues", {
 });
 
 const bodyparser = require('body-parser');
-app.use(bodyParser.json({ limit: '10mb' }));
+app.use(bodyParser.json({
+  limit: '10mb',
+  verify: (req, _res, buffer) => {
+    (req as Request & { rawBody?: Buffer }).rawBody = Buffer.from(buffer);
+  }
+}));
 
 app.use(
   cors({
