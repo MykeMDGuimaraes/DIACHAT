@@ -113,7 +113,7 @@ interface MetaMediaMetadataResponse {
   mime_type?: string;
 }
 
-class HttpsMetaGraphTransport implements MetaGraphTransport {
+export class HttpsMetaGraphTransport implements MetaGraphTransport {
   private readonly apiBaseUrl: string;
 
   constructor(apiBaseUrl: string) {
@@ -127,6 +127,10 @@ class HttpsMetaGraphTransport implements MetaGraphTransport {
     });
 
     const payload = request.body ? JSON.stringify(request.body) : undefined;
+    // "transmitted" precisa ser conservador: a partir do momento em que o
+    // socket TLS conecta, bytes da requisicao podem ter saido do processo e a
+    // Meta pode ter aceitado a mensagem. Qualquer falha depois disso e
+    // ambigua (after_transmission -> unknown), nunca retryable.
     let transmitted = false;
 
     return new Promise((resolve, reject) => {
@@ -146,7 +150,6 @@ class HttpsMetaGraphTransport implements MetaGraphTransport {
           }
         },
         response => {
-          transmitted = true;
           const chunks: Buffer[] = [];
           response.on("data", chunk => chunks.push(Buffer.from(chunk)));
           response.on("end", () => {
@@ -194,6 +197,19 @@ class HttpsMetaGraphTransport implements MetaGraphTransport {
           });
         }
       );
+
+      remoteRequest.on("socket", socket => {
+        const markTransmitted = () => {
+          transmitted = true;
+        };
+        // https: o handshake TLS concluido significa que a escrita da
+        // requisicao pode comecar imediatamente (write() ja foi enfileirado).
+        socket.on("secureConnect", markTransmitted);
+        // fallback para o caso raro de socket ja conectado (keep-alive).
+        if (!socket.connecting) {
+          markTransmitted();
+        }
+      });
 
       remoteRequest.setTimeout(SEND_TIMEOUT_MS, () => {
         remoteRequest.destroy(
