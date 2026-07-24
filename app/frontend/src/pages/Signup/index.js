@@ -34,12 +34,7 @@ import moment from "moment";
 const Copyright = () => {
         return (
                 <Typography variant="body2" color="textSecondary" align="center">
-                        {"Copyright © "}
-                        <Link color="inherit" href="#">
-                                PLW
-                        </Link>{" "}
-                   {new Date().getFullYear()}
-                        {"."}
+                        {"Dia Solutions - CNPJ 52.897.218/0001-39"}
                 </Typography>
         );
 };

@@ -24,12 +24,7 @@ const { versionSystem, nomeEmpresa } = pkg;
 const Copyright = () => {
         return (
                 <Typography variant="body2" color="primary" align="center">
-                        {"Copyright "}
-                        <Link color="primary" href="#">
-                                { nomeEmpresa } - v { versionSystem }
-                        </Link>{" "}
-                        {new Date().getFullYear()}
-                        {"."}
+                        {"Dia Solutions - CNPJ 52.897.218/0001-39"}
                 </Typography>
         );
  };
