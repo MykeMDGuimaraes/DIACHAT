@@ -45,6 +45,9 @@ import { FlowImgModel } from "../models/FlowImg";
 import ServiceCredential from "../models/ServiceCredential";
 import V1MessageIdempotency from "../models/V1MessageIdempotency";
 import AuditLog from "../models/AuditLog";
+import MessageCommand from "../messaging/persistence/models/MessageCommand";
+import ApiCredential from "../messaging/persistence/models/ApiCredential";
+import MessagingOutboxEvent from "../messaging/persistence/models/MessagingOutboxEvent";
 
 // eslint-disable-next-line
 const dbConfig = require("../config/database");
@@ -99,6 +102,9 @@ const models = [
   ServiceCredential,
   V1MessageIdempotency,
   AuditLog,
+  MessageCommand,
+  ApiCredential,
+  MessagingOutboxEvent,
 ];
 
 sequelize.addModels(models);
