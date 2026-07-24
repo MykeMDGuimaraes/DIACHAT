@@ -19,10 +19,19 @@ describe("MessagingRuntime", () => {
           })
           .mockResolvedValue({ status: "idle" })
       },
-      5
+      5,
+      {
+        processOne: jest
+          .fn()
+          .mockImplementationOnce(async () => {
+            events.push("inbox");
+            return { status: "processed" as const };
+          })
+          .mockResolvedValue({ status: "idle" as const })
+      }
     );
 
-    await expect(runtime.runOnce()).resolves.toEqual({ recovered: 1, dispatched: 1 });
-    expect(events).toEqual(["recover", "dispatch"]);
+    await expect(runtime.runOnce()).resolves.toEqual({ recovered: 1, dispatched: 1, processedInbox: 1 });
+    expect(events).toEqual(["recover", "inbox", "dispatch"]);
   });
 });
