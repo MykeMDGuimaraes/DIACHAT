@@ -1,0 +1,165 @@
+import https from "https";
+
+import AppError from "../../../errors/AppError";
+import { loadMetaGraphConfig, MetaGraphConfig } from "./MetaGraphConfig";
+
+export interface MetaGraphRequest {
+  method: "GET" | "POST";
+  path: string;
+  accessToken: string;
+  query?: Record<string, string>;
+  body?: Record<string, unknown>;
+}
+
+export interface MetaGraphTransport {
+  request<T>(request: MetaGraphRequest): Promise<{ data: T }>;
+}
+
+export interface MetaConnectionInput {
+  appId: string;
+  appSecret: string;
+  accessToken: string;
+  wabaId: string;
+  phoneNumberId: string;
+}
+
+export interface MetaConnectionValidation {
+  displayPhoneNumber?: string;
+}
+
+interface MetaDebugTokenResponse {
+  data?: {
+    is_valid?: boolean;
+    app_id?: string;
+  };
+}
+
+interface MetaPhoneNumberResponse {
+  id?: string;
+  display_phone_number?: string;
+}
+
+interface MetaWabaPhoneNumbersResponse {
+  data?: Array<{ id?: string }>;
+}
+
+class HttpsMetaGraphTransport implements MetaGraphTransport {
+  private readonly apiBaseUrl: string;
+
+  constructor(apiBaseUrl: string) {
+    this.apiBaseUrl = apiBaseUrl;
+  }
+
+  request<T>(request: MetaGraphRequest): Promise<{ data: T }> {
+    const url = new URL(request.path, this.apiBaseUrl);
+    Object.entries(request.query || {}).forEach(([key, value]) => {
+      url.searchParams.set(key, value);
+    });
+
+    const payload = request.body ? JSON.stringify(request.body) : undefined;
+
+    return new Promise((resolve, reject) => {
+      const remoteRequest = https.request(
+        url,
+        {
+          method: request.method,
+          headers: {
+            Authorization: `Bearer ${request.accessToken}`,
+            Accept: "application/json",
+            ...(payload
+              ? {
+                  "Content-Type": "application/json",
+                  "Content-Length": Buffer.byteLength(payload)
+                }
+              : {})
+          }
+        },
+        response => {
+          const chunks: Buffer[] = [];
+          response.on("data", chunk => chunks.push(Buffer.from(chunk)));
+          response.on("end", () => {
+            const rawBody = Buffer.concat(chunks).toString("utf8");
+            if (response.statusCode && (response.statusCode < 200 || response.statusCode >= 300)) {
+              reject(new AppError("Falha na comunicaÃ§Ã£o com a Meta", 502));
+              return;
+            }
+
+            try {
+              resolve({ data: rawBody ? (JSON.parse(rawBody) as T) : ({} as T) });
+            } catch (_error) {
+              reject(new AppError("Resposta invÃ¡lida da Meta", 502));
+            }
+          });
+        }
+      );
+
+      remoteRequest.on("error", () => reject(new AppError("Falha na comunicaÃ§Ã£o com a Meta", 502)));
+      if (payload) {
+        remoteRequest.write(payload);
+      }
+      remoteRequest.end();
+    });
+  }
+}
+
+class MetaGraphApiClient {
+  private readonly config: MetaGraphConfig;
+
+  private readonly transport: MetaGraphTransport;
+
+  constructor(
+    config: MetaGraphConfig = loadMetaGraphConfig(),
+    transport: MetaGraphTransport = new HttpsMetaGraphTransport(config.apiBaseUrl)
+  ) {
+    this.config = config;
+    this.transport = transport;
+  }
+
+  async validateConnection(
+    input: MetaConnectionInput
+  ): Promise<MetaConnectionValidation> {
+    const appAccessToken = `${input.appId}|${input.appSecret}`;
+    const debugToken = await this.transport.request<MetaDebugTokenResponse>({
+      method: "GET",
+      path: `/${this.config.graphVersion}/debug_token`,
+      accessToken: appAccessToken,
+      query: { input_token: input.accessToken }
+    });
+
+    if (
+      !debugToken.data.data?.is_valid ||
+      String(debugToken.data.data.app_id) !== input.appId
+    ) {
+      throw new AppError("Token Meta invÃ¡lido para este aplicativo", 400);
+    }
+
+    const phoneNumber = await this.transport.request<MetaPhoneNumberResponse>({
+      method: "GET",
+      path: `/${this.config.graphVersion}/${input.phoneNumberId}`,
+      accessToken: input.accessToken,
+      query: { fields: "id,display_phone_number" }
+    });
+
+    if (phoneNumber.data.id !== input.phoneNumberId) {
+      throw new AppError("NÃºmero Meta invÃ¡lido", 400);
+    }
+
+    const wabaPhoneNumbers = await this.transport.request<MetaWabaPhoneNumbersResponse>({
+      method: "GET",
+      path: `/${this.config.graphVersion}/${input.wabaId}/phone_numbers`,
+      accessToken: input.accessToken,
+      query: { fields: "id" }
+    });
+
+    const belongsToWaba = (wabaPhoneNumbers.data.data || []).some(
+      phone => phone.id === input.phoneNumberId
+    );
+    if (!belongsToWaba) {
+      throw new AppError("O nÃºmero nÃ£o pertence Ã  conta WhatsApp Business informada", 400);
+    }
+
+    return { displayPhoneNumber: phoneNumber.data.display_phone_number };
+  }
+}
+
+export default MetaGraphApiClient;
