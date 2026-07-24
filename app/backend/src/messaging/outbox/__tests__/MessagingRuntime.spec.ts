@@ -28,10 +28,18 @@ describe("MessagingRuntime", () => {
             return { status: "processed" as const };
           })
           .mockResolvedValue({ status: "idle" as const })
-      }
+      },
+      { fanoutOne: jest.fn().mockResolvedValueOnce({ status: "created", deliveries: 2 }).mockResolvedValue({ status: "idle", deliveries: 0 }) },
+      { dispatchOne: jest.fn().mockResolvedValueOnce({ status: "delivered" }).mockResolvedValue({ status: "idle" }) }
     );
 
-    await expect(runtime.runOnce()).resolves.toEqual({ recovered: 1, dispatched: 1, processedInbox: 1 });
+    await expect(runtime.runOnce()).resolves.toEqual({
+      recovered: 1,
+      dispatched: 1,
+      processedInbox: 1,
+      webhookDeliveriesCreated: 2,
+      webhooksDispatched: 1
+    });
     expect(events).toEqual(["recover", "inbox", "dispatch"]);
   });
 });

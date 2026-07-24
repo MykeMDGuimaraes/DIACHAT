@@ -9,10 +9,17 @@ import {
   verifyMetaWebhookHandler
 } from "../messaging/channels/meta-cloud/MetaWebhookController";
 import isAuth from "../middleware/isAuth";
+import { webhookAdminHandlers } from "../messaging/webhooks/WebhookAdminController";
 
 const messagingApiRoutes = Router();
 
 messagingApiRoutes.post("/credentials", isAuth, createIssueApiCredentialHandler());
+messagingApiRoutes.get("/webhook-subscriptions", isAuth, webhookAdminHandlers.list);
+messagingApiRoutes.post("/webhook-subscriptions", isAuth, webhookAdminHandlers.create);
+messagingApiRoutes.put("/webhook-subscriptions/:subscriptionId", isAuth, webhookAdminHandlers.update);
+messagingApiRoutes.delete("/webhook-subscriptions/:subscriptionId", isAuth, webhookAdminHandlers.remove);
+messagingApiRoutes.get("/webhook-deliveries", isAuth, webhookAdminHandlers.listDeliveries);
+messagingApiRoutes.post("/webhook-deliveries/:deliveryId/retry", isAuth, webhookAdminHandlers.retryDelivery);
 
 messagingApiRoutes.post(
   "/channels/meta-cloud",
