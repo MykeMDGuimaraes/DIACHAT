@@ -1,0 +1,97 @@
+Correções finais do Code Review — codex/messaging-v1
+Resumo
+O relatório foi validado contra a branch e o remoto:
+B1 confirmado: erros outbound são indevidamente convertidos em unknown.
+B2 é falso positivo: origin/main está em aabbc01, a branch está 0 commits atrás e 11 à frente, e o diff de branding/login/signup/tradução está vazio. Não fazer rebase desnecessário.
+M1 e M2 confirmados: fronteira estrutural insuficiente e métricas usando estados inexistentes.
+M3 parcialmente incorreto: o recovery não recoloca comandos sending em queued, portanto o cenário de reenvio descrito não ocorre. Existe, porém, uma corrida real capaz de produzir estado/evento inconsistente; será corrigida com fencing.
+Higiene confirmada: há mojibake, tipagem any e 77 arquivos fora do padrão Prettier.
+A implementação será feita no worktree limpo da branch, preservando a alteração .gitignore atualmente staged no checkout de main.
+Mudanças de implementação
+1. Taxonomia de erros e retry outbound
+Criar o contrato ProviderSendError com:classification: "retryable" | "permanent" | "unknown";
+code, message, providerStatus, retryAfterMs e detalhes sanitizados;
+subclasses/fábricas RetryableSendError, PermanentSendError e UnknownSendError.
+
+O dispatcher nunca inferirá a categoria por texto: cada adapter será responsável pela classificação.
+Meta Cloud:falha DNS/conexão antes da transmissão: retryable;
+HTTP 429, 5xx, error.is_transient=true ou rate limit explícito da Graph API: retryable;
+demais 4xx e validações de token, número, template ou payload: permanent;
+timeout/reset depois da transmissão, resposta 2xx ilegível ou 2xx sem messages[0].id: unknown;
+interpretar Retry-After em segundos ou data HTTP.
+
+Baileys:payload, ticket, mídia ou provider inválido: permanent;
+banco/socket indisponível antes de chamar sendMessage: retryable;
+rejeição ou timeout depois de sendMessage ser invocado: unknown.
+
+Adicionar timeout inferior ao lease de 120 segundos; nenhum unknown será reenviado automaticamente.
+Retry seguro:máximo fixo de 8 tentativas;
+backoff min(15 min, 5 s × 2^(tentativa-1));
+jitter entre 0,5 e 1,5;
+respeitar o maior valor entre backoff e Retry-After;
+comando volta a queued, outbox volta a ready e recebe availableAt.
+
+Na oitava falha retryable:comando vira failed com SEND_RETRY_EXHAUSTED;
+evento de dispatch vira dead_letter;
+criar evento durável message.failed;
+emitir log estruturado de erro e expor contador/alerta nas métricas.
+
+Falha permanente cria message.failed; resultado ambíguo cria message.status.updated com status: "unknown".
+2. Fencing e recovery atômico
+Migração Sequelize adicionará leaseToken UUID NULL em MessageCommands e MessagingOutboxEvents.
+Cada claim gerará um UUID compartilhado pelo comando e pelo evento, incrementando attemptCount nos dois registros.
+markSent, retry, permanent failure, dead-letter e unknown somente finalizarão quando id + status + leaseToken ainda pertencerem ao worker.
+Substituir os dois recoveries outbound separados por um recovery transacional do par comando/evento:lease expirado em sending/processing vira unknown/completed;
+comando ainda queued permite reabrir o evento;
+comando terminal apenas conclui evento órfão;
+worker atrasado com token antigo não altera estado nem publica message.sent.
+
+Tipar o payload do evento com um DTO persistido; remover buildMessageSentEvent(command: any, ...).
+3. Fronteira modular, métricas e higiene
+Adicionar dependency-cruiser compatível com Node 20 e TypeScript 4.6.
+Criar fachadas públicas:messaging/public/baileys;
+messaging/public/http;
+messaging/public/runtime.
+
+Migrar core, rotas e serviços para essas fachadas. A inicialização do Sequelize será a única exceção autorizada a importar models internos diretamente.
+Regras de CI:core não importa internals de messaging;
+messaging só importa a allowlist atual revisada do core — database, AppError, upload, logger, modelos explicitamente enumerados, GetTicketWbot, libs/wbot e criação de WhatsApp;
+qualquer nova dependência exige alteração explícita da configuração;
+manter o guard atual contra imports diretos do Baileys e chamadas diretas de sendMessage.
+
+Centralizar constantes de estados para comandos, outbox, inbox e webhooks.
+Corrigir métricas para sending e processing, adicionando:contadores inFlight, failed, unknown e deadLetter;
+idade do trabalho pendente e em andamento;
+leases expirados;
+alerta para dead-letter outbound.
+
+Atualizar OpenAPI, documentação e modal de webhooks para aceitar message.failed.
+Corrigir todas as sequências mojibake da árvore de messaging, salvar em UTF-8 e aplicar Prettier.
+Rodar ESLint em instalação limpa para evitar o conflito Ajv existente no node_modules local.
+Testes e critérios de aceite
+Testes unitários por categoria de erro nos adapters Meta e Baileys.
+Testes transacionais do dispatcher:retryable reabre comando/evento com data futura;
+Retry-After é respeitado;
+permanente termina como failed;
+ambíguo termina como unknown sem retry;
+oitava tentativa produz dead-letter;
+falha e unknown geram os eventos públicos corretos.
+
+Teste concorrente comprovando que um worker com lease antigo não consegue publicar sucesso após recovery.
+Testes de métricas com registros reais em sending, processing, failed e dead_letter.
+Fixtures negativas do grafo de imports para demonstrar que o CI bloqueia dependências proibidas.
+Verificações finais:build backend;
+suíte Jest completa em banco de teste;
+boundary check e dependency-cruiser;
+build frontend;
+git diff --check;
+zero ocorrências de mojibake em src/messaging;
+comparação de branding com origin/main vazia.
+
+Executar o capacity gate no ambiente real com PostgreSQL e exatamente 20 conexões configuradas por empresas. Não será criado provider mock, credencial fictícia ou fallback de produção.
+Git e pressupostos
+Continuar em codex/messaging-v1; não tocar no checkout main.
+Antes do push, consultar novamente origin/main. Rebase somente se o remoto tiver avançado; preservar integralmente branding e mudanças de frontend da main.
+Produção continuará usando exclusivamente credenciais cadastradas por cada empresa no frontend.
+/api/v1, resposta inicial 202, idempotência, outbox/inbox, Meta Cloud, Baileys e webhooks existentes permanecem compatíveis.
+Após todos os gates, criar um commit de correção, enviar a mesma branch e deixá-la pronta para nova revisão.
