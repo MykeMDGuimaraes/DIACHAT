@@ -1,11 +1,11 @@
 import { Server as SocketIO } from "socket.io";
 import { Server } from "http";
+import { verify } from "jsonwebtoken";
 import AppError from "../errors/AppError";
 import { logger } from "../utils/logger";
 import User from "../models/User";
 import Queue from "../models/Queue";
 import Ticket from "../models/Ticket";
-import { verify } from "jsonwebtoken";
 import authConfig from "../config/auth";
 import { CounterManager } from "./counter";
 
@@ -22,7 +22,7 @@ export const initIO = (httpServer: Server): SocketIO => {
       allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"]
     },
     allowEIO3: true,
-    transports: ['websocket', 'polling']
+    transports: ["websocket", "polling"]
   });
 
   io.on("connection", async socket => {
@@ -40,10 +40,10 @@ export const initIO = (httpServer: Server): SocketIO => {
     const counters = new CounterManager();
 
     let user: User = null;
-    let userId = tokenData.id;
+    const userId = tokenData.id;
 
     if (userId && userId !== "undefined" && userId !== "null") {
-      user = await User.findByPk(userId, { include: [ Queue ] });
+      user = await User.findByPk(userId, { include: [Queue] });
       if (user) {
         user.online = true;
         await user.save();
@@ -66,24 +66,31 @@ export const initIO = (httpServer: Server): SocketIO => {
         return;
       }
       Ticket.findByPk(ticketId).then(
-        (ticket) => {
-          if (ticket && ticket.companyId === user.companyId
-            && (ticket.userId === user.id || user.profile === "admin")) {
+        ticket => {
+          if (
+            ticket &&
+            ticket.companyId === user.companyId &&
+            (ticket.userId === user.id || user.profile === "admin")
+          ) {
             let c: number;
             if ((c = counters.incrementCounter(`ticket-${ticketId}`)) === 1) {
               socket.join(ticketId);
             }
-            logger.debug(`joinChatbox[${c}]: Channel: ${ticketId} by user ${user.id}`)
+            logger.debug(
+              `joinChatbox[${c}]: Channel: ${ticketId} by user ${user.id}`
+            );
           } else {
-            logger.info(`Invalid attempt to join channel of ticket ${ticketId} by user ${user.id}`)
+            logger.info(
+              `Invalid attempt to join channel of ticket ${ticketId} by user ${user.id}`
+            );
           }
         },
-        (error) => {
+        error => {
           logger.error(error, `Error fetching ticket ${ticketId}`);
         }
       );
     });
-    
+
     socket.on("leaveChatBox", async (ticketId: string) => {
       if (!ticketId || ticketId === "undefined") {
         return;
@@ -95,7 +102,9 @@ export const initIO = (httpServer: Server): SocketIO => {
       if ((c = counters.decrementCounter(`ticket-${ticketId}`)) === 0) {
         socket.leave(ticketId);
       }
-      logger.debug(`leaveChatbox[${c}]: Channel: ${ticketId} by user ${user.id}`)
+      logger.debug(
+        `leaveChatbox[${c}]: Channel: ${ticketId} by user ${user.id}`
+      );
     });
 
     socket.on("joinNotification", async () => {
@@ -104,27 +113,30 @@ export const initIO = (httpServer: Server): SocketIO => {
         if (user.profile === "admin") {
           socket.join(`company-${user.companyId}-notification`);
         } else {
-          user.queues.forEach((queue) => {
-            logger.debug(`User ${user.id} of company ${user.companyId} joined queue ${queue.id} channel.`);
+          user.queues.forEach(queue => {
+            logger.debug(
+              `User ${user.id} of company ${user.companyId} joined queue ${queue.id} channel.`
+            );
             socket.join(`queue-${queue.id}-notification`);
           });
           if (user.allTicket === "enabled") {
             socket.join("queue-null-notification");
           }
-
         }
       }
       logger.debug(`joinNotification[${c}]: User: ${user.id}`);
     });
-    
+
     socket.on("leaveNotification", async () => {
       let c: number;
       if ((c = counters.decrementCounter("notification")) === 0) {
         if (user.profile === "admin") {
           socket.leave(`company-${user.companyId}-notification`);
         } else {
-          user.queues.forEach((queue) => {
-            logger.debug(`User ${user.id} of company ${user.companyId} leaved queue ${queue.id} channel.`);
+          user.queues.forEach(queue => {
+            logger.debug(
+              `User ${user.id} of company ${user.companyId} leaved queue ${queue.id} channel.`
+            );
             socket.leave(`queue-${queue.id}-notification`);
           });
           if (user.allTicket === "enabled") {
@@ -134,15 +146,19 @@ export const initIO = (httpServer: Server): SocketIO => {
       }
       logger.debug(`leaveNotification[${c}]: User: ${user.id}`);
     });
- 
+
     socket.on("joinTickets", (status: string) => {
       if (counters.incrementCounter(`status-${status}`) === 1) {
         if (user.profile === "admin") {
-          logger.debug(`Admin ${user.id} of company ${user.companyId} joined ${status} tickets channel.`);
+          logger.debug(
+            `Admin ${user.id} of company ${user.companyId} joined ${status} tickets channel.`
+          );
           socket.join(`company-${user.companyId}-${status}`);
         } else if (status === "pending") {
-          user.queues.forEach((queue) => {
-            logger.debug(`User ${user.id} of company ${user.companyId} joined queue ${queue.id} pending tickets channel.`);
+          user.queues.forEach(queue => {
+            logger.debug(
+              `User ${user.id} of company ${user.companyId} joined queue ${queue.id} pending tickets channel.`
+            );
             socket.join(`queue-${queue.id}-pending`);
           });
           if (user.allTicket === "enabled") {
@@ -153,15 +169,19 @@ export const initIO = (httpServer: Server): SocketIO => {
         }
       }
     });
-    
+
     socket.on("leaveTickets", (status: string) => {
       if (counters.decrementCounter(`status-${status}`) === 0) {
         if (user.profile === "admin") {
-          logger.debug(`Admin ${user.id} of company ${user.companyId} leaved ${status} tickets channel.`);
+          logger.debug(
+            `Admin ${user.id} of company ${user.companyId} leaved ${status} tickets channel.`
+          );
           socket.leave(`company-${user.companyId}-${status}`);
         } else if (status === "pending") {
-          user.queues.forEach((queue) => {
-            logger.debug(`User ${user.id} of company ${user.companyId} leaved queue ${queue.id} pending tickets channel.`);
+          user.queues.forEach(queue => {
+            logger.debug(
+              `User ${user.id} of company ${user.companyId} leaved queue ${queue.id} pending tickets channel.`
+            );
             socket.leave(`queue-${queue.id}-pending`);
           });
           if (user.allTicket === "enabled") {
@@ -170,7 +190,7 @@ export const initIO = (httpServer: Server): SocketIO => {
         }
       }
     });
-    
+
     socket.emit("ready");
   });
   return io;

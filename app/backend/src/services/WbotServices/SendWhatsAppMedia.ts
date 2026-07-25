@@ -4,10 +4,10 @@ import fs from "fs";
 import { exec } from "child_process";
 import path from "path";
 import ffmpegPath from "@ffmpeg-installer/ffmpeg";
+import { lookup } from "mime-types";
 import AppError from "../../errors/AppError";
 import GetTicketWbot from "../../helpers/GetTicketWbot";
 import Ticket from "../../models/Ticket";
-import { lookup } from "mime-types";
 import formatBody from "../../helpers/Mustache";
 
 interface Request {
@@ -63,46 +63,46 @@ export const getMessageOptions = async (
     if (typeMessage === "video") {
       options = {
         video: fs.readFileSync(pathMedia),
-        caption: body ? body : "",
-        fileName: fileName
+        caption: body || "",
+        fileName
         // gifPlayback: true
       };
     } else if (typeMessage === "audio") {
-      const typeAudio = true; //fileName.includes("audio-record-site");
+      const typeAudio = true; // fileName.includes("audio-record-site");
       const convert = await processAudio(pathMedia);
       if (typeAudio) {
         options = {
           audio: fs.readFileSync(convert),
           mimetype: typeAudio ? "audio/mp4" : mimeType,
-          caption: body ? body : null,
+          caption: body || null,
           ptt: true
         };
       } else {
         options = {
           audio: fs.readFileSync(convert),
           mimetype: typeAudio ? "audio/mp4" : mimeType,
-          caption: body ? body : null,
+          caption: body || null,
           ptt: true
         };
       }
     } else if (typeMessage === "document") {
       options = {
         document: fs.readFileSync(pathMedia),
-        caption: body ? body : null,
-        fileName: fileName,
+        caption: body || null,
+        fileName,
         mimetype: mimeType
       };
     } else if (typeMessage === "application") {
       options = {
         document: fs.readFileSync(pathMedia),
-        caption: body ? body : null,
-        fileName: fileName,
+        caption: body || null,
+        fileName,
         mimetype: mimeType
       };
     } else {
       options = {
         image: fs.readFileSync(pathMedia),
-        caption: body ? body : null
+        caption: body || null
       };
     }
 

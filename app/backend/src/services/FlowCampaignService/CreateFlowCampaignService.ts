@@ -6,7 +6,7 @@ import { randomString } from "../../utils/randomCode";
 interface Request {
   userId: number;
   name: string;
-  companyId: number
+  companyId: number;
   flowId: number;
   phrase: string;
   whatsappId: string;
@@ -22,19 +22,19 @@ const CreateFlowCampaignService = async ({
 }: Request): Promise<FlowCampaignModel> => {
   try {
     const flow = await FlowCampaignModel.create({
-      userId: userId,
+      userId,
       companyId: Number(companyId),
-      name: name,
-      phrase: phrase,
-      flowId: flowId,
-      whatsappId: whatsappId
+      name,
+      phrase,
+      flowId,
+      whatsappId
     } as any);
 
     return flow;
   } catch (error) {
     console.error("Erro ao inserir o usuário:", error);
 
-    return error
+    return error;
   }
 };
 

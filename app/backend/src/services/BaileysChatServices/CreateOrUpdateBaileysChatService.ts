@@ -3,20 +3,22 @@ import BaileysChats from "../../models/BaileysChats";
 
 export const CreateOrUpdateBaileysChatService = async (
   whatsappId: number,
-  chat: Partial<Chat>,
+  chat: Partial<Chat>
 ): Promise<BaileysChats> => {
   const { id, conversationTimestamp, unreadCount } = chat;
   const baileysChat = await BaileysChats.findOne({
     where: {
       whatsappId,
-      jid: id,
+      jid: id
     }
   });
 
   if (baileysChat) {
     const baileysChats = await baileysChat.update({
       conversationTimestamp: conversationTimestamp as any,
-      unreadCount: unreadCount ? baileysChat.unreadCount + Number(unreadCount) : 0
+      unreadCount: unreadCount
+        ? baileysChat.unreadCount + Number(unreadCount)
+        : 0
     });
 
     return baileysChats;
@@ -31,8 +33,9 @@ export const CreateOrUpdateBaileysChatService = async (
   const baileysChats = await BaileysChats.create({
     whatsappId,
     jid: id,
-    conversationTimestamp: (conversationTimestamp as any) || conversationTimestampNumber,
-    unreadCount: Number(unreadCount) || 1,
+    conversationTimestamp:
+      (conversationTimestamp as any) || conversationTimestampNumber,
+    unreadCount: Number(unreadCount) || 1
   } as any);
 
   return baileysChats;

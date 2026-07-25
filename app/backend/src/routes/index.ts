@@ -36,6 +36,7 @@ import flowBuilder from "./flowBuilderRoutes";
 import flowCampaignRoutes from "./flowCampaignRoutes";
 import serviceCredentialRoutes from "./serviceCredentialRoutes";
 import internalV1Routes from "./internalV1Routes";
+
 const routes = Router();
 
 routes.use("/internal/v1", internalV1Routes);
@@ -75,7 +76,7 @@ routes.use(queueIntegrationRoutes);
 routes.use(forgotsRoutes);
 
 routes.use(flowDefaultRoutes);
-routes.use(flowBuilder)
-routes.use(flowCampaignRoutes)
+routes.use(flowBuilder);
+routes.use(flowCampaignRoutes);
 
 export default routes;

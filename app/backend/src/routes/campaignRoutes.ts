@@ -1,8 +1,8 @@
 import express from "express";
+import multer from "multer";
 import isAuth from "../middleware/isAuth";
 
 import * as CampaignController from "../controllers/CampaignController";
-import multer from "multer";
 import uploadConfig from "../config/upload";
 
 const upload = multer(uploadConfig);

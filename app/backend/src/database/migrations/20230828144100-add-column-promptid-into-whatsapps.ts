@@ -1,13 +1,15 @@
 import { QueryInterface, DataTypes } from "sequelize";
-interface ExistingColumns {
-  };
+
+interface ExistingColumns {}
 
 module.exports = {
   up: async (queryInterface: QueryInterface) => {
     const table = "Whatsapps";
     const column = "promptId";
 
-    const tableInfo: ExistingColumns = await queryInterface.describeTable(table);
+    const tableInfo: ExistingColumns = await queryInterface.describeTable(
+      table
+    );
     if (tableInfo[column]) {
       return Promise.resolve();
     }

@@ -3,24 +3,23 @@ import { WebhookModel } from "../../models/Webhook";
 import { randomString } from "../../utils/randomCode";
 
 interface node {
-    id: string,
-    position: { x: number, y: number },
-    data: { 
-        label: string
-        sec?: number
-        title?: string
-        text?: string
-    },
-    type: string,
-    style: { backgroundColor: string, color: string }
+  id: string;
+  position: { x: number; y: number };
+  data: {
+    label: string;
+    sec?: number;
+    title?: string;
+    text?: string;
+  };
+  type: string;
+  style: { backgroundColor: string; color: string };
 }
 
 interface body {
-    nodes : node
-    idFlow: number
-    connections: any
+  nodes: node;
+  idFlow: number;
+  connections: any;
 }
-
 
 interface Request {
   companyId: number;
@@ -30,23 +29,25 @@ interface Request {
 const FlowUpdateDataService = async ({
   companyId,
   bodyData
-}: Request): Promise<String> => {
+}: Request): Promise<string> => {
   try {
-
-    const flow = await FlowBuilderModel.update({ 
+    const flow = await FlowBuilderModel.update(
+      {
         flow: {
-            nodes: bodyData.nodes,
-            connections: bodyData.connections
-        } 
-    },{
-      where: {id: bodyData.idFlow, company_id: companyId}
-    });
+          nodes: bodyData.nodes,
+          connections: bodyData.connections
+        }
+      },
+      {
+        where: { id: bodyData.idFlow, company_id: companyId }
+      }
+    );
 
-    return 'ok';
+    return "ok";
   } catch (error) {
     console.error("Erro ao inserir o usuário:", error);
 
-    return error
+    return error;
   }
 };
 

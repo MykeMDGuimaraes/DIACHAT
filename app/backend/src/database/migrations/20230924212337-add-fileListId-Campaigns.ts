@@ -7,10 +7,10 @@ module.exports = {
       references: { model: "Files", key: "id" },
       onUpdate: "CASCADE",
       onDelete: "SET NULL"
-    })
+    });
   },
 
   down: (queryInterface: QueryInterface) => {
-    return queryInterface.removeColumn("Campaigns", "fileListId")
+    return queryInterface.removeColumn("Campaigns", "fileListId");
   }
 };

@@ -41,16 +41,16 @@ class Plan extends Model<Plan> {
   updatedAt: Date;
 
   @Column
-  useSchedules: boolean;   
+  useSchedules: boolean;
 
   @Column
-  useCampaigns: boolean; 
-  
+  useCampaigns: boolean;
+
   @Column
-  useInternalChat: boolean;   
-  
+  useInternalChat: boolean;
+
   @Column
-  useExternalApi: boolean;   
+  useExternalApi: boolean;
 
   @Column
   useKanban: boolean;

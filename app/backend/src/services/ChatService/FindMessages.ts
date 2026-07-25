@@ -1,9 +1,8 @@
+import { sortBy } from "lodash";
 import AppError from "../../errors/AppError";
 import ChatMessage from "../../models/ChatMessage";
 import ChatUser from "../../models/ChatUser";
 import User from "../../models/User";
-
-import { sortBy } from "lodash";
 
 interface Request {
   chatId: string;

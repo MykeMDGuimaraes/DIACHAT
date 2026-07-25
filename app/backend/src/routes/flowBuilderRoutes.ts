@@ -1,6 +1,6 @@
 import express from "express";
-import isAuth from "../middleware/isAuth";
 import multer from "multer";
+import isAuth from "../middleware/isAuth";
 import uploadConfig from "../config/uploadExt";
 
 import * as FlowBuilderController from "../controllers/FlowBuilderController";
@@ -58,7 +58,7 @@ flowBuilder.post(
 flowBuilder.post(
   "/flowbuilder/content",
   isAuth,
-  upload.array('medias'),
+  upload.array("medias"),
   FlowBuilderController.FlowUploadAll
 );
 

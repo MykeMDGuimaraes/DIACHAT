@@ -14,7 +14,7 @@ interface Request {
   companyId?: number;
   profile?: string;
   whatsappId?: number;
-  allTicket?:string;
+  allTicket?: string;
 }
 
 interface Response {
@@ -90,7 +90,7 @@ const CreateUserService = async ({
       companyId,
       profile,
       whatsappId: whatsappId || null,
-	  allTicket
+      allTicket
     },
     { include: ["queues", "company"] }
   );

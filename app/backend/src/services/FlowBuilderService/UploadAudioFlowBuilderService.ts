@@ -7,7 +7,7 @@ import { randomString } from "../../utils/randomCode";
 interface Request {
   userId: number;
   name: string;
-  companyId: number
+  companyId: number;
 }
 
 const UploadAudioFlowBuilderService = async ({
@@ -17,16 +17,16 @@ const UploadAudioFlowBuilderService = async ({
 }: Request): Promise<FlowAudioModel> => {
   try {
     const flowImg = await FlowAudioModel.create({
-      userId: userId,
-      companyId: companyId,
-      name: name,
+      userId,
+      companyId,
+      name
     });
 
     return flowImg;
   } catch (error) {
     console.error("Erro ao inserir o usuário:", error);
 
-    return error
+    return error;
   }
 };
 

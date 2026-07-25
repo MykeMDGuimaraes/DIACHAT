@@ -1,20 +1,22 @@
+import { Request, Response } from "express";
+import { ParamsDictionary } from "express-serve-static-core";
+import { ParsedQs } from "qs";
+import fs from "fs";
+import path from "path";
+import { delay } from "bluebird";
+import { proto } from "baileys";
 import AppError from "../../errors/AppError";
 import { WebhookModel } from "../../models/Webhook";
 import { sendMessageFlow } from "../../controllers/MessageController";
 import { IConnections, INodes } from "./DispatchWebHookService";
-import { Request, Response } from "express";
-import { ParamsDictionary } from "express-serve-static-core";
-import { ParsedQs } from "qs";
 import CreateContactService from "../ContactServices/CreateContactService";
 import Contact from "../../models/Contact";
-//import CreateTicketService from "../TicketServices/CreateTicketService";
-//import CreateTicketServiceWebhook from "../TicketServices/CreateTicketServiceWebhook";
+// import CreateTicketService from "../TicketServices/CreateTicketService";
+// import CreateTicketServiceWebhook from "../TicketServices/CreateTicketServiceWebhook";
 import { SendMessage } from "../../helpers/SendMessage";
 import GetDefaultWhatsApp from "../../helpers/GetDefaultWhatsApp";
 import Ticket from "../../models/Ticket";
-import fs from "fs";
 import GetWhatsappWbot from "../../helpers/GetWhatsappWbot";
-import path from "path";
 import SendWhatsAppMedia from "../WbotServices/SendWhatsAppMedia";
 import SendWhatsAppMediaFlow, {
   typeSimulation
@@ -34,14 +36,12 @@ import { getIO } from "../../libs/socket";
 import UpdateTicketService from "../TicketServices/UpdateTicketService";
 import FindOrCreateATicketTrakingService from "../TicketServices/FindOrCreateATicketTrakingService";
 import ShowTicketUUIDService from "../TicketServices/ShowTicketFromUUIDService";
-import {logger} from "../../utils/logger";
-///import CreateLogTicketService from "../TicketServices/CreateLogTicketService";
-//import CompaniesSettings from "../../models/CompaniesSettings";
-//import ShowWhatsAppService from "../WhatsappService/ShowWhatsAppService";
-import { delay } from "bluebird";
+import { logger } from "../../utils/logger";
+/// import CreateLogTicketService from "../TicketServices/CreateLogTicketService";
+// import CompaniesSettings from "../../models/CompaniesSettings";
+// import ShowWhatsAppService from "../WhatsappService/ShowWhatsAppService";
 import typebotListener from "../TypebotServices/typebotListener";
 import { getWbot } from "../../libs/wbot";
-import { proto } from "baileys";
 import { handleOpenAi } from "../IntegrationsServices/OpenAiService";
 import { IOpenAi } from "../../@types/openai";
 
@@ -98,7 +98,7 @@ export const ActionsWebhookService = async (
         } else {
           sumRes = constructJsonLine(lineToData, dataWebhook);
         }
-        createFieldJsonName = createFieldJsonName + sumRes;
+        createFieldJsonName += sumRes;
       });
     } else {
       createFieldJsonName = numberPhrase.name;
@@ -123,7 +123,7 @@ export const ActionsWebhookService = async (
           );
         }
 
-        numberClient = numberClient + createFieldJsonNumber;
+        numberClient += createFieldJsonNumber;
       });
     } else {
       numberClient = numberPhrase.number;
@@ -156,7 +156,7 @@ export const ActionsWebhookService = async (
           sumRes = constructJsonLine(lineToDataEmail, dataWebhook);
         }
 
-        createFieldJsonEmail = createFieldJsonEmail + sumRes;
+        createFieldJsonEmail += sumRes;
       });
     } else {
       createFieldJsonEmail = numberPhrase.email;
@@ -177,7 +177,7 @@ export const ActionsWebhookService = async (
 
     let noAlterNext = false;
 
-    for (var i = 0; i < lengthLoop; i++) {
+    for (let i = 0; i < lengthLoop; i++) {
       let nodeSelected: any;
       let ticketInit: Ticket;
 
@@ -215,10 +215,9 @@ export const ActionsWebhookService = async (
       }
 
       if (nodeSelected.type === "message") {
-
         let msg;
 
-        const webhook = ticket.dataWebhook
+        const webhook = ticket.dataWebhook;
 
         if (webhook && webhook.hasOwnProperty("variables")) {
           msg = {
@@ -235,12 +234,11 @@ export const ActionsWebhookService = async (
           body: msg.body
         });
 
-
-        //TESTE BOTÃO
-        //await SendMessageFlow(whatsapp, {
+        // TESTE BOTÃO
+        // await SendMessageFlow(whatsapp, {
         //  number: numberClient,
         //  body: msg.body
-        //} )
+        // } )
         await intervalWhats("1");
       }
       console.log("273");
@@ -248,7 +246,7 @@ export const ActionsWebhookService = async (
         console.log("275");
         const wbot = getWbot(whatsapp.id);
         await typebotListener({
-          wbot: wbot,
+          wbot,
           msg,
           ticket,
           typebot: nodeSelected.data.typebotIntegration
@@ -256,7 +254,7 @@ export const ActionsWebhookService = async (
       }
 
       if (nodeSelected.type === "openai") {
-        let {
+        const {
           name,
           prompt,
           voice,
@@ -269,7 +267,7 @@ export const ActionsWebhookService = async (
           maxMessages
         } = nodeSelected.data.typebotIntegration as IOpenAi;
 
-        let openAiSettings = {
+        const openAiSettings = {
           name,
           prompt,
           voice,
@@ -333,7 +331,7 @@ export const ActionsWebhookService = async (
 
           await ticket.update({
             userId: null,
-            companyId: companyId,
+            companyId,
             lastFlowId: nodeSelected.id,
             hashFlowId: hashWebhookId,
             flowStopped: idFlowDb.toString()
@@ -343,7 +341,7 @@ export const ActionsWebhookService = async (
       }
 
       if (nodeSelected.type === "ticket") {
-        /*const queueId = nodeSelected.data?.data?.id || nodeSelected.data?.id;
+        /* const queueId = nodeSelected.data?.data?.id || nodeSelected.data?.id;
         const queue = await ShowQueueService(queueId, companyId);
 
         await ticket.update({
@@ -422,11 +420,11 @@ export const ActionsWebhookService = async (
           await ticketDetails.update({
             lastMessage: bodyFila
           });
-        }*/
+        } */
       }
 
       if (nodeSelected.type === "singleBlock") {
-        for (var iLoc = 0; iLoc < nodeSelected.data.seq.length; iLoc++) {
+        for (let iLoc = 0; iLoc < nodeSelected.data.seq.length; iLoc++) {
           const elementNowSelected = nodeSelected.data.seq[iLoc];
 
           ticket = await Ticket.findOne({
@@ -483,21 +481,17 @@ export const ActionsWebhookService = async (
             await SendMessage(whatsapp, {
               number: numberClient,
               body: "",
-              mediaPath:
-                process.env.BACKEND_URL.includes("http://localhost")
-                  ? `${__dirname.split("src")[0].split("\\").join("/")}public/${
-                      nodeSelected.data.elements.filter(
-                        item => item.number === elementNowSelected
-                      )[0].value
-                    }`
-                  : `${__dirname
-                      .split("dist")[0]
-                      .split("\\")
-                      .join("/")}public/${
-                      nodeSelected.data.elements.filter(
-                        item => item.number === elementNowSelected
-                      )[0].value
-                    }`
+              mediaPath: process.env.BACKEND_URL.includes("http://localhost")
+                ? `${__dirname.split("src")[0].split("\\").join("/")}public/${
+                    nodeSelected.data.elements.filter(
+                      item => item.number === elementNowSelected
+                    )[0].value
+                  }`
+                : `${__dirname.split("dist")[0].split("\\").join("/")}public/${
+                    nodeSelected.data.elements.filter(
+                      item => item.number === elementNowSelected
+                    )[0].value
+                  }`
             });
             await intervalWhats("1");
           }
@@ -528,7 +522,7 @@ export const ActionsWebhookService = async (
                 item => item.number === elementNowSelected
               )[0].record
             });
-            //fs.unlinkSync(mediaDirectory.split('.')[0] + 'A.mp3');
+            // fs.unlinkSync(mediaDirectory.split('.')[0] + 'A.mp3');
             await intervalWhats("1");
           }
           if (elementNowSelected.includes("video")) {
@@ -554,7 +548,7 @@ export const ActionsWebhookService = async (
               media: mediaDirectory,
               ticket: ticketInt
             });
-            //fs.unlinkSync(mediaDirectory.split('.')[0] + 'A.mp3');
+            // fs.unlinkSync(mediaDirectory.split('.')[0] + 'A.mp3');
             await intervalWhats("1");
           }
         }
@@ -590,7 +584,7 @@ export const ActionsWebhookService = async (
             confil => confil.source === next
           );
           const filterTwo = filterOne.filter(
-            filt2 => filt2.sourceHandle === "a" + pressKey
+            filt2 => filt2.sourceHandle === `a${pressKey}`
           );
           if (filterTwo.length > 0) {
             execFn = filterTwo[0].target;
@@ -610,7 +604,7 @@ export const ActionsWebhookService = async (
           const isNodeExist = nodes.filter(item => item.id === execFn);
           console.log(674, "menu");
           if (isNodeExist.length > 0) {
-            isMenu = isNodeExist[0].type === "menu" ? true : false;
+            isMenu = isNodeExist[0].type === "menu";
           } else {
             isMenu = false;
           }
@@ -630,29 +624,29 @@ export const ActionsWebhookService = async (
             msg = {
               body: replaceMessages(webhook, menuCreate),
               number: numberClient,
-              companyId: companyId
+              companyId
             };
           } else {
             msg = {
               body: menuCreate,
               number: numberClient,
-              companyId: companyId
+              companyId
             };
           }
 
           const ticketDetails = await ShowTicketService(ticket.id, companyId);
 
-          //const messageData: MessageData = {
+          // const messageData: MessageData = {
           //  wid: randomString(50),
           //  ticketId: ticket.id,
           //  body: msg.body,
           //  fromMe: true,
           //  read: true
-          //};
+          // };
 
-          //await CreateMessageService({ messageData: messageData, companyId });
+          // await CreateMessageService({ messageData: messageData, companyId });
 
-          //await SendWhatsAppMessage({ body: bodyFor, ticket: ticketDetails, quotedMsg: null })
+          // await SendWhatsAppMessage({ body: bodyFor, ticket: ticketDetails, quotedMsg: null })
 
           // await SendMessage(whatsapp, {
           //   number: numberClient,
@@ -678,16 +672,16 @@ export const ActionsWebhookService = async (
             ticket = await Ticket.findOne({
               where: {
                 id: ticket.id,
-                whatsappId: whatsappId,
-                companyId: companyId
+                whatsappId,
+                companyId
               }
             });
           } else {
             ticket = await Ticket.findOne({
               where: {
                 id: idTicket,
-                whatsappId: whatsappId,
-                companyId: companyId
+                whatsappId,
+                companyId
               }
             });
           }
@@ -696,10 +690,10 @@ export const ActionsWebhookService = async (
             await ticket.update({
               queueId: ticket.queueId ? ticket.queueId : null,
               userId: null,
-              companyId: companyId,
+              companyId,
               flowWebhook: true,
               lastFlowId: nodeSelected.id,
-              dataWebhook: dataWebhook,
+              dataWebhook,
               hashFlowId: hashWebhookId,
               flowStopped: idFlowDb.toString()
             });
@@ -715,13 +709,11 @@ export const ActionsWebhookService = async (
         console.log(587, "ActionsWebhookService | 587");
 
         pressKey = undefined;
-        let result = connects.filter(connect => connect.source === execFn)[0];
+        const result = connects.filter(connect => connect.source === execFn)[0];
         if (typeof result === "undefined") {
           next = "";
-        } else {
-          if (!noAlterNext) {
-            next = result.target;
-          }
+        } else if (!noAlterNext) {
+          next = result.target;
         }
       } else {
         let result;
@@ -739,10 +731,8 @@ export const ActionsWebhookService = async (
 
         if (typeof result === "undefined") {
           next = "";
-        } else {
-          if (!noAlterNext) {
-            next = result.target;
-          }
+        } else if (!noAlterNext) {
+          next = result.target;
         }
         console.log(619, "ActionsWebhookService");
       }
@@ -758,7 +748,7 @@ export const ActionsWebhookService = async (
           console.log(654, "ActionsWebhookService");
 
           await Ticket.findOne({
-            where: { id: idTicket, whatsappId, companyId: companyId }
+            where: { id: idTicket, whatsappId, companyId }
           });
           await ticket.update({
             lastFlowId: nodeSelected.id,
@@ -780,7 +770,7 @@ export const ActionsWebhookService = async (
 
       console.log("UPDATE10...");
       ticket = await Ticket.findOne({
-        where: { id: idTicket, whatsappId, companyId: companyId }
+        where: { id: idTicket, whatsappId, companyId }
       });
 
       if (ticket.status === "closed") {
@@ -795,10 +785,10 @@ export const ActionsWebhookService = async (
 
       console.log("UPDATE12...");
       await ticket.update({
-        whatsappId: whatsappId,
+        whatsappId,
         queueId: ticket?.queueId,
         userId: null,
-        companyId: companyId,
+        companyId,
         flowWebhook: true,
         lastFlowId: nodeSelected.id,
         hashFlowId: hashWebhookId,
@@ -874,17 +864,16 @@ const replaceMessagesOld = (
     const placeholders = matches.map(match => match.replace(/\{|\}/g, ""));
     let newText = message;
     placeholders.map(item => {
-      const value = details["inputs"].find(
+      const value = details.inputs.find(
         itemLocal => itemLocal.keyValue === item
       );
-      const lineToData = details["keysFull"].find(itemLocal =>
+      const lineToData = details.keysFull.find(itemLocal =>
         itemLocal.endsWith(`.${value.data}`)
       );
       const createFieldJson = constructJsonLine(lineToData, dataWebhook);
       newText = newText.replace(`{${item}}`, createFieldJson);
     });
     return newText;
-  } else {
-    return message;
   }
+  return message;
 };

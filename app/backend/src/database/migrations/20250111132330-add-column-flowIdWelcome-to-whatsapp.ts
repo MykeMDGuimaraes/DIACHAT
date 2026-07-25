@@ -2,7 +2,6 @@ import { QueryInterface, DataTypes } from "sequelize";
 // Adicionar a coluna flowBuilderId na tabela Whatsapp
 
 module.exports = {
-
   up: (queryInterface: QueryInterface) => {
     return queryInterface.addColumn("Whatsapps", "flowIdWelcome", {
       type: DataTypes.INTEGER,
@@ -20,5 +19,4 @@ module.exports = {
     // Remover a coluna flowBuilderId da tabela Whatsapp
     queryInterface.removeColumn("Whatsapps", "flowIdWelcome");
   }
-
-}
+};

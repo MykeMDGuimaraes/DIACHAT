@@ -1,6 +1,5 @@
-import { head } from "lodash";
+import { head, has } from "lodash";
 import ExcelJS from "exceljs";
-import { has } from "lodash";
 import ContactListItem from "../../models/ContactListItem";
 import CheckContactNumber from "../WbotServices/CheckNumber";
 import { logger } from "../../utils/logger";
@@ -35,7 +34,7 @@ export async function ImportContacts(
     let email = "";
 
     if (has(row, "nome") || has(row, "Nome")) {
-      name = row["nome"] || row["Nome"];
+      name = row.nome || row.Nome;
     }
 
     if (
@@ -44,7 +43,7 @@ export async function ImportContacts(
       has(row, "Numero") ||
       has(row, "Número")
     ) {
-      number = row["numero"] || row["número"] || row["Numero"] || row["Número"];
+      number = row.numero || row["número"] || row.Numero || row["Número"];
       number = `${number}`.replace(/\D/g, "");
     }
 
@@ -54,7 +53,7 @@ export async function ImportContacts(
       has(row, "Email") ||
       has(row, "E-mail")
     ) {
-      email = row["email"] || row["e-mail"] || row["Email"] || row["E-mail"];
+      email = row.email || row["e-mail"] || row.Email || row["E-mail"];
     }
 
     return { name, number, email, contactListId, companyId };
@@ -77,7 +76,7 @@ export async function ImportContacts(
   }
 
   if (contactList) {
-    for (let newContact of contactList) {
+    for (const newContact of contactList) {
       try {
         const response = await CheckContactNumber(newContact.number, companyId);
         newContact.isWhatsappValid = response.exists;

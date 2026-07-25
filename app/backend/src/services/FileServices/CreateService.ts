@@ -45,12 +45,12 @@ const CreateService = async ({
     throw new AppError(err.message);
   }
   let fileList = await Files.create({
-    name, 
-    message, 
-    companyId 
+    name,
+    message,
+    companyId
   });
 
-  if(options && options.length > 0) {
+  if (options && options.length > 0) {
     await Promise.all(
       options.map(async info => {
         // eslint-disable-next-line @typescript-eslint/ban-ts-comment
@@ -60,7 +60,7 @@ const CreateService = async ({
     );
   }
 
-   fileList = await ShowService(fileList.id, companyId)
+  fileList = await ShowService(fileList.id, companyId);
 
   return fileList;
 };

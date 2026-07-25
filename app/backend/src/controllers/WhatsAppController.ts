@@ -20,16 +20,16 @@ interface WhatsappData {
   status?: string;
   isDefault?: boolean;
   token?: string;
-  //sendIdQueue?: number;
-  //timeSendQueue?: number;
+  // sendIdQueue?: number;
+  // timeSendQueue?: number;
   transferQueueId?: number;
-  timeToTransfer?: number;  
+  timeToTransfer?: number;
   promptId?: number;
   maxUseBotQueues?: number;
   timeUseBotQueues?: number;
   expiresTicket?: number;
   expiresInactiveMessage?: string;
-  integrationId?: number
+  integrationId?: number;
 }
 
 interface QueryParams {
@@ -54,10 +54,10 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
     outOfHoursMessage,
     queueIds,
     token,
-    //timeSendQueue,
-    //sendIdQueue,
-	  transferQueueId,
-	  timeToTransfer,
+    // timeSendQueue,
+    // sendIdQueue,
+    transferQueueId,
+    timeToTransfer,
     promptId,
     maxUseBotQueues,
     timeUseBotQueues,
@@ -77,10 +77,10 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
     queueIds,
     companyId,
     token,
-    //timeSendQueue,
-    //sendIdQueue,
-	  transferQueueId,
-	  timeToTransfer,	
+    // timeSendQueue,
+    // sendIdQueue,
+    transferQueueId,
+    timeToTransfer,
     promptId,
     maxUseBotQueues,
     timeUseBotQueues,
@@ -92,16 +92,22 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
   StartWhatsAppSession(whatsapp, companyId);
 
   const io = getIO();
-  io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-whatsapp`, {
-    action: "update",
-    whatsapp
-  });
+  io.to(`company-${companyId}-mainchannel`).emit(
+    `company-${companyId}-whatsapp`,
+    {
+      action: "update",
+      whatsapp
+    }
+  );
 
   if (oldDefaultWhatsapp) {
-    io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-whatsapp`, {
-      action: "update",
-      whatsapp: oldDefaultWhatsapp
-    });
+    io.to(`company-${companyId}-mainchannel`).emit(
+      `company-${companyId}-whatsapp`,
+      {
+        action: "update",
+        whatsapp: oldDefaultWhatsapp
+      }
+    );
   }
 
   return res.status(200).json(whatsapp);
@@ -132,16 +138,22 @@ export const update = async (
   });
 
   const io = getIO();
-  io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-whatsapp`, {
-    action: "update",
-    whatsapp
-  });
+  io.to(`company-${companyId}-mainchannel`).emit(
+    `company-${companyId}-whatsapp`,
+    {
+      action: "update",
+      whatsapp
+    }
+  );
 
   if (oldDefaultWhatsapp) {
-    io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-whatsapp`, {
-      action: "update",
-      whatsapp: oldDefaultWhatsapp
-    });
+    io.to(`company-${companyId}-mainchannel`).emit(
+      `company-${companyId}-whatsapp`,
+      {
+        action: "update",
+        whatsapp: oldDefaultWhatsapp
+      }
+    );
   }
 
   return res.status(200).json(whatsapp);
@@ -160,10 +172,13 @@ export const remove = async (
   removeWbot(+whatsappId);
 
   const io = getIO();
-  io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-whatsapp`, {
-    action: "delete",
-    whatsappId: +whatsappId
-  });
+  io.to(`company-${companyId}-mainchannel`).emit(
+    `company-${companyId}-whatsapp`,
+    {
+      action: "delete",
+      whatsappId: +whatsappId
+    }
+  );
 
   return res.status(200).json({ message: "Whatsapp deleted." });
 };

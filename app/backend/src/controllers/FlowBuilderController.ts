@@ -26,8 +26,8 @@ export const createFlow = async (
     companyId
   });
 
-  if(flow === 'exist'){
-    return res.status(402).json('exist')
+  if (flow === "exist") {
+    return res.status(402).json("exist");
   }
 
   return res.status(200).json(flow);
@@ -42,8 +42,8 @@ export const updateFlow = async (
 
   const flow = await UpdateFlowBuilderService({ companyId, name, flowId });
 
-  if(flow === 'exist'){
-    return res.status(402).json('exist')
+  if (flow === "exist") {
+    return res.status(402).json("exist");
   }
 
   return res.status(200).json(flow);
@@ -145,7 +145,7 @@ export const FlowUploadImg = async (req: Request, res: Response) => {
   let nameFile = medias[0].filename;
 
   if (medias[0].filename.split(".").length === 1) {
-    nameFile = medias[0].filename + "." + medias[0].mimetype.split("/")[1];
+    nameFile = `${medias[0].filename}.${medias[0].mimetype.split("/")[1]}`;
   }
 
   const img = await UploadImgFlowBuilderService({
@@ -168,7 +168,7 @@ export const FlowUploadAudio = async (req: Request, res: Response) => {
   let nameFile = medias[0].filename;
 
   if (medias[0].filename.split(".").length === 1) {
-    nameFile = medias[0].filename + "." + medias[0].mimetype.split("/")[1];
+    nameFile = `${medias[0].filename}.${medias[0].mimetype.split("/")[1]}`;
   }
 
   const img = await UploadAudioFlowBuilderService({
@@ -187,7 +187,6 @@ export const FlowDuplicate = async (req: Request, res: Response) => {
   return res.status(200).json(newFlow);
 };
 
-
 export const FlowUploadAll = async (req: Request, res: Response) => {
   const medias = req.files as Express.Multer.File[];
   const { companyId } = req.user;
@@ -199,7 +198,7 @@ export const FlowUploadAll = async (req: Request, res: Response) => {
 
   const items = await UploadAllFlowBuilderService({
     userId,
-    medias: medias,
+    medias,
     companyId
   });
   return res.status(200).json(items);

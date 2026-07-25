@@ -1,9 +1,9 @@
 import * as Yup from "yup";
 import { Request, Response } from "express";
-import { getIO } from "../libs/socket";
 import { head } from "lodash";
 import fs from "fs";
 import path from "path";
+import { getIO } from "../libs/socket";
 
 import ListService from "../services/AnnouncementService/ListService";
 import CreateService from "../services/AnnouncementService/CreateService";
@@ -67,7 +67,7 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
   });
 
   const io = getIO();
-  io.emit(`company-announcement`, {
+  io.emit("company-announcement", {
     action: "create",
     record
   });
@@ -109,7 +109,7 @@ export const update = async (
   });
 
   const io = getIO();
-  io.emit(`company-announcement`, {
+  io.emit("company-announcement", {
     action: "update",
     record
   });
@@ -127,10 +127,13 @@ export const remove = async (
   await DeleteService(id, companyId);
 
   const io = getIO();
-  io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-announcement`, {
-    action: "delete",
-    id
-  });
+  io.to(`company-${companyId}-mainchannel`).emit(
+    `company-${companyId}-announcement`,
+    {
+      action: "delete",
+      id
+    }
+  );
 
   return res.status(200).json({ message: "Announcement deleted" });
 };
@@ -169,7 +172,7 @@ export const mediaUpload = async (
     await announcement.reload();
 
     const io = getIO();
-    io.emit(`company-announcement`, {
+    io.emit("company-announcement", {
       action: "update",
       record: announcement
     });
@@ -208,7 +211,7 @@ export const deleteMedia = async (
     await announcement.reload();
 
     const io = getIO();
-    io.emit(`company-announcement`, {
+    io.emit("company-announcement", {
       action: "update",
       record: announcement
     });

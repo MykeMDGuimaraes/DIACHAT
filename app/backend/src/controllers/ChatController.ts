@@ -57,10 +57,13 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
   const io = getIO();
 
   record.users.forEach(user => {
-    io.to(`user-${user.userId}`).emit(`company-${companyId}-chat-user-${user.userId}`, {
-      action: "create",
-      record
-    });
+    io.to(`user-${user.userId}`).emit(
+      `company-${companyId}-chat-user-${user.userId}`,
+      {
+        action: "create",
+        record
+      }
+    );
   });
 
   return res.status(200).json(record);
@@ -84,10 +87,13 @@ export const update = async (
   const io = getIO();
 
   record.users.forEach(user => {
-    io.to(`user-${user.userId}`).emit(`company-${companyId}-chat-user-${user.userId}`, {
-      action: "update",
-      record
-    });
+    io.to(`user-${user.userId}`).emit(
+      `company-${companyId}-chat-user-${user.userId}`,
+      {
+        action: "update",
+        record
+      }
+    );
   });
 
   return res.status(200).json(record);
@@ -146,11 +152,14 @@ export const saveMessage = async (
   });
 
   const io = getIO();
-  io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-chat-${chatId}`, {
-    action: "new-message",
-    newMessage,
-    chat
-  });
+  io.to(`company-${companyId}-mainchannel`).emit(
+    `company-${companyId}-chat-${chatId}`,
+    {
+      action: "new-message",
+      newMessage,
+      chat
+    }
+  );
 
   io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-chat`, {
     action: "new-message",
@@ -182,10 +191,13 @@ export const checkAsRead = async (
   });
 
   const io = getIO();
-  io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-chat-${id}`, {
-    action: "update",
-    chat
-  });
+  io.to(`company-${companyId}-mainchannel`).emit(
+    `company-${companyId}-chat-${id}`,
+    {
+      action: "update",
+      chat
+    }
+  );
 
   io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-chat`, {
     action: "update",

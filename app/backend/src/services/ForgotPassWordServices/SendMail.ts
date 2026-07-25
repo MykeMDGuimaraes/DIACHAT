@@ -1,8 +1,9 @@
 import nodemailer from "nodemailer";
 import sequelize from "sequelize";
+import { config } from "dotenv";
 import database from "../../database";
 import Setting from "../../models/Setting";
-import { config } from "dotenv";
+
 config();
 interface UserData {
   companyId: number;
@@ -16,7 +17,7 @@ const SendMail = async (email: string, tokenSenha: string) => {
   if (!userData || userData.companyId === undefined) {
     return { status: 404, message: "Dados do usuário não encontrados" };
   }
-  const companyId = userData.companyId;
+  const { companyId } = userData;
   const urlSmtp = process.env.MAIL_HOST;
   const userSmtp = process.env.MAIL_USER;
   const passwordSmpt = process.env.MAIL_PASS;
@@ -223,7 +224,7 @@ a[x-apple-data-detectors] {
 </html>`
         };
         const info = await transporter.sendMail(mailOptions);
-        console.log("E-mail enviado: " + info.response);
+        console.log(`E-mail enviado: ${info.response}`);
       } catch (error) {
         console.log(error);
       }

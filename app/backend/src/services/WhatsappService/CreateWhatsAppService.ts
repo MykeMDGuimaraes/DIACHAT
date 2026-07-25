@@ -18,16 +18,16 @@ interface Request {
   isDefault?: boolean;
   token?: string;
   provider?: string;
-  //sendIdQueue?: number;
-  //timeSendQueue?: number;
+  // sendIdQueue?: number;
+  // timeSendQueue?: number;
   transferQueueId?: number;
-  timeToTransfer?: number;    
+  timeToTransfer?: number;
   promptId?: number;
   maxUseBotQueues?: number;
   timeUseBotQueues?: number;
   expiresTicket?: number;
   expiresInactiveMessage?: string;
-  integrationId?: number
+  integrationId?: number;
 }
 
 interface Response {
@@ -47,10 +47,10 @@ const CreateWhatsAppService = async ({
   companyId,
   token = "",
   provider = "beta",
-  //timeSendQueue,
-  //sendIdQueue,
+  // timeSendQueue,
+  // sendIdQueue,
   transferQueueId,
-  timeToTransfer,    
+  timeToTransfer,
   promptId,
   maxUseBotQueues = 3,
   timeUseBotQueues = 0,
@@ -58,7 +58,6 @@ const CreateWhatsAppService = async ({
   expiresInactiveMessage = "",
   integrationId = null
 }: Request): Promise<Response> => {
-
   const company = await Company.findOne({
     where: {
       id: companyId
@@ -160,10 +159,10 @@ const CreateWhatsAppService = async ({
       companyId,
       token,
       provider,
-      //timeSendQueue,
-      //sendIdQueue,
-	    transferQueueId,
-	    timeToTransfer,	  
+      // timeSendQueue,
+      // sendIdQueue,
+      transferQueueId,
+      timeToTransfer,
       promptId,
       maxUseBotQueues,
       timeUseBotQueues,

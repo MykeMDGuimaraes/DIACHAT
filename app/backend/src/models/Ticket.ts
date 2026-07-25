@@ -12,7 +12,8 @@ import {
   Default,
   BeforeCreate,
   BelongsToMany,
-  AllowNull, DataType
+  AllowNull,
+  DataType
 } from "sequelize-typescript";
 import { v4 as uuidv4 } from "uuid";
 
@@ -133,7 +134,7 @@ class Ticket extends Model<Ticket> {
 
   @Default(false)
   @Column
-  typebotStatus: boolean
+  typebotStatus: boolean;
 
   @ForeignKey(() => Prompt)
   @Column

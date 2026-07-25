@@ -1,7 +1,7 @@
 import { Op, fn, col, where } from "sequelize";
+import { isEmpty } from "lodash";
 import ContactList from "../../models/ContactList";
 import ContactListItem from "../../models/ContactListItem";
-import { isEmpty } from "lodash";
 
 interface Request {
   companyId: number | string;

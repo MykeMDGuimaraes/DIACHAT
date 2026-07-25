@@ -9,18 +9,20 @@ interface Request {
 const UpdateActiveWebHookService = async ({
   status,
   webhookId
-}: Request): Promise<String> => {
+}: Request): Promise<string> => {
   try {
+    const webhook = await WebhookModel.update(
+      { active: status },
+      {
+        where: { id: webhookId }
+      }
+    );
 
-    const webhook = await WebhookModel.update({ active: status }, {
-      where: {id: webhookId}
-    });
-
-    return 'ok';
+    return "ok";
   } catch (error) {
     console.error("Erro ao inserir o usuário:", error);
 
-    return error
+    return error;
   }
 };
 

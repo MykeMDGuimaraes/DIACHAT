@@ -95,9 +95,7 @@ const isServiceAuth = async (
     companyId: credential.companyId
   };
 
-  credential
-    .update({ lastUsedAt: new Date() })
-    .catch(() => undefined);
+  credential.update({ lastUsedAt: new Date() }).catch(() => undefined);
 
   audit({
     companyId: credential.companyId,
@@ -105,7 +103,11 @@ const isServiceAuth = async (
     actorId: `service:${credential.id}`,
     action: "service.auth",
     ip: requestIp(req),
-    metadata: { tokenId, method: req.method, path: req.originalUrl.split("?")[0] }
+    metadata: {
+      tokenId,
+      method: req.method,
+      path: req.originalUrl.split("?")[0]
+    }
   });
 
   return next();

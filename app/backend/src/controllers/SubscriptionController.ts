@@ -1,5 +1,4 @@
-import { Request, Response } from "express";
-import express from "express";
+import express, { Request, Response } from "express";
 import * as Yup from "yup";
 import Gerencianet from "gn-api-sdk-typescript";
 import AppError from "../errors/AppError";
@@ -8,10 +7,9 @@ import options from "../config/Gn";
 import Company from "../models/Company";
 import Invoices from "../models/Invoices";
 import { getIO } from "../libs/socket";
-import {logger} from "../utils/logger";
+import { logger } from "../utils/logger";
 
 const app = express();
-
 
 export const index = async (req: Request, res: Response): Promise<Response> => {
   const gerencianet = Gerencianet(options);
@@ -21,9 +19,9 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
 export const createSubscription = async (
   req: Request,
   res: Response
-  ): Promise<Response> => {
-    const gerencianet = Gerencianet(options);
-    const { companyId } = req.user;
+): Promise<Response> => {
+  const gerencianet = Gerencianet(options);
+  const { companyId } = req.user;
 
   const schema = Yup.object().shape({
     price: Yup.string().required(),
@@ -54,7 +52,9 @@ export const createSubscription = async (
       expiracao: 3600
     },
     valor: {
-      original: price.toLocaleString("pt-br", { minimumFractionDigits: 2 }).replace(",", ".")
+      original: price
+        .toLocaleString("pt-br", { minimumFractionDigits: 2 })
+        .replace(",", ".")
     },
     chave: process.env.GERENCIANET_PIX_KEY,
     solicitacaoPagador: `#Fatura:${invoiceId}`
@@ -67,7 +67,7 @@ export const createSubscription = async (
       id: pix.loc.id
     });
 
-    let bodyWebhook = {
+    const bodyWebhook = {
       webhookUrl: `${process.env.BACKEND_URL}/subscription/webhook?ignorar=`
     };
 
@@ -79,8 +79,7 @@ export const createSubscription = async (
 
     return res.json({
       ...pix,
-      qrcode,
-
+      qrcode
     });
   } catch (error) {
     logger.error(error);
@@ -88,11 +87,10 @@ export const createSubscription = async (
   }
 };
 
-export const  createWebhook = async (
+export const createWebhook = async (
   req: Request,
   res: Response
 ): Promise<Response> => {
-
   const schema = Yup.object().shape({
     chave: Yup.string().required(),
     url: Yup.string().required()
@@ -124,8 +122,7 @@ export const  createWebhook = async (
 export const webhook = async (
   req: Request,
   res: Response
-  ): Promise<Response> => {
-
+): Promise<Response> => {
   const { evento } = req.body;
 
   if (evento === "teste_webhook") {
@@ -139,11 +136,11 @@ export const webhook = async (
         txid: pix.txid
       });
 
-      if (detahe.status === "CONCLUIDA"){
+      if (detahe.status === "CONCLUIDA") {
         const { solicitacaoPagador } = detahe;
         const invoiceID = solicitacaoPagador.replace("#Fatura:", "");
         const invoices = await Invoices.findByPk(invoiceID);
-        const companyId =invoices.companyId;
+        const { companyId } = invoices;
         const company = await Company.findByPk(companyId);
 
         const expiresAt = new Date(company.dueDate);
@@ -154,9 +151,9 @@ export const webhook = async (
           await company.update({
             dueDate: date
           });
-         const invoi = await invoices.update({
+          const invoi = await invoices.update({
             id: invoiceID,
-            status: 'paid'
+            status: "paid"
           });
           await company.reload();
           const io = getIO();
@@ -166,15 +163,16 @@ export const webhook = async (
             }
           });
 
-          io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-payment`, {
-            action: detahe.status,
-            company: companyUpdate
-          });
+          io.to(`company-${companyId}-mainchannel`).emit(
+            `company-${companyId}-payment`,
+            {
+              action: detahe.status,
+              company: companyUpdate
+            }
+          );
         }
-
       }
     }
-
   }
 
   return res.json({ ok: true });

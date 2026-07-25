@@ -8,4 +8,5 @@
 - [Backend ESLint vs ajv override](backend-eslint-ajv.md) — override global de ajv deve ficar em ^6 no backend; ajv 8 quebra o eslintrc do ESLint 8.
 - [Envio aguarda reconexão do wbot](wbot-send-reconnect-wait.md) — sends esperam sessão Baileys voltar (45s→503); jest exige mock de baileys (crypto.subtle).
 - [Backend clean install vs firewall](backend-clean-install.md) — fs fake resolvido via override→graceful-fs; baileys 6.x bloqueado no firewall, usa tarball vendorado em vendor/.
+- [ESLint --fix hazards no backend](eslint-autofix-hazards.md) — fix em massa quebrou sequelize/types, dot-notation e @ts-ignore; sempre rodar tsc + reiniciar Backend depois.
 - [Build CRA de produção sem OOM](cra-build-oom.md) — só compila com GENERATE_SOURCEMAP=false + heap ~2560MB e dev server parado; processos em background do bash morrem, use workflow temporário.

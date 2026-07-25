@@ -1,9 +1,9 @@
 import express from "express";
+import multer from "multer";
 import isAuth from "../middleware/isAuth";
 import uploadConfig from "../config/upload";
 
 import * as ContactListController from "../controllers/ContactListController";
-import multer from "multer";
 
 const routes = express.Router();
 

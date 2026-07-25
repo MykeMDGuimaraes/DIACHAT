@@ -3,17 +3,16 @@ import BaileysChats from "../../models/BaileysChats";
 
 export const ShowBaileysChatService = async (
   whatsappId: number,
-  jid: string,
+  jid: string
 ): Promise<BaileysChats> => {
   const baileysChat = await BaileysChats.findOne({
     where: {
       whatsappId,
-      jid,
+      jid
     }
   });
 
   if (baileysChat) {
     return baileysChat;
   }
-
 };

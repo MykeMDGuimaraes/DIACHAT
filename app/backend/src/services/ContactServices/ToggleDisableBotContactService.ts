@@ -33,7 +33,7 @@ const ToggleDisableBotContactService = async ({
       "companyId",
       "acceptAudioMessage",
       "disableBot",
-      "urlPicture",
+      "urlPicture"
     ],
     include: ["extraInfo"]
   });

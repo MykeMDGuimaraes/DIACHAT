@@ -41,7 +41,7 @@ export const update = async (
   req: Request,
   res: Response
 ): Promise<Response> => {
-  const { queueOptionId } = req.params
+  const { queueOptionId } = req.params;
   const queueOptionData = req.body;
 
   const queueOption = await UpdateService(
@@ -57,7 +57,7 @@ export const remove = async (
   req: Request,
   res: Response
 ): Promise<Response> => {
-  const { queueOptionId } = req.params
+  const { queueOptionId } = req.params;
 
   await DeleteService(queueOptionId, req.user.companyId);
 

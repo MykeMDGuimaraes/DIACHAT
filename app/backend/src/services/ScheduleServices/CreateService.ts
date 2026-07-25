@@ -29,16 +29,14 @@ const CreateService = async ({
     throw new AppError(err.message);
   }
 
-  const schedule = await Schedule.create(
-    {
-      body,
-      sendAt,
-      contactId,
-      companyId,
-      userId,
-      status: 'PENDENTE'
-    } as any
-  );
+  const schedule = await Schedule.create({
+    body,
+    sendAt,
+    contactId,
+    companyId,
+    userId,
+    status: "PENDENTE"
+  } as any);
 
   await schedule.reload();
 

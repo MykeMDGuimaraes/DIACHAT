@@ -10,8 +10,6 @@ module.exports = {
   },
 
   down: (queryInterface: QueryInterface) => {
-    return Promise.all([
-      queryInterface.removeColumn("Tickets", "fromMe"),
-    ])
+    return Promise.all([queryInterface.removeColumn("Tickets", "fromMe")]);
   }
 };

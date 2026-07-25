@@ -1,5 +1,4 @@
-import { proto } from "baileys";
-import WALegacySocket from "baileys"
+import WALegacySocket, { proto } from "baileys";
 import Ticket from "../models/Ticket";
 import GetTicketWbot from "./GetTicketWbot";
 import AppError from "../errors/AppError";
@@ -12,18 +11,16 @@ export const GetWbotMessage = async (
 ): Promise<proto.WebMessageInfo | Message> => {
   const getSock = await GetTicketWbot(ticket);
 
-  let limit = 20;
+  const limit = 20;
 
   const fetchWbotMessagesGradually = async (): Promise<
     proto.WebMessageInfo | Message | null | undefined
   > => {
-      const msgFound = await GetMessageService({
-        id: messageId
-      });
+    const msgFound = await GetMessageService({
+      id: messageId
+    });
 
-      return msgFound;
-
-
+    return msgFound;
   };
 
   try {

@@ -1,7 +1,10 @@
 import Files from "../../models/Files";
 import AppError from "../../errors/AppError";
 
-const DeleteService = async (id: string | number, companyId: number): Promise<void> => {
+const DeleteService = async (
+  id: string | number,
+  companyId: number
+): Promise<void> => {
   const file = await Files.findOne({
     where: { id, companyId }
   });

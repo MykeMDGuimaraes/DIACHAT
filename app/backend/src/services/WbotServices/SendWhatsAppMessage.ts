@@ -1,5 +1,4 @@
-import { WAMessage } from "baileys";
-import WALegacySocket from "baileys"
+import WALegacySocket, { WAMessage } from "baileys";
 import * as Sentry from "@sentry/node";
 import AppError from "../../errors/AppError";
 import GetTicketWbot from "../../helpers/GetTicketWbot";
@@ -28,29 +27,30 @@ const SendWhatsAppMessage = async ({
   }`;
 
   if (quotedMsg) {
-      const chatMessages = await Message.findOne({
-        where: {
-          id: quotedMsg.id
-        }
-      });
-
-      if (chatMessages) {
-        const msgFound = JSON.parse(chatMessages.dataJson);
-
-        options = {
-          quoted: {
-            key: msgFound.key,
-            message: {
-              extendedTextMessage: msgFound.message.extendedTextMessage
-            }
-          }
-        };
+    const chatMessages = await Message.findOne({
+      where: {
+        id: quotedMsg.id
       }
-    
+    });
+
+    if (chatMessages) {
+      const msgFound = JSON.parse(chatMessages.dataJson);
+
+      options = {
+        quoted: {
+          key: msgFound.key,
+          message: {
+            extendedTextMessage: msgFound.message.extendedTextMessage
+          }
+        }
+      };
+    }
   }
 
   try {
-    const sentMessage = await wbot.sendMessage(number,{
+    const sentMessage = await wbot.sendMessage(
+      number,
+      {
         text: formatBody(body, ticket.contact)
       },
       {

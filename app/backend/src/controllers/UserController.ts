@@ -45,7 +45,7 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
     companyId: bodyCompanyId,
     queueIds,
     whatsappId,
-	allTicket
+    allTicket
   } = req.body;
   let userCompanyId: number | null = null;
 
@@ -60,7 +60,7 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
   const newUserCompanyId = bodyCompanyId || userCompanyId;
 
   if (req.url === "/signup") {
-    if (await CheckSettingsHelper("userCreation") === "disabled") {
+    if ((await CheckSettingsHelper("userCreation")) === "disabled") {
       throw new AppError("ERR_USER_CREATION_DISABLED", 403);
     }
   } else if (req.user?.profile !== "admin") {
@@ -77,14 +77,17 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
     companyId: newUserCompanyId,
     queueIds,
     whatsappId,
-	allTicket
+    allTicket
   });
 
   const io = getIO();
-  io.to(`company-${userCompanyId}-mainchannel`).emit(`company-${userCompanyId}-user`, {
-    action: "create",
-    user
-  });
+  io.to(`company-${userCompanyId}-mainchannel`).emit(
+    `company-${userCompanyId}-user`,
+    {
+      action: "create",
+      user
+    }
+  );
 
   return res.status(200).json(user);
 };
@@ -158,14 +161,17 @@ export const list = async (req: Request, res: Response): Promise<Response> => {
   return res.status(200).json(users);
 };
 
-export const setLanguage = async (req: Request, res: Response): Promise<Response> => {
+export const setLanguage = async (
+  req: Request,
+  res: Response
+): Promise<Response> => {
   const { companyId } = req.user;
-  const {newLanguage} = req.params;
+  const { newLanguage } = req.params;
 
-  if( newLanguage !== "pt" && newLanguage !== "en" && newLanguage !== "es" )
+  if (newLanguage !== "pt" && newLanguage !== "en" && newLanguage !== "es")
     throw new AppError("ERR_INTERNAL_SERVER_ERROR", 500);
 
-  await SetLanguageCompanyService( companyId, newLanguage );
+  await SetLanguageCompanyService(companyId, newLanguage);
 
-  return res.status(200).json({message: "Language updated successfully"});
-}
+  return res.status(200).json({ message: "Language updated successfully" });
+};

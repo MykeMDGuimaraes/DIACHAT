@@ -8,33 +8,31 @@ interface Request {
 }
 
 interface Response {
-  flow: FlowCampaignModel[]
+  flow: FlowCampaignModel[];
 }
 
 const FlowsCampaignGetDataService = async ({
-  companyId,
+  companyId
 }: Request): Promise<Response> => {
-  
-    try {
-    
-        // Realiza a consulta com paginação usando findAndCountAll
-        const { count, rows } = await FlowCampaignModel.findAndCountAll({
-          where: {
-            companyId: companyId,
-          }
-        });
-        
-        const flowResult = []
-        rows.forEach((flow) => {
-          flowResult.push(flow.toJSON());
-        });
-
-        return {
-            flow: flowResult
-        }
-      } catch (error) {
-        console.error('Erro ao consultar Fluxo:', error);
+  try {
+    // Realiza a consulta com paginação usando findAndCountAll
+    const { count, rows } = await FlowCampaignModel.findAndCountAll({
+      where: {
+        companyId
       }
+    });
+
+    const flowResult = [];
+    rows.forEach(flow => {
+      flowResult.push(flow.toJSON());
+    });
+
+    return {
+      flow: flowResult
+    };
+  } catch (error) {
+    console.error("Erro ao consultar Fluxo:", error);
+  }
 };
 
 export default FlowsCampaignGetDataService;

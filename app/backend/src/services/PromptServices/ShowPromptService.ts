@@ -6,8 +6,10 @@ interface Data {
   promptId: string | number;
   companyId: string | number;
 }
-const ShowPromptService = async ({ promptId, companyId }: Data): Promise<Prompt> => {
-
+const ShowPromptService = async ({
+  promptId,
+  companyId
+}: Data): Promise<Prompt> => {
   const prompt = await Prompt.findOne({
     where: {
       id: promptId,

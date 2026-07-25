@@ -1,3 +1,4 @@
+import { Request, Response } from "express";
 import { sendMessageFlow } from "../../controllers/MessageController";
 import { WebhookModel } from "../../models/Webhook";
 import { FlowBuilderModel } from "../../models/FlowBuilder";
@@ -5,7 +6,6 @@ import { randomString } from "../../utils/randomCode";
 import CreateMessageService, {
   MessageData
 } from "../MessageServices/CreateMessageService";
-import { Request, Response } from "express";
 import { ActionsWebhookService } from "./ActionsWebhookService";
 import Whatsapp from "../../models/Whatsapp";
 import QueueIntegrations from "../../models/QueueIntegrations";
@@ -26,19 +26,19 @@ export interface IConnections {
 }
 
 interface IArrayOption {
-  number: number
-  value: string
+  number: number;
+  value: string;
 }
 
 export interface INodes {
   id: string;
   position: { x: number; y: number };
-  data: { 
-    label: string; 
-    sec?: string
-    message?: string
-    arrayOption?: IArrayOption[]
-    typebotIntegration?: QueueIntegrations
+  data: {
+    label: string;
+    sec?: string;
+    message?: string;
+    arrayOption?: IArrayOption[];
+    typebotIntegration?: QueueIntegrations;
   };
   type: string;
   style: { backgroundColor: string; color: string };
@@ -99,7 +99,7 @@ const DispatchWebHookService = async ({
 
       const { count, rows } = await Whatsapp.findAndCountAll({
         where: {
-          companyId: companyId
+          companyId
         }
       });
 

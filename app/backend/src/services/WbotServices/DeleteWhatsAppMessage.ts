@@ -1,5 +1,4 @@
-import { proto, WASocket } from "baileys";
-import WALegacySocket from "baileys"
+import WALegacySocket, { proto, WASocket } from "baileys";
 import AppError from "../../errors/AppError";
 import GetTicketWbot from "../../helpers/GetTicketWbot";
 import GetWbotMessage from "../../helpers/GetWbotMessage";
@@ -39,7 +38,6 @@ const DeleteWhatsAppMessage = async (messageId: string): Promise<Message> => {
         fromMe: menssageDelete.fromMe
       }
     });
-
   } catch (err) {
     throw new AppError("ERR_DELETE_WAPP_MSG");
   }

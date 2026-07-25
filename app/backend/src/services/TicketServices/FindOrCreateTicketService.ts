@@ -100,7 +100,7 @@ const FindOrCreateTicketService = async (
     }
   }
 
-    const whatsapp = await Whatsapp.findOne({
+  const whatsapp = await Whatsapp.findOne({
     where: { id: whatsappId }
   });
 

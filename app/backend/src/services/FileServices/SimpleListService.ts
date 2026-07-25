@@ -2,11 +2,14 @@ import { Op } from "sequelize";
 import Rating from "../../models/Files";
 
 interface Request {
-  companyId: number
+  companyId: number;
   searchParam?: string;
 }
 
-const ListService = async ({ searchParam, companyId }: Request): Promise<Rating[]> => {
+const ListService = async ({
+  searchParam,
+  companyId
+}: Request): Promise<Rating[]> => {
   let whereCondition = {};
 
   if (searchParam) {
@@ -16,7 +19,7 @@ const ListService = async ({ searchParam, companyId }: Request): Promise<Rating[
   }
 
   const ratings = await Rating.findAll({
-    where: {companyId, ...whereCondition},
+    where: { companyId, ...whereCondition },
     order: [["name", "ASC"]],
     attributes: {
       exclude: ["createdAt", "updatedAt"]

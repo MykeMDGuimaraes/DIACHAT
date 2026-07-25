@@ -12,12 +12,12 @@ const DuplicateFlowBuilderService = async ({
   try {
     const flow = await FlowBuilderModel.findOne({
       where: {
-        id: id
+        id
       }
     });
 
     const duplicate = await FlowBuilderModel.create({
-      name: flow.name + " - copy",
+      name: `${flow.name} - copy`,
       flow: flow.flow,
       user_id: flow.user_id,
       company_id: flow.company_id

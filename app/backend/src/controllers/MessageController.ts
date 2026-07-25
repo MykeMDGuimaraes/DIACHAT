@@ -20,6 +20,7 @@ import CheckContactNumber from "../services/WbotServices/CheckNumber";
 import CheckIsValidContact from "../services/WbotServices/CheckIsValidContact";
 import GetProfilePicUrl from "../services/WbotServices/GetProfilePicUrl";
 import CreateOrUpdateContactService from "../services/ContactServices/CreateOrUpdateContactService";
+
 type IndexQuery = {
   pageNumber: string;
 };
@@ -73,7 +74,11 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
   if (medias) {
     await Promise.all(
       medias.map(async (media: Express.Multer.File, index) => {
-        await SendWhatsAppMedia({ media, ticket, body: Array.isArray(body) ? body[index] : body });
+        await SendWhatsAppMedia({
+          media,
+          ticket,
+          body: Array.isArray(body) ? body[index] : body
+        });
       })
     );
   } else {
@@ -118,16 +123,13 @@ export const send = async (req: Request, res: Response): Promise<Response> => {
     }
 
     const numberToTest = messageData.number;
-    const body = messageData.body;
+    const { body } = messageData;
 
-    const companyId = whatsapp.companyId;
+    const { companyId } = whatsapp;
 
     const CheckValidNumber = await CheckContactNumber(numberToTest, companyId);
     const number = CheckValidNumber.jid.replace(/\D/g, "");
-    const profilePicUrl = await GetProfilePicUrl(
-      number,
-      companyId
-    );
+    const profilePicUrl = await GetProfilePicUrl(number, companyId);
     const contactData = {
       name: `${number}`,
       number,
@@ -138,7 +140,12 @@ export const send = async (req: Request, res: Response): Promise<Response> => {
 
     const contact = await CreateOrUpdateContactService(contactData);
 
-    const ticket = await FindOrCreateTicketService(contact, whatsapp.id!, 0, companyId);
+    const ticket = await FindOrCreateTicketService(
+      contact,
+      whatsapp.id!,
+      0,
+      companyId
+    );
 
     if (medias) {
       await Promise.all(
@@ -162,9 +169,8 @@ export const send = async (req: Request, res: Response): Promise<Response> => {
       await SendWhatsAppMessage({ body: formatBody(body, contact), ticket });
 
       await ticket.update({
-        lastMessage: body,
+        lastMessage: body
       });
-
     }
 
     if (messageData.closeTicket) {
@@ -196,7 +202,7 @@ export const sendMessageFlow = async (
   body: any,
   req: Request,
   files?: Express.Multer.File[]
-): Promise<String> => {
+): Promise<string> => {
   const messageData = body;
   const medias = files;
 
@@ -212,9 +218,9 @@ export const sendMessageFlow = async (
     }
 
     const numberToTest = messageData.number;
-    const body = messageData.body;
+    const { body } = messageData;
 
-    const companyId = messageData.companyId;
+    const { companyId } = messageData;
 
     const CheckValidNumber = await CheckContactNumber(numberToTest, companyId);
     const number = numberToTest.replace(/\D/g, "");

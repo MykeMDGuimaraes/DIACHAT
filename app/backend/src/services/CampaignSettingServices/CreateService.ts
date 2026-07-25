@@ -1,5 +1,5 @@
-import CampaignSetting from "../../models/CampaignSetting";
 import { isArray, isObject } from "lodash";
+import CampaignSetting from "../../models/CampaignSetting";
 
 interface Data {
   settings: any;
@@ -10,7 +10,7 @@ const CreateService = async (
   companyId: number
 ): Promise<CampaignSetting[]> => {
   const settings = [];
-  for (let settingKey of Object.keys(data.settings)) {
+  for (const settingKey of Object.keys(data.settings)) {
     const value =
       isArray(data.settings[settingKey]) || isObject(data.settings[settingKey])
         ? JSON.stringify(data.settings[settingKey])

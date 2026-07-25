@@ -9,10 +9,22 @@ queueOptionRoutes.get("/queue-options", isAuth, QueueOptionController.index);
 
 queueOptionRoutes.post("/queue-options", isAuth, QueueOptionController.store);
 
-queueOptionRoutes.get("/queue-options/:queueOptionId", isAuth, QueueOptionController.show);
+queueOptionRoutes.get(
+  "/queue-options/:queueOptionId",
+  isAuth,
+  QueueOptionController.show
+);
 
-queueOptionRoutes.put("/queue-options/:queueOptionId", isAuth, QueueOptionController.update);
+queueOptionRoutes.put(
+  "/queue-options/:queueOptionId",
+  isAuth,
+  QueueOptionController.update
+);
 
-queueOptionRoutes.delete("/queue-options/:queueOptionId", isAuth, QueueOptionController.remove);
+queueOptionRoutes.delete(
+  "/queue-options/:queueOptionId",
+  isAuth,
+  QueueOptionController.remove
+);
 
 export default queueOptionRoutes;

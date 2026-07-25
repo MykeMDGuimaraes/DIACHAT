@@ -5,8 +5,7 @@ module.exports = {
     return queryInterface.addColumn("Tickets", "promptId", {
       type: DataTypes.STRING,
       defaultValue: null,
-      allowNull: true,
-
+      allowNull: true
     });
   },
 

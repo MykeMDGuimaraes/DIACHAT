@@ -12,17 +12,17 @@ import makeWASocket, {
 import makeWALegacySocket from "baileys";
 import P from "pino";
 
+import MAIN_LOGGER from "baileys/lib/Utils/logger";
+import { Boom } from "@hapi/boom";
+import NodeCache from "node-cache";
 import Whatsapp from "../models/Whatsapp";
 import { logger } from "../utils/logger";
-import MAIN_LOGGER from "baileys/lib/Utils/logger";
 import authState from "../helpers/authState";
-import { Boom } from "@hapi/boom";
 import AppError from "../errors/AppError";
 import { getIO } from "./socket";
 import { Store } from "./store";
 import { StartWhatsAppSession } from "../services/WbotServices/StartWhatsAppSession";
 import DeleteBaileysService from "../services/BaileysServices/DeleteBaileysService";
-import NodeCache from 'node-cache';
 import waitForSessionReady, {
   DEFAULT_RECONNECT_WAIT_MS
 } from "./waitForSessionReady";
@@ -103,7 +103,7 @@ export const initWASocket = async (whatsapp: Whatsapp): Promise<Session> => {
         const { id, name, provider } = whatsappUpdate;
 
         const { version, isLatest } = await fetchLatestBaileysVersion();
-        const isLegacy = provider === "stable" ? true : false;
+        const isLegacy = provider === "stable";
 
         logger.info(`using WA v${version.join(".")}, isLatest: ${isLatest}`);
         logger.info(`isLegacy: ${isLegacy}`);
@@ -126,14 +126,14 @@ export const initWASocket = async (whatsapp: Whatsapp): Promise<Session> => {
           browser: Browsers.appropriate("Desktop"),
           auth: {
             creds: state.creds,
-            keys: makeCacheableSignalKeyStore(state.keys, logger),
+            keys: makeCacheableSignalKeyStore(state.keys, logger)
           },
           version,
           // defaultQueryTimeoutMs: 60000,
           // retryRequestDelayMs: 250,
           // keepAliveIntervalMs: 1000 * 60 * 10 * 3,
           msgRetryCounterCache,
-          shouldIgnoreJid: jid => isJidBroadcast(jid),
+          shouldIgnoreJid: jid => isJidBroadcast(jid)
         });
 
         // wsocket = makeWASocket({
@@ -172,7 +172,8 @@ export const initWASocket = async (whatsapp: Whatsapp): Promise<Session> => {
           "connection.update",
           async ({ connection, lastDisconnect, qr }) => {
             logger.info(
-              `Socket  ${name} Connection Update ${connection || ""} ${lastDisconnect || ""
+              `Socket  ${name} Connection Update ${connection || ""} ${
+                lastDisconnect || ""
               }`
             );
 
@@ -180,10 +181,13 @@ export const initWASocket = async (whatsapp: Whatsapp): Promise<Session> => {
               if ((lastDisconnect?.error as Boom)?.output?.statusCode === 403) {
                 await whatsapp.update({ status: "PENDING", session: "" });
                 await DeleteBaileysService(whatsapp.id);
-                io.to(`company-${whatsapp.companyId}-mainchannel`).emit(`company-${whatsapp.companyId}-whatsappSession`, {
-                  action: "update",
-                  session: whatsapp
-                });
+                io.to(`company-${whatsapp.companyId}-mainchannel`).emit(
+                  `company-${whatsapp.companyId}-whatsappSession`,
+                  {
+                    action: "update",
+                    session: whatsapp
+                  }
+                );
                 removeWbot(id, false);
               }
               if (
@@ -198,10 +202,13 @@ export const initWASocket = async (whatsapp: Whatsapp): Promise<Session> => {
               } else {
                 await whatsapp.update({ status: "PENDING", session: "" });
                 await DeleteBaileysService(whatsapp.id);
-                io.to(`company-${whatsapp.companyId}-mainchannel`).emit(`company-${whatsapp.companyId}-whatsappSession`, {
-                  action: "update",
-                  session: whatsapp
-                });
+                io.to(`company-${whatsapp.companyId}-mainchannel`).emit(
+                  `company-${whatsapp.companyId}-whatsappSession`,
+                  {
+                    action: "update",
+                    session: whatsapp
+                  }
+                );
                 removeWbot(id, false);
                 setTimeout(
                   () => StartWhatsAppSession(whatsapp, whatsapp.companyId),
@@ -217,10 +224,13 @@ export const initWASocket = async (whatsapp: Whatsapp): Promise<Session> => {
                 retries: 0
               });
 
-              io.to(`company-${whatsapp.companyId}-mainchannel`).emit(`company-${whatsapp.companyId}-whatsappSession`, {
-                action: "update",
-                session: whatsapp
-              });
+              io.to(`company-${whatsapp.companyId}-mainchannel`).emit(
+                `company-${whatsapp.companyId}-whatsappSession`,
+                {
+                  action: "update",
+                  session: whatsapp
+                }
+              );
 
               const sessionIndex = sessions.findIndex(
                 s => s.id === whatsapp.id
@@ -240,10 +250,13 @@ export const initWASocket = async (whatsapp: Whatsapp): Promise<Session> => {
                   qrcode: ""
                 });
                 await DeleteBaileysService(whatsappUpdate.id);
-                io.to(`company-${whatsapp.companyId}-mainchannel`).emit("whatsappSession", {
-                  action: "update",
-                  session: whatsappUpdate
-                });
+                io.to(`company-${whatsapp.companyId}-mainchannel`).emit(
+                  "whatsappSession",
+                  {
+                    action: "update",
+                    session: whatsappUpdate
+                  }
+                );
                 wsocket.ev.removeAllListeners("connection.update");
                 wsocket.ws.close();
                 wsocket = null;
@@ -266,17 +279,20 @@ export const initWASocket = async (whatsapp: Whatsapp): Promise<Session> => {
                   sessions.push(wsocket);
                 }
 
-                io.to(`company-${whatsapp.companyId}-mainchannel`).emit(`company-${whatsapp.companyId}-whatsappSession`, {
-                  action: "update",
-                  session: whatsapp
-                });
+                io.to(`company-${whatsapp.companyId}-mainchannel`).emit(
+                  `company-${whatsapp.companyId}-whatsappSession`,
+                  {
+                    action: "update",
+                    session: whatsapp
+                  }
+                );
               }
             }
           }
         );
         wsocket.ev.on("creds.update", saveState);
 
-        //store.bind(wsocket.ev);
+        // store.bind(wsocket.ev);
       })();
     } catch (error) {
       Sentry.captureException(error);

@@ -3,7 +3,6 @@ import * as Yup from "yup";
 import AppError from "../../errors/AppError";
 import QueueIntegrations from "../../models/QueueIntegrations";
 
-
 interface Request {
   type: string;
   name: string;
@@ -55,30 +54,35 @@ const CreateQueueIntegrationService = async ({
   });
 
   try {
-    await schema.validate({ type, name, projectName, jsonContent, language, urlN8N, companyId });
-  } catch (err) {
-    throw new AppError(err.message);
-  }
-
-
-  const queueIntegration = await QueueIntegrations.create(
-    {
+    await schema.validate({
       type,
       name,
       projectName,
       jsonContent,
       language,
       urlN8N,
-      companyId,
-      typebotExpires,
-      typebotKeywordFinish,
-      typebotSlug,
-      typebotUnknownMessage,
-      typebotDelayMessage,
-      typebotKeywordRestart,
-      typebotRestartMessage
-    }
-  );
+      companyId
+    });
+  } catch (err) {
+    throw new AppError(err.message);
+  }
+
+  const queueIntegration = await QueueIntegrations.create({
+    type,
+    name,
+    projectName,
+    jsonContent,
+    language,
+    urlN8N,
+    companyId,
+    typebotExpires,
+    typebotKeywordFinish,
+    typebotSlug,
+    typebotUnknownMessage,
+    typebotDelayMessage,
+    typebotKeywordRestart,
+    typebotRestartMessage
+  });
 
   return queueIntegration;
 };

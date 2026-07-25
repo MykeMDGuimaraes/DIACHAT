@@ -1,4 +1,11 @@
 import { MessageUpsertType, proto, WASocket } from "baileys";
+
+import { isNil, isNull } from "lodash";
+
+import fs from "fs";
+import path, { join } from "path";
+
+import OpenAI, { Configuration, OpenAIApi } from "openai";
 import {
   convertTextToSpeechAndSaveToFile,
   getBodyMessage,
@@ -7,13 +14,6 @@ import {
   verifyMediaMessage,
   verifyMessage
 } from "../WbotServices/wbotMessageListener";
-
-import { isNil, isNull } from "lodash";
-
-import fs from "fs";
-import path, { join } from "path";
-
-import OpenAI, {Configuration, OpenAIApi} from "openai";
 import Ticket from "../../models/Ticket";
 import Contact from "../../models/Contact";
 import Message from "../../models/Message";
@@ -219,7 +219,7 @@ export const handleOpenAi = async (
 
     const transcription = await openai.audio.transcriptions.create({
       model: "whisper-1",
-      file: file
+      file
     });
 
     messagesOpenAi = [];

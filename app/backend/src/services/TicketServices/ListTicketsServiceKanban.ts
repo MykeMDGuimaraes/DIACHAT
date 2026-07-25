@@ -1,6 +1,7 @@
 import { Op, fn, where, col, Filterable, Includeable } from "sequelize";
 import { startOfDay, endOfDay, parseISO } from "date-fns";
 
+import { intersection } from "lodash";
 import Ticket from "../../models/Ticket";
 import Contact from "../../models/Contact";
 import Message from "../../models/Message";
@@ -9,7 +10,6 @@ import User from "../../models/User";
 import ShowUserService from "../UserServices/ShowUserService";
 import Tag from "../../models/Tag";
 import TicketTag from "../../models/TicketTag";
-import { intersection } from "lodash";
 import Whatsapp from "../../models/Whatsapp";
 
 interface Request {
@@ -78,11 +78,11 @@ const ListTicketsServiceKanban = async ({
       model: Whatsapp,
       as: "whatsapp",
       attributes: ["name"]
-    },
+    }
   ];
 
   if (showAll === "true") {
-    whereCondition = {}; 
+    whereCondition = {};
   } else {
     whereCondition = {
       ...whereCondition,
@@ -170,7 +170,7 @@ const ListTicketsServiceKanban = async ({
 
   if (Array.isArray(tags) && tags.length > 0) {
     const ticketsTagFilter: any[] | null = [];
-    for (let tag of tags) {
+    for (const tag of tags) {
       const ticketTags = await TicketTag.findAll({
         where: { tagId: tag }
       });
@@ -191,7 +191,7 @@ const ListTicketsServiceKanban = async ({
 
   if (Array.isArray(users) && users.length > 0) {
     const ticketsUserFilter: any[] | null = [];
-    for (let user of users) {
+    for (const user of users) {
       const ticketUsers = await Ticket.findAll({
         where: { userId: user }
       });

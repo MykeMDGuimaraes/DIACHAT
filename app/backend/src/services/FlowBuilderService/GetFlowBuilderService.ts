@@ -4,35 +4,33 @@ import { FlowBuilderModel } from "../../models/FlowBuilder";
 
 interface Request {
   companyId: number;
-  idFlow: number
+  idFlow: number;
 }
 
 interface Response {
-  flow: FlowBuilderModel
+  flow: FlowBuilderModel;
 }
 
 const GetFlowBuilderService = async ({
   companyId,
   idFlow
 }: Request): Promise<Response> => {
-  
-    try {
-    
-        // Realiza a consulta com paginação usando findAndCountAll
-        const { count, rows } = await FlowBuilderModel.findAndCountAll({
-          where: {
-            company_id: companyId,
-            id: idFlow
-          }
-        });
-        let flow = rows[0]
-
-        return {
-            flow: flow
-        }
-      } catch (error) {
-        console.error('Erro ao consultar usuários:', error);
+  try {
+    // Realiza a consulta com paginação usando findAndCountAll
+    const { count, rows } = await FlowBuilderModel.findAndCountAll({
+      where: {
+        company_id: companyId,
+        id: idFlow
       }
+    });
+    const flow = rows[0];
+
+    return {
+      flow
+    };
+  } catch (error) {
+    console.error("Erro ao consultar usuários:", error);
+  }
 };
 
 export default GetFlowBuilderService;

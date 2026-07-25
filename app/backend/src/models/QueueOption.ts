@@ -47,7 +47,7 @@ class QueueOption extends Model<QueueOption> {
   @BelongsTo(() => Queue)
   queue: Queue;
 
-  @BelongsTo(() => QueueOption, { foreignKey: 'parentId' })
+  @BelongsTo(() => QueueOption, { foreignKey: "parentId" })
   parent: QueueOption;
 }
 

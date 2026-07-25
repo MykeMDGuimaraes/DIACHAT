@@ -43,7 +43,7 @@ const ShowTicketUUIDService = async (
         attributes: ["id", "name", "color"]
       }
     ]
-  }); 
+  });
 
   if (!ticket || ticket.companyId !== companyId) {
     throw new AppError("ERR_NO_TICKET_FOUND", 404);

@@ -51,12 +51,15 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
   return res.status(200).json(tag);
 };
 
-export const kanban = async (req: Request, res: Response): Promise<Response> => {
+export const kanban = async (
+  req: Request,
+  res: Response
+): Promise<Response> => {
   const { companyId } = req.user;
 
   const tags = await KanbanListService({ companyId });
 
-  return res.json({lista:tags});
+  return res.json({ lista: tags });
 };
 
 export const show = async (req: Request, res: Response): Promise<Response> => {

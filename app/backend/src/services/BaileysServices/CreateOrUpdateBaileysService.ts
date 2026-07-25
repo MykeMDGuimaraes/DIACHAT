@@ -1,6 +1,6 @@
 import { Chat, Contact } from "baileys";
-import Baileys from "../../models/Baileys";
 import { isArray } from "lodash";
+import Baileys from "../../models/Baileys";
 
 interface Request {
   whatsappId: number;

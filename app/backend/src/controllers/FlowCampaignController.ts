@@ -43,7 +43,7 @@ export const flowCampaigns = async (
   const { companyId } = req.user;
 
   const flow = await FlowsCampaignGetDataService({
-    companyId,
+    companyId
   });
 
   return res.status(200).json(flow);
@@ -57,7 +57,7 @@ export const flowCampaign = async (
   const { idFlow } = req.params;
   const { companyId } = req.user;
 
-  const id = parseInt(idFlow)
+  const id = parseInt(idFlow);
 
   const flow = await GetFlowsCampaignDataService({
     companyId,
@@ -74,7 +74,14 @@ export const updateFlowCampaign = async (
   const { companyId } = req.user;
   const { flowId, name, phrase, id, status } = req.body;
 
-  const flow = await UpdateFlowCampaignService({ companyId, name, flowId, phrase, id, status });
+  const flow = await UpdateFlowCampaignService({
+    companyId,
+    name,
+    flowId,
+    phrase,
+    id,
+    status
+  });
 
   return res.status(200).json(flow);
 };

@@ -9,13 +9,13 @@ import fs from "fs";
 import * as Sentry from "@sentry/node";
 
 import "./database";
+import bodyParser from "body-parser";
 import uploadConfig from "./config/upload";
 import mediaAuth from "./middleware/mediaAuth";
 import AppError from "./errors/AppError";
 import routes from "./routes";
 import { logger } from "./utils/logger";
 import { messageQueue, sendScheduledMessages } from "./queues";
-import bodyParser from 'body-parser';
 
 Sentry.init({ dsn: process.env.SENTRY_DSN });
 
@@ -26,8 +26,9 @@ app.set("queues", {
   sendScheduledMessages
 });
 
-const bodyparser = require('body-parser');
-app.use(bodyParser.json({ limit: '10mb' }));
+const bodyparser = require("body-parser");
+
+app.use(bodyParser.json({ limit: "10mb" }));
 
 app.use(
   cors({
@@ -48,9 +49,7 @@ const frontendBuildDir = path.resolve(
   "frontend",
   "build"
 );
-const serveFrontend = fs.existsSync(
-  path.join(frontendBuildDir, "index.html")
-);
+const serveFrontend = fs.existsSync(path.join(frontendBuildDir, "index.html"));
 
 if (serveFrontend) {
   app.use(express.static(frontendBuildDir));
@@ -73,7 +72,6 @@ if (serveFrontend) {
 app.use(Sentry.Handlers.errorHandler());
 
 app.use(async (err: Error, req: Request, res: Response, _: NextFunction) => {
-
   if (err instanceof AppError) {
     logger.warn(err);
     return res.status(err.statusCode).json({ error: err.message });

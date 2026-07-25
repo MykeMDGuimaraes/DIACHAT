@@ -98,7 +98,7 @@ const models = [
   FlowImgModel,
   ServiceCredential,
   V1MessageIdempotency,
-  AuditLog,
+  AuditLog
 ];
 
 sequelize.addModels(models);

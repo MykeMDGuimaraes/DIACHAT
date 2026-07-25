@@ -2,7 +2,6 @@ import { Router } from "express";
 import * as PromptController from "../controllers/PromptController";
 import isAuth from "../middleware/isAuth";
 
-
 const promptRoutes = Router();
 
 promptRoutes.get("/prompt", isAuth, PromptController.index);

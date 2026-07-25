@@ -1,6 +1,6 @@
+import fs from "fs";
 import Whatsapp from "../models/Whatsapp";
 import GetWhatsappWbot from "./GetWhatsappWbot";
-import fs from "fs";
 
 import { getMessageOptions } from "../services/WbotServices/SendWhatsAppMedia";
 
