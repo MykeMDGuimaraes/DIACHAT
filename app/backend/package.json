@@ -107,7 +107,7 @@
     "@babel/runtime": "^7.26.10",
     "@protobufjs/utf8": "^1.1.1",
     "@tootallnate/once": "^2.0.1",
-    "ajv": "^8.17.1",
+    "ajv": "^6.12.6",
     "ansi-html": "^0.0.9",
     "axios": "^1.18.0",
     "bn.js": "^5.2.2",
