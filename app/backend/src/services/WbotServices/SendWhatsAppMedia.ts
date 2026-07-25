@@ -120,7 +120,7 @@ const SendWhatsAppMedia = async ({
   body
 }: Request): Promise<WAMessage> => {
   try {
-    const wbot = await GetTicketWbot(ticket);
+    const wbot = await GetTicketWbot(ticket, { waitForReconnectMs: 45000 });
 
     const pathMedia = media.path;
     const typeMessage = media.mimetype.split("/")[0];
@@ -184,6 +184,9 @@ const SendWhatsAppMedia = async ({
   } catch (err) {
     Sentry.captureException(err);
     console.log(err);
+    if (err instanceof AppError) {
+      throw err;
+    }
     throw new AppError("ERR_SENDING_WAPP_MSG");
   }
 };

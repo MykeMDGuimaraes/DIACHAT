@@ -6,4 +6,5 @@
 - [Push de branch em worktree](worktree-branch-push.md) — shell push falha sem token; use gitPush após liberar a branch do worktree e fazer switch temporário no workspace.
 - [Banco de teste do backend](backend-test-db.md) — crie `diachat_test` e reescreva DATABASE_URL; FKs de migrações em schema messaging precisam qualificar schema public.
 - [Backend ESLint vs ajv override](backend-eslint-ajv.md) — override global de ajv deve ficar em ^6 no backend; ajv 8 quebra o eslintrc do ESLint 8; instalar com --prefer-offline evita o firewall do pacote fs fake.
+- [Envio aguarda reconexão do wbot](wbot-send-reconnect-wait.md) — sends esperam sessão Baileys voltar (45s→503); jest exige mock de baileys (crypto.subtle).
 - [Build CRA de produção sem OOM](cra-build-oom.md) — só compila com GENERATE_SOURCEMAP=false + heap ~2560MB e dev server parado; processos em background do bash morrem, use workflow temporário.

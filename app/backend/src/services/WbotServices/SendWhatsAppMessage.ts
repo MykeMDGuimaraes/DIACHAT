@@ -20,7 +20,9 @@ const SendWhatsAppMessage = async ({
   quotedMsg
 }: Request): Promise<WAMessage> => {
   let options = {};
-  const wbot = await GetTicketWbot(ticket);
+  // Wait for the socket to recover if the connection is mid-reconnect
+  // (e.g. after a Baileys stream error 515) instead of failing instantly.
+  const wbot = await GetTicketWbot(ticket, { waitForReconnectMs: 45000 });
   const number = `${ticket.contact.number}@${
     ticket.isGroup ? "g.us" : "s.whatsapp.net"
   }`;
@@ -61,6 +63,9 @@ const SendWhatsAppMessage = async ({
   } catch (err) {
     Sentry.captureException(err);
     console.log(err);
+    if (err instanceof AppError) {
+      throw err;
+    }
     throw new AppError("ERR_SENDING_WAPP_MSG");
   }
 };

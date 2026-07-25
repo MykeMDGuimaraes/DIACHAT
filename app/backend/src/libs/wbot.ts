@@ -23,6 +23,9 @@ import { Store } from "./store";
 import { StartWhatsAppSession } from "../services/WbotServices/StartWhatsAppSession";
 import DeleteBaileysService from "../services/BaileysServices/DeleteBaileysService";
 import NodeCache from 'node-cache';
+import waitForSessionReady, {
+  DEFAULT_RECONNECT_WAIT_MS
+} from "./waitForSessionReady";
 
 const loggerBaileys = MAIN_LOGGER.child({});
 loggerBaileys.level = "error";
@@ -44,6 +47,27 @@ export const getWbot = (whatsappId: number): Session => {
   }
   return sessions[sessionIndex];
 };
+
+const findReadySession = (whatsappId: number): Session | undefined => {
+  const session = sessions.find(s => s.id === whatsappId);
+  // A session is only usable for sending after Baileys authenticates it
+  // ("open" connection populates `user`). Sessions registered while showing
+  // a QR code are not ready.
+  if (session && session.user) return session;
+  return undefined;
+};
+
+/**
+ * Returns the session for a WhatsApp connection, waiting (up to `timeoutMs`)
+ * for it to come back if the socket is currently reconnecting — e.g. after a
+ * Baileys stream error 515. Throws ERR_WAPP_NOT_AVAILABLE (503) if the
+ * connection does not recover within the window.
+ */
+export const waitForWbot = async (
+  whatsappId: number,
+  timeoutMs = DEFAULT_RECONNECT_WAIT_MS
+): Promise<Session> =>
+  waitForSessionReady(() => findReadySession(whatsappId), timeoutMs);
 
 export const removeWbot = async (
   whatsappId: number,

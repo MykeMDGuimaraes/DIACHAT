@@ -1539,6 +1539,7 @@ const messages = {
         ERR_WAPP_DOWNLOAD_MEDIA: "No fue posible descargar el archivo multimedia de WhatsApp. Verifique la página de conexiones.",
         ERR_INVALID_CREDENTIALS: "Error de autenticación. Por favor, intente nuevamente.",
         ERR_USER_DONT_EXISTS: "Usuario no encontrado. Verifique el email proporcionado.",
+        ERR_WAPP_NOT_AVAILABLE: "La conexión de WhatsApp no está disponible en este momento. Espere unos instantes e inténtelo de nuevo — su mensaje no fue enviado.",
         ERR_SENDING_WAPP_MSG: "Error al enviar mensaje de WhatsApp. Verifique la página de conexiones.",
         ERR_DELETE_WAPP_MSG: "No fue posible eliminar el mensaje de WhatsApp.",
         ERR_OTHER_OPEN_TICKET: "Ya existe un ticket abierto para este contacto.",

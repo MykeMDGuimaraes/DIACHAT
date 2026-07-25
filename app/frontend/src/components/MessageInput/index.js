@@ -254,14 +254,16 @@ const MessageInput = ({ ticketStatus }) => {
 		};
 		try {
 			await api.post(`/messages/${ticketId}`, message);
+			setInputMessage("");
+			setShowEmoji(false);
+			setReplyingMessage(null);
 		} catch (err) {
+			// Keep the typed message so the user can retry after a
+			// connection hiccup instead of losing the text.
 			toastError(err);
 		}
 
-		setInputMessage("");
-		setShowEmoji(false);
 		setLoading(false);
-		setReplyingMessage(null);
 	};
 
 	const handleStartRecording = async () => {
