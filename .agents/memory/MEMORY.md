@@ -5,6 +5,7 @@
 - [Isolamento multi-tenant](multi-tenant-isolation.md) — todo Show*/mutação por id precisa de companyId do JWT com 404 em cross-tenant; socket CORS vem de FRONTEND_URL.
 - [Push de branch em worktree](worktree-branch-push.md) — shell push falha sem token; use gitPush após liberar a branch do worktree e fazer switch temporário no workspace.
 - [Banco de teste do backend](backend-test-db.md) — crie `diachat_test` e reescreva DATABASE_URL; FKs de migrações em schema messaging precisam qualificar schema public.
-- [Backend ESLint vs ajv override](backend-eslint-ajv.md) — override global de ajv deve ficar em ^6 no backend; ajv 8 quebra o eslintrc do ESLint 8; instalar com --prefer-offline evita o firewall do pacote fs fake.
+- [Backend ESLint vs ajv override](backend-eslint-ajv.md) — override global de ajv deve ficar em ^6 no backend; ajv 8 quebra o eslintrc do ESLint 8.
 - [Envio aguarda reconexão do wbot](wbot-send-reconnect-wait.md) — sends esperam sessão Baileys voltar (45s→503); jest exige mock de baileys (crypto.subtle).
+- [Backend clean install vs firewall](backend-clean-install.md) — fs fake resolvido via override→graceful-fs; baileys 6.x bloqueado no firewall, usa tarball vendorado em vendor/.
 - [Build CRA de produção sem OOM](cra-build-oom.md) — só compila com GENERATE_SOURCEMAP=false + heap ~2560MB e dev server parado; processos em background do bash morrem, use workflow temporário.
