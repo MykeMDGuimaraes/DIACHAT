@@ -3,6 +3,7 @@ import multer from "multer";
 import isAuth from "../middleware/isAuth";
 import uploadConfig from "../config/upload";
 import tokenAuth from "../middleware/tokenAuth";
+import { legacyApiDeprecation } from "../messaging/public/http";
 
 import * as MessageController from "../controllers/MessageController";
 
@@ -21,6 +22,7 @@ messageRoutes.delete("/messages/:messageId", isAuth, MessageController.remove);
 messageRoutes.post(
   "/api/messages/send",
   tokenAuth,
+  legacyApiDeprecation,
   upload.array("medias"),
   MessageController.send
 );

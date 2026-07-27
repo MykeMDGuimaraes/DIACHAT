@@ -1,3 +1,4 @@
+import { sendBaileysSocketMessage } from "../../messaging/public/baileys";
 import path, { join } from "path";
 import { promisify } from "util";
 import { readFile, writeFile } from "fs";
@@ -16,18 +17,7 @@ import {
   WAMessageStubType,
   WAMessageUpdate,
   WASocket
-} from "baileys";
-import moment from "moment";
-import { Op } from "sequelize";
-import { ChatCompletionRequestMessage, Configuration, OpenAIApi } from "openai";
-import ffmpeg from "fluent-ffmpeg";
-import {
-  SpeechConfig,
-  SpeechSynthesizer,
-  AudioConfig
-} from "microsoft-cognitiveservices-speech-sdk";
-import { differenceInMilliseconds } from "date-fns";
-import axios from "axios";
+} from "../../messaging/public/baileys";
 import Contact from "../../models/Contact";
 import Ticket from "../../models/Ticket";
 import Message from "../../models/Message";
@@ -46,18 +36,27 @@ import { Store } from "../../libs/store";
 import TicketTraking from "../../models/TicketTraking";
 import UserRating from "../../models/UserRating";
 import SendWhatsAppMessage from "./SendWhatsAppMessage";
+import moment from "moment";
 import Queue from "../../models/Queue";
 import QueueOption from "../../models/QueueOption";
 import FindOrCreateATicketTrakingService from "../TicketServices/FindOrCreateATicketTrakingService";
 import VerifyCurrentSchedule from "../CompanyService/VerifyCurrentSchedule";
 import Campaign from "../../models/Campaign";
 import CampaignShipping from "../../models/CampaignShipping";
+import { Op } from "sequelize";
 import { campaignQueue, parseToMilliseconds, randomValue } from "../../queues";
 import User from "../../models/User";
 import Setting from "../../models/Setting";
 import { cacheLayer } from "../../libs/cache";
 import { provider } from "./providers";
 import { debounce } from "../../helpers/Debounce";
+import { ChatCompletionRequestMessage, Configuration, OpenAIApi } from "openai";
+import ffmpeg from "fluent-ffmpeg";
+import {
+  SpeechConfig,
+  SpeechSynthesizer,
+  AudioConfig
+} from "microsoft-cognitiveservices-speech-sdk";
 import typebotListener from "../TypebotServices/typebotListener";
 import QueueIntegrations from "../../models/QueueIntegrations";
 import ShowQueueIntegrationService from "../QueueIntegrationServices/ShowQueueIntegrationService";
@@ -71,7 +70,10 @@ import { IConnections, INodes } from "../WebhookService/DispatchWebHookService";
 import { ActionsWebhookService } from "../WebhookService/ActionsWebhookService";
 import { WebhookModel } from "../../models/Webhook";
 
+import { differenceInMilliseconds } from "date-fns";
 import Whatsapp from "../../models/Whatsapp";
+
+import axios from "axios";
 
 const fs = require("fs");
 
@@ -118,7 +120,7 @@ function hasCaption(title: string, fileName: string) {
 
 export function validaCpfCnpj(val) {
   if (val.length == 11) {
-    let cpf = val.trim();
+    var cpf = val.trim();
 
     cpf = cpf.replace(/\./g, "");
     cpf = cpf.replace("-", "");
@@ -164,11 +166,11 @@ export function validaCpfCnpj(val) {
 
     if (v2 != cpf[10]) {
       return false;
+    } else {
+      return true;
     }
-    return true;
-  }
-  if (val.length == 14) {
-    let cnpj = val.trim();
+  } else if (val.length == 14) {
+    var cnpj = val.trim();
 
     cnpj = cnpj.replace(/\./g, "");
     cnpj = cnpj.replace("-", "");
@@ -197,7 +199,7 @@ export function validaCpfCnpj(val) {
       }
     }
 
-    v1 %= 11;
+    v1 = v1 % 11;
 
     if (v1 < 2) {
       v1 = 0;
@@ -217,7 +219,7 @@ export function validaCpfCnpj(val) {
       }
     }
 
-    v2 %= 11;
+    v2 = v2 % 11;
 
     if (v2 < 2) {
       v2 = 0;
@@ -227,10 +229,12 @@ export function validaCpfCnpj(val) {
 
     if (v2 != cnpj[13]) {
       return false;
+    } else {
+      return true;
     }
-    return true;
+  } else {
+    return false;
   }
-  return false;
 }
 
 function timeout(ms) {
@@ -249,19 +253,21 @@ export const sendMessageImage = async (
 ) => {
   let sentMessage;
   try {
-    sentMessage = await wbot.sendMessage(
+    sentMessage = await sendBaileysSocketMessage(
+      wbot,
       `${contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`,
       {
         image: url
           ? { url }
           : fs.readFileSync(`public/temp/${caption}-${makeid(10)}`),
         fileName: caption,
-        caption,
+        caption: caption,
         mimetype: "image/jpeg"
       }
     );
   } catch (error) {
-    sentMessage = await wbot.sendMessage(
+    sentMessage = await sendBaileysSocketMessage(
+      wbot,
       `${contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`,
       {
         text: formatBody(
@@ -283,19 +289,21 @@ export const sendMessageLink = async (
 ) => {
   let sentMessage;
   try {
-    sentMessage = await wbot.sendMessage(
+    sentMessage = await sendBaileysSocketMessage(
+      wbot,
       `${contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`,
       {
         document: url
           ? { url }
           : fs.readFileSync(`public/temp/${caption}-${makeid(10)}`),
         fileName: caption,
-        caption,
+        caption: caption,
         mimetype: "application/pdf"
       }
     );
   } catch (error) {
-    sentMessage = await wbot.sendMessage(
+    sentMessage = await sendBaileysSocketMessage(
+      wbot,
       `${contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`,
       {
         text: formatBody("Não consegui enviar o PDF, tente novamente!", contact)
@@ -306,11 +314,11 @@ export const sendMessageLink = async (
 };
 
 export function makeid(length) {
-  let result = "";
-  const characters =
+  var result = "";
+  var characters =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  const charactersLength = characters.length;
-  for (let i = 0; i < length; i++) {
+  var charactersLength = characters.length;
+  for (var i = 0; i < length; i++) {
     result += characters.charAt(Math.floor(Math.random() * charactersLength));
   }
   return result;
@@ -345,16 +353,16 @@ const getBodyButton = (msg: proto.IWebMessageInfo): string => {
 
 const msgLocation = (image, latitude, longitude) => {
   if (image) {
-    const b64 = Buffer.from(image).toString("base64");
+    var b64 = Buffer.from(image).toString("base64");
 
-    const data = `data:image/png;base64, ${b64} | https://maps.google.com/maps?q=${latitude}%2C${longitude}&z=17&hl=pt-BR|${latitude}, ${longitude} `;
+    let data = `data:image/png;base64, ${b64} | https://maps.google.com/maps?q=${latitude}%2C${longitude}&z=17&hl=pt-BR|${latitude}, ${longitude} `;
     return data;
   }
 };
 
 export const getBodyMessage = (msg: proto.IWebMessageInfo): string | null => {
   try {
-    const type = getTypeMessage(msg);
+    let type = getTypeMessage(msg);
 
     const types = {
       conversation: msg?.message?.conversation,
@@ -380,7 +388,7 @@ export const getBodyMessage = (msg: proto.IWebMessageInfo): string | null => {
       stickerMessage: "sticker",
       contactMessage: msg.message?.contactMessage?.vcard,
       contactsArrayMessage: "varios contatos",
-      // locationMessage: `Latitude: ${msg.message.locationMessage?.degreesLatitude} - Longitude: ${msg.message.locationMessage?.degreesLongitude}`,
+      //locationMessage: `Latitude: ${msg.message.locationMessage?.degreesLatitude} - Longitude: ${msg.message.locationMessage?.degreesLongitude}`,
       locationMessage: msgLocation(
         msg.message?.locationMessage?.jpegThumbnail,
         msg.message?.locationMessage?.degreesLatitude,
@@ -575,8 +583,8 @@ export const convertTextToSpeechAndSaveToFile = (
   filename: string,
   subscriptionKey: string,
   serviceRegion: string,
-  voice = "pt-BR-FabioNeural",
-  audioToFormat = "mp3"
+  voice: string = "pt-BR-FabioNeural",
+  audioToFormat: string = "mp3"
 ): Promise<void> => {
   return new Promise((resolve, reject) => {
     const speechConfig = SpeechConfig.fromSubscription(
@@ -697,7 +705,7 @@ const handleOpenAi = async (
     openai = sessionsOpenAi[openAiIndex];
   }
 
-  const maxMessages = prompt.maxMessages;
+  let maxMessages = prompt.maxMessages;
 
   const messages = await Message.findAll({
     where: { ticketId: ticket.id },
@@ -748,14 +756,18 @@ const handleOpenAi = async (
         .trim();
     }
 
-    const sentMessage = await wbot.sendMessage(msg.key.remoteJid!, {
-      text: response!
-    });
+    const sentMessage = await sendBaileysSocketMessage(
+      wbot,
+      msg.key.remoteJid!,
+      {
+        text: response!
+      }
+    );
     await verifyMessage(sentMessage!, ticket, contact);
 
     /*
     if (prompt.voice === "texto") {
-      const sentMessage = await wbot.sendMessage(msg.key.remoteJid!, {
+      const sentMessage = await sendBaileysSocketMessage(wbot, msg.key.remoteJid!, {
         text: response!
       });
       await verifyMessage(sentMessage!, ticket, contact);
@@ -770,7 +782,7 @@ const handleOpenAi = async (
         "mp3"
       ).then(async () => {
         try {
-          const sendMessage = await wbot.sendMessage(msg.key.remoteJid!, {
+          const sendMessage = await sendBaileysSocketMessage(wbot, msg.key.remoteJid!, {
             audio: { url: `${publicFolder}/${fileNameWithOutExtension}.mp3` },
             mimetype: "audio/mpeg",
             ptt: true
@@ -782,7 +794,7 @@ const handleOpenAi = async (
           console.log(`Erro para responder com audio: ${error}`);
         }
       });
-    } */
+    }*/
   } else if (msg.message?.audioMessage) {
     const mediaUrl = mediaSent!.mediaUrl!.split("/").pop();
     const file = fs.createReadStream(`${publicFolder}/${mediaUrl}`) as any;
@@ -818,8 +830,8 @@ const handleOpenAi = async (
         .replace("Ação: Transferir para o setor de atendimento", "")
         .trim();
     }
-    /* if (prompt.voice === "texto") {
-      const sentMessage = await wbot.sendMessage(msg.key.remoteJid!, {
+    /*if (prompt.voice === "texto") {
+      const sentMessage = await sendBaileysSocketMessage(wbot, msg.key.remoteJid!, {
         text: response!
       });
       await verifyMessage(sentMessage!, ticket, contact);
@@ -834,7 +846,7 @@ const handleOpenAi = async (
         "mp3"
       ).then(async () => {
         try {
-          const sendMessage = await wbot.sendMessage(msg.key.remoteJid!, {
+          const sendMessage = await sendBaileysSocketMessage(wbot, msg.key.remoteJid!, {
             audio: { url: `${publicFolder}/${fileNameWithOutExtension}.mp3` },
             mimetype: "audio/mpeg",
             ptt: true
@@ -846,7 +858,7 @@ const handleOpenAi = async (
           console.log(`Erro para responder com audio: ${error}`);
         }
       });
-    } */
+    }*/
   }
   messagesOpenAi = [];
 };
@@ -857,7 +869,7 @@ export const transferQueue = async (
   contact: Contact
 ): Promise<void> => {
   await UpdateTicketService({
-    ticketData: { queueId },
+    ticketData: { queueId: queueId },
     ticketId: ticket.id,
     companyId: ticket.companyId
   });
@@ -868,8 +880,8 @@ export const verifyMediaMessage = async (
   ticket: Ticket,
   contact: Contact,
   ticketTraking: TicketTraking = null,
-  isForwarded = false,
-  isPrivate = false,
+  isForwarded: boolean = false,
+  isPrivate: boolean = false,
   wbot: Session = null
 ): Promise<Message> => {
   const io = getIO();
@@ -986,7 +998,7 @@ export const verifyMessage = async (
     remoteJid: msg.key.remoteJid,
     participant: msg.key.participant,
     dataJson: JSON.stringify(msg),
-    isEdited
+    isEdited: isEdited
   };
 
   await ticket.update({
@@ -1101,7 +1113,8 @@ const verifyQueue = async (
     ) {
       const body = formatBody(`${greetingMessage}`, contact);
 
-      await wbot.sendMessage(
+      await sendBaileysSocketMessage(
+        wbot,
         `${contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`,
         {
           text: body
@@ -1115,7 +1128,7 @@ const verifyQueue = async (
       chatbot = firstQueue.options.length > 0;
     }
 
-    // inicia integração dialogflow/n8n
+    //inicia integração dialogflow/n8n
     if (
       !msg.key.fromMe &&
       !ticket.isGroup &&
@@ -1140,7 +1153,7 @@ const verifyQueue = async (
       });
       // return;
     }
-    // inicia integração openai
+    //inicia integração openai
     if (!msg.key.fromMe && !ticket.isGroup && !isNil(queues[0]?.promptId)) {
       await handleOpenAi(msg, wbot, ticket, contact, mediaSent);
 
@@ -1181,7 +1194,8 @@ const verifyQueue = async (
       text: formatBody(`\u200e${greetingMessage}\n\n${options}`, contact)
     };
 
-    const sendMsg = await wbot.sendMessage(
+    const sendMsg = await sendBaileysSocketMessage(
+      wbot,
       `${contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`,
       textMessage
     );
@@ -1232,7 +1246,8 @@ const verifyQueue = async (
             `\u200e ${queue.outOfHoursMessage}\n\n*[ # ]* - Voltar ao Menu Principal`,
             ticket.contact
           );
-          const sentMessage = await wbot.sendMessage(
+          const sentMessage = await sendBaileysSocketMessage(
+            wbot,
             `${contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`,
             {
               text: body
@@ -1248,7 +1263,7 @@ const verifyQueue = async (
         }
       }
 
-      // inicia integração dialogflow/n8n
+      //inicia integração dialogflow/n8n
       if (!msg.key.fromMe && !ticket.isGroup && choosenQueue.integrationId) {
         const integrations = await ShowQueueIntegrationService(
           choosenQueue.integrationId,
@@ -1270,7 +1285,7 @@ const verifyQueue = async (
         // return;
       }
 
-      // inicia integração openai
+      //inicia integração openai
       if (
         !msg.key.fromMe &&
         !ticket.isGroup &&
@@ -1290,7 +1305,8 @@ const verifyQueue = async (
         ticket.contact
       );
       if (choosenQueue.greetingMessage) {
-        const sentMessage = await wbot.sendMessage(
+        const sentMessage = await sendBaileysSocketMessage(
+          wbot,
           `${contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`,
           {
             text: body
@@ -1313,13 +1329,13 @@ const verifyQueue = async (
       return;
     }
 
-    // Regra para desabilitar o chatbot por x minutos/horas após o primeiro envio
+    //Regra para desabilitar o chatbot por x minutos/horas após o primeiro envio
     const ticketTraking = await FindOrCreateATicketTrakingService({
       ticketId: ticket.id,
       companyId
     });
-    const dataLimite = new Date();
-    const Agora = new Date();
+    let dataLimite = new Date();
+    let Agora = new Date();
 
     if (ticketTraking.chatbotAt !== null) {
       dataLimite.setMinutes(
@@ -1425,7 +1441,7 @@ const handleChartbot = async (
   ticket: Ticket,
   msg: WAMessage,
   wbot: Session,
-  dontReadTheFirstQuestion = false
+  dontReadTheFirstQuestion: boolean = false
 ) => {
   const queue = await Queue.findByPk(ticket.queueId, {
     include: [
@@ -1531,7 +1547,7 @@ const handleChartbot = async (
     //     sections
     //   };
 
-    //   const sendMsg = await wbot.sendMessage(
+    //   const sendMsg = await sendBaileysSocketMessage(wbot,
     //     `${ticket.contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`,
     //     listMessage
     //   );
@@ -1549,7 +1565,7 @@ const handleChartbot = async (
         });
       });
       buttons.push({
-        buttonId: "#",
+        buttonId: `#`,
         buttonText: { displayText: "Menu inicial *[ 0 ]* Menu anterior" },
         type: 4
       });
@@ -1560,7 +1576,8 @@ const handleChartbot = async (
         headerType: 4
       };
 
-      const sendMsg = await wbot.sendMessage(
+      const sendMsg = await sendBaileysSocketMessage(
+        wbot,
         `${ticket.contact.number}@${
           ticket.isGroup ? "g.us" : "s.whatsapp.net"
         }`,
@@ -1576,8 +1593,8 @@ const handleChartbot = async (
       queueOptions.forEach((option, i) => {
         options += `*[ ${option.option} ]* - ${option.title}\n`;
       });
-      // options += `\n*[ 0 ]* - Menu anterior`;
-      options += "\n*[ # ]* - Menu inicial";
+      //options += `\n*[ 0 ]* - Menu anterior`;
+      options += `\n*[ # ]* - Menu inicial`;
 
       const textMessage = {
         text: formatBody(
@@ -1586,7 +1603,8 @@ const handleChartbot = async (
         )
       };
 
-      const sendMsg = await wbot.sendMessage(
+      const sendMsg = await sendBaileysSocketMessage(
+        wbot,
         `${ticket.contact.number}@${
           ticket.isGroup ? "g.us" : "s.whatsapp.net"
         }`,
@@ -1641,7 +1659,7 @@ const handleChartbot = async (
         });
         sectionsRows.push({
           title: "Menu inicial *[ 0 ]* Menu anterior",
-          rowId: "#"
+          rowId: `#`
         });
         const sections = [
           {
@@ -1655,7 +1673,8 @@ const handleChartbot = async (
           sections
         };
 
-        const sendMsg = await wbot.sendMessage(
+        const sendMsg = await sendBaileysSocketMessage(
+          wbot,
           `${ticket.contact.number}@${
             ticket.isGroup ? "g.us" : "s.whatsapp.net"
           }`,
@@ -1675,7 +1694,7 @@ const handleChartbot = async (
           });
         });
         buttons.push({
-          buttonId: "#",
+          buttonId: `#`,
           buttonText: { displayText: "Menu inicial *[ 0 ]* Menu anterior" },
           type: 4
         });
@@ -1686,7 +1705,8 @@ const handleChartbot = async (
           headerType: 4
         };
 
-        const sendMsg = await wbot.sendMessage(
+        const sendMsg = await sendBaileysSocketMessage(
+          wbot,
           `${ticket.contact.number}@${
             ticket.isGroup ? "g.us" : "s.whatsapp.net"
           }`,
@@ -1702,8 +1722,8 @@ const handleChartbot = async (
         queueOptions.forEach((option, i) => {
           options += `*[ ${option.option} ]* - ${option.title}\n`;
         });
-        options += "\n*[ 0 ]* - Menu anterior";
-        options += "\n*[ # ]* - Menu inicial";
+        options += `\n*[ 0 ]* - Menu anterior`;
+        options += `\n*[ # ]* - Menu inicial`;
         const textMessage = {
           text: formatBody(
             `\u200e${currentOption.message}\n\n${options}`,
@@ -1711,7 +1731,8 @@ const handleChartbot = async (
           )
         };
 
-        const sendMsg = await wbot.sendMessage(
+        const sendMsg = await sendBaileysSocketMessage(
+          wbot,
           `${ticket.contact.number}@${
             ticket.isGroup ? "g.us" : "s.whatsapp.net"
           }`,
@@ -1888,7 +1909,7 @@ const flowbuilderIntegration = async (
   const diferencaEmMilissegundos = Math.abs(
     differenceInMilliseconds(dateTicket, dateNow)
   );
-  // const seisHorasEmMilissegundos = 21600000;
+  //const seisHorasEmMilissegundos = 21600000;
   const seisHorasEmMilissegundos = 0;
 
   logger.info(listPhrase.filter(item => item.phrase.toLowerCase()));
@@ -1959,9 +1980,9 @@ const flowbuilderIntegration = async (
       email: contact.email
     };
 
-    // const worker = new Worker("./src/services/WebhookService/WorkerAction.ts");
+    //const worker = new Worker("./src/services/WebhookService/WorkerAction.ts");
 
-    // console.log('DISPARO3')
+    //console.log('DISPARO3')
     // Enviar as variáveis como parte da mensagem para o Worker
     // const data = {
     //   idFlowDb: flowDispar.flowId,
@@ -2152,20 +2173,22 @@ export const handleMessageIntegration = async (
         contact,
         isFirstMsg
       );
-    } else if (
-      !isNaN(parseInt(ticket.lastMessage)) &&
-      ticket.status !== "open" &&
-      ticket.status !== "closed"
-    ) {
-      await flowBuilderQueue(
-        ticket,
-        msg,
-        wbot,
-        whatsapp,
-        companyId,
-        contact,
-        isFirstMsg
-      );
+    } else {
+      if (
+        !isNaN(parseInt(ticket.lastMessage)) &&
+        ticket.status !== "open" &&
+        ticket.status !== "closed"
+      ) {
+        await flowBuilderQueue(
+          ticket,
+          msg,
+          wbot,
+          whatsapp,
+          companyId,
+          contact,
+          isFirstMsg
+        );
+      }
     }
   }
 };
@@ -2224,8 +2247,8 @@ const flowBuilderQueue = async (
     msg
   );
 
-  // const integrations = await ShowQueueIntegrationService(whatsapp.integrationId, companyId);
-  // await handleMessageIntegration(msg, wbot, integrations, ticket, companyId, true, whatsapp);
+  //const integrations = await ShowQueueIntegrationService(whatsapp.integrationId, companyId);
+  //await handleMessageIntegration(msg, wbot, integrations, ticket, companyId, true, whatsapp);
 };
 
 const handleMessage = async (
@@ -2397,7 +2420,8 @@ const handleMessage = async (
 
           const debouncedSentMessage = debounce(
             async () => {
-              await wbot.sendMessage(
+              await sendBaileysSocketMessage(
+                wbot,
                 `${ticket.contact.number}@${
                   ticket.isGroup ? "g.us" : "s.whatsapp.net"
                 }`,
@@ -2448,7 +2472,8 @@ const handleMessage = async (
               const body = `${queue.outOfHoursMessage}`;
               const debouncedSentMessage = debounce(
                 async () => {
-                  await wbot.sendMessage(
+                  await sendBaileysSocketMessage(
+                    wbot,
                     `${ticket.contact.number}@${
                       ticket.isGroup ? "g.us" : "s.whatsapp.net"
                     }`,
@@ -2514,7 +2539,7 @@ const handleMessage = async (
 
         const lastFlowId = nodes[nodeIndex + 1].id;
         await ticket.update({
-          lastFlowId,
+          lastFlowId: lastFlowId,
           dataWebhook: {
             variables: {
               [answerKey]: body
@@ -2554,7 +2579,7 @@ const handleMessage = async (
       const nodeSelected = flow.flow["nodes"].find(
         (node: any) => node.id === ticket.lastFlowId
       );
-      const {
+      let {
         name,
         prompt,
         voice,
@@ -2567,7 +2592,7 @@ const handleMessage = async (
         maxMessages
       } = nodeSelected.data.typebotIntegration as IOpenAi;
 
-      const openAiSettings = {
+      let openAiSettings = {
         name,
         prompt,
         voice,
@@ -2593,7 +2618,7 @@ const handleMessage = async (
       return;
     }
 
-    // openai na conexao
+    //openai na conexao
     if (
       !ticket.queue &&
       !isGroup &&
@@ -2604,7 +2629,7 @@ const handleMessage = async (
       await handleOpenAi(msg, wbot, ticket, contact, mediaSent);
     }
 
-    // integraçao na conexao
+    //integraçao na conexao
     if (
       !msg.key.fromMe &&
       !ticket.isGroup &&
@@ -2631,7 +2656,7 @@ const handleMessage = async (
       return;
     }
 
-    // openai na fila
+    //openai na fila
     if (
       !isGroup &&
       !msg.key.fromMe &&
@@ -2737,7 +2762,7 @@ const handleMessage = async (
     await ticket.reload();
 
     try {
-      // Fluxo fora do expediente
+      //Fluxo fora do expediente
       if (!msg.key.fromMe && scheduleType && ticket.queueId !== null) {
         /**
          * Tratamento para envio de mensagem quando a fila está fora do expediente
@@ -2773,7 +2798,8 @@ const handleMessage = async (
             const body = queue.outOfHoursMessage;
             const debouncedSentMessage = debounce(
               async () => {
-                await wbot.sendMessage(
+                await sendBaileysSocketMessage(
+                  wbot,
                   `${ticket.contact.number}@${
                     ticket.isGroup ? "g.us" : "s.whatsapp.net"
                   }`,
@@ -2816,7 +2842,8 @@ const handleMessage = async (
       if (whatsapp.greetingMessage) {
         const debouncedSentMessage = debounce(
           async () => {
-            await wbot.sendMessage(
+            await sendBaileysSocketMessage(
+              wbot,
               `${ticket.contact.number}@${
                 ticket.isGroup ? "g.us" : "s.whatsapp.net"
               }`,

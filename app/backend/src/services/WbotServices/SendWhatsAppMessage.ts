@@ -1,11 +1,21 @@
-import WALegacySocket, { WAMessage } from "baileys";
 import * as Sentry from "@sentry/node";
+import type { WAMessage } from "../../messaging/public/baileys";
 import AppError from "../../errors/AppError";
-import GetTicketWbot from "../../helpers/GetTicketWbot";
 import Message from "../../models/Message";
 import Ticket from "../../models/Ticket";
+import {
+  BaileysTicketMessagingProvider,
+  ProviderSendError
+} from "../../messaging/public/baileysTicketMessaging";
+import GetTicketWbot from "../../helpers/GetTicketWbot";
 
 import formatBody from "../../helpers/Mustache";
+
+// Wait for the socket to recover if the connection is mid-reconnect
+// (e.g. after a Baileys stream error 515) instead of failing instantly.
+const baileysTicketMessagingProvider = new BaileysTicketMessagingProvider(
+  ticket => GetTicketWbot(ticket, { waitForReconnectMs: 45000 })
+);
 
 interface Request {
   body: string;
@@ -18,13 +28,7 @@ const SendWhatsAppMessage = async ({
   ticket,
   quotedMsg
 }: Request): Promise<WAMessage> => {
-  let options = {};
-  // Wait for the socket to recover if the connection is mid-reconnect
-  // (e.g. after a Baileys stream error 515) instead of failing instantly.
-  const wbot = await GetTicketWbot(ticket, { waitForReconnectMs: 45000 });
-  const number = `${ticket.contact.number}@${
-    ticket.isGroup ? "g.us" : "s.whatsapp.net"
-  }`;
+  let quoted: WAMessage | undefined;
 
   if (quotedMsg) {
     const chatMessages = await Message.findOne({
@@ -36,27 +40,21 @@ const SendWhatsAppMessage = async ({
     if (chatMessages) {
       const msgFound = JSON.parse(chatMessages.dataJson);
 
-      options = {
-        quoted: {
-          key: msgFound.key,
-          message: {
-            extendedTextMessage: msgFound.message.extendedTextMessage
-          }
+      quoted = {
+        key: msgFound.key,
+        message: {
+          extendedTextMessage: msgFound.message.extendedTextMessage
         }
-      };
+      } as WAMessage;
     }
   }
 
   try {
-    const sentMessage = await wbot.sendMessage(
-      number,
-      {
-        text: formatBody(body, ticket.contact)
-      },
-      {
-        ...options
-      }
-    );
+    const sentMessage = await baileysTicketMessagingProvider.sendText({
+      ticket,
+      text: formatBody(body, ticket.contact),
+      quoted
+    });
 
     await ticket.update({ lastMessage: formatBody(body, ticket.contact) });
     return sentMessage;
@@ -65,6 +63,13 @@ const SendWhatsAppMessage = async ({
     console.log(err);
     if (err instanceof AppError) {
       throw err;
+    }
+    if (
+      err instanceof ProviderSendError &&
+      err.code === "BAILEYS_SOCKET_UNAVAILABLE"
+    ) {
+      // Socket did not recover within the reconnect wait window.
+      throw new AppError("ERR_WAPP_NOT_AVAILABLE", 503);
     }
     throw new AppError("ERR_SENDING_WAPP_MSG");
   }

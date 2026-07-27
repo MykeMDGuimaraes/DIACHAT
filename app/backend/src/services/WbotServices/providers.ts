@@ -1,7 +1,5 @@
-import { proto, WASocket } from "baileys";
-import puppeteer from "puppeteer";
-import axios from "axios";
-import fs from "fs";
+import { sendBaileysSocketMessage } from "../../messaging/public/baileys";
+import { proto, WASocket } from "../../messaging/public/baileys";
 import Contact from "../../models/Contact";
 import Setting from "../../models/Setting";
 import Ticket from "../../models/Ticket";
@@ -16,7 +14,11 @@ import {
 } from "./wbotMessageListener";
 import formatBody from "../../helpers/Mustache";
 
+import puppeteer from "puppeteer";
+
+import axios from "axios";
 import UpdateTicketService from "../TicketServices/UpdateTicketService";
+import fs from "fs";
 
 export const provider = async (
   ticket: Ticket,
@@ -80,8 +82,8 @@ export const provider = async (
       urlmkauth = urlmkauth.slice(0, -1);
     }
 
-    // VARS
-    const url = `${urlmkauth}/api/`;
+    //VARS
+    let url = `${urlmkauth}/api/`;
     const Client_Id = clientidmkauth.value;
     const Client_Secret = clientesecretmkauth.value;
     const ixckeybase64 = btoa(ixcapikey.value);
@@ -98,13 +100,14 @@ export const provider = async (
           if (isCPFCNPJ) {
             const textMessage = {
               text: formatBody(
-                "Aguarde! Estamos consultando na base de dados!",
+                `Aguarde! Estamos consultando na base de dados!`,
                 contact
               )
             };
             try {
               await sleep(2000);
-              await wbot.sendMessage(
+              await sendBaileysSocketMessage(
+                wbot,
                 `${ticket.contact.number}@${
                   ticket.isGroup ? "g.us" : "s.whatsapp.net"
                 }`,
@@ -123,7 +126,7 @@ export const provider = async (
             } as any)
               .then(function (response) {
                 const jtw = response.data;
-                const config = {
+                var config = {
                   method: "GET",
                   url: `${urlmkauth}/api/cliente/show/${numberCPFCNPJ}`,
                   headers: {
@@ -136,13 +139,14 @@ export const provider = async (
                     if (response.data == "NULL") {
                       const textMessage = {
                         text: formatBody(
-                          "Cadastro não localizado! *CPF/CNPJ* incorreto ou inválido. Tenta novamente!",
+                          `Cadastro não localizado! *CPF/CNPJ* incorreto ou inválido. Tenta novamente!`,
                           contact
                         )
                       };
                       try {
                         await sleep(2000);
-                        await wbot.sendMessage(
+                        await sendBaileysSocketMessage(
+                          wbot,
                           `${ticket.contact.number}@${
                             ticket.isGroup ? "g.us" : "s.whatsapp.net"
                           }`,
@@ -185,11 +189,11 @@ export const provider = async (
                         status[0].toUpperCase() + status.substr(1);
                       valorCorrigido = valor.replace(".", ",");
 
-                      const curdate = new Date(datavenc);
+                      var curdate = new Date(datavenc);
                       const mesCorreto = curdate.getMonth() + 1;
-                      const ano = `0${curdate.getFullYear()}`.slice(-4);
-                      const mes = `0${mesCorreto}`.slice(-2);
-                      const dia = `0${curdate.getDate()}`.slice(-2);
+                      const ano = ("0" + curdate.getFullYear()).slice(-4);
+                      const mes = ("0" + mesCorreto).slice(-2);
+                      const dia = ("0" + curdate.getDate()).slice(-2);
                       const anoMesDia = `${dia}/${mes}/${ano}`;
 
                       try {
@@ -199,7 +203,8 @@ export const provider = async (
                             contact
                           )
                         };
-                        await wbot.sendMessage(
+                        await sendBaileysSocketMessage(
+                          wbot,
                           `${ticket.contact.number}@${
                             ticket.isGroup ? "g.us" : "s.whatsapp.net"
                           }`,
@@ -212,7 +217,8 @@ export const provider = async (
                           )
                         };
                         await sleep(2000);
-                        await wbot.sendMessage(
+                        await sendBaileysSocketMessage(
+                          wbot,
                           `${ticket.contact.number}@${
                             ticket.isGroup ? "g.us" : "s.whatsapp.net"
                           }`,
@@ -222,7 +228,8 @@ export const provider = async (
                           text: formatBody(`${linhadig}`, contact)
                         };
                         await sleep(2000);
-                        await wbot.sendMessage(
+                        await sendBaileysSocketMessage(
+                          wbot,
                           `${ticket.contact.number}@${
                             ticket.isGroup ? "g.us" : "s.whatsapp.net"
                           }`,
@@ -231,12 +238,13 @@ export const provider = async (
                         if (qrcode !== null) {
                           const bodyPdf = {
                             text: formatBody(
-                              "Este é o *PIX COPIA E COLA*",
+                              `Este é o *PIX COPIA E COLA*`,
                               contact
                             )
                           };
                           await sleep(2000);
-                          await wbot.sendMessage(
+                          await sendBaileysSocketMessage(
+                            wbot,
                             `${ticket.contact.number}@${
                               ticket.isGroup ? "g.us" : "s.whatsapp.net"
                             }`,
@@ -246,13 +254,14 @@ export const provider = async (
                             text: formatBody(`${qrcode}`, contact)
                           };
                           await sleep(2000);
-                          await wbot.sendMessage(
+                          await sendBaileysSocketMessage(
+                            wbot,
                             `${ticket.contact.number}@${
                               ticket.isGroup ? "g.us" : "s.whatsapp.net"
                             }`,
                             bodyqrcode
                           );
-                          const linkBoleto = `https://chart.googleapis.com/chart?cht=qr&chs=500x500&chld=L|0&chl=${qrcode}`;
+                          let linkBoleto = `https://chart.googleapis.com/chart?cht=qr&chs=500x500&chld=L|0&chl=${qrcode}`;
                           await sleep(2000);
                           await sendMessageImage(
                             wbot,
@@ -264,7 +273,7 @@ export const provider = async (
                         }
                         const bodyPdf = {
                           text: formatBody(
-                            "Agora vou te enviar o boleto em *PDF* caso você precise.",
+                            `Agora vou te enviar o boleto em *PDF* caso você precise.`,
                             contact
                           )
                         };
@@ -272,7 +281,8 @@ export const provider = async (
                         const bodyPdfQr = {
                           text: formatBody(`${bodyPdf}`, contact)
                         };
-                        await wbot.sendMessage(
+                        await sendBaileysSocketMessage(
+                          wbot,
                           `${ticket.contact.number}@${
                             ticket.isGroup ? "g.us" : "s.whatsapp.net"
                           }`,
@@ -280,7 +290,7 @@ export const provider = async (
                         );
                         await sleep(2000);
 
-                        // GERA O PDF
+                        //GERA O PDF
                         const nomePDF = `Boleto-${nome}-${dia}-${mes}-${ano}.pdf`;
                         async () => {
                           const browser = await puppeteer.launch({
@@ -317,7 +327,8 @@ export const provider = async (
                             )
                           };
                           await sleep(2000);
-                          await wbot.sendMessage(
+                          await sendBaileysSocketMessage(
+                            wbot,
                             `${ticket.contact.number}@${
                               ticket.isGroup ? "g.us" : "s.whatsapp.net"
                             }`,
@@ -325,18 +336,19 @@ export const provider = async (
                           );
                           const bodyqrcode = {
                             text: formatBody(
-                              "Estou liberando seu acesso. Por favor aguarde!",
+                              `Estou liberando seu acesso. Por favor aguarde!`,
                               contact
                             )
                           };
                           await sleep(2000);
-                          await wbot.sendMessage(
+                          await sendBaileysSocketMessage(
+                            wbot,
                             `${ticket.contact.number}@${
                               ticket.isGroup ? "g.us" : "s.whatsapp.net"
                             }`,
                             bodyqrcode
                           );
-                          const optionsdesbloq = {
+                          var optionsdesbloq = {
                             method: "GET",
                             url: `${urlmkauth}/api/cliente/desbloqueio/${uuid_cliente}`,
                             headers: {
@@ -348,12 +360,13 @@ export const provider = async (
                             .then(async function (response) {
                               const bodyLiberado = {
                                 text: formatBody(
-                                  "Pronto liberei! Vou precisar que você *retire* seu equipamento da tomada.\n\n*OBS: Somente retire da tomada.* \nAguarde 1 minuto e ligue novamente!",
+                                  `Pronto liberei! Vou precisar que você *retire* seu equipamento da tomada.\n\n*OBS: Somente retire da tomada.* \nAguarde 1 minuto e ligue novamente!`,
                                   contact
                                 )
                               };
                               await sleep(2000);
-                              await wbot.sendMessage(
+                              await sendBaileysSocketMessage(
+                                wbot,
                                 `${ticket.contact.number}@${
                                   ticket.isGroup ? "g.us" : "s.whatsapp.net"
                                 }`,
@@ -361,12 +374,13 @@ export const provider = async (
                               );
                               const bodyqrcode = {
                                 text: formatBody(
-                                  "Veja se seu acesso voltou! Caso nao tenha voltado retorne o contato e fale com um atendente!",
+                                  `Veja se seu acesso voltou! Caso nao tenha voltado retorne o contato e fale com um atendente!`,
                                   contact
                                 )
                               };
                               await sleep(2000);
-                              await wbot.sendMessage(
+                              await sendBaileysSocketMessage(
+                                wbot,
                                 `${ticket.contact.number}@${
                                   ticket.isGroup ? "g.us" : "s.whatsapp.net"
                                 }`,
@@ -376,11 +390,12 @@ export const provider = async (
                             .catch(async function (error) {
                               const bodyfinaliza = {
                                 text: formatBody(
-                                  "Opss! Algo de errado aconteceu! Digite *#* para voltar ao menu anterior e fale com um atendente!",
+                                  `Opss! Algo de errado aconteceu! Digite *#* para voltar ao menu anterior e fale com um atendente!`,
                                   contact
                                 )
                               };
-                              await wbot.sendMessage(
+                              await sendBaileysSocketMessage(
+                                wbot,
                                 `${ticket.contact.number}@${
                                   ticket.isGroup ? "g.us" : "s.whatsapp.net"
                                 }`,
@@ -391,12 +406,13 @@ export const provider = async (
 
                         const bodyfinaliza = {
                           text: formatBody(
-                            "Estamos finalizando esta conversa! Caso precise entre em contato conosco!",
+                            `Estamos finalizando esta conversa! Caso precise entre em contato conosco!`,
                             contact
                           )
                         };
                         await sleep(12000);
-                        await wbot.sendMessage(
+                        await sendBaileysSocketMessage(
+                          wbot,
                           `${ticket.contact.number}@${
                             ticket.isGroup ? "g.us" : "s.whatsapp.net"
                           }`,
@@ -423,12 +439,13 @@ export const provider = async (
                     try {
                       const bodyBoleto = {
                         text: formatBody(
-                          "Não consegui encontrar seu cadastro.\n\nPor favor tente novamente!\nOu digite *#* para voltar ao *Menu Anterior*",
+                          `Não consegui encontrar seu cadastro.\n\nPor favor tente novamente!\nOu digite *#* para voltar ao *Menu Anterior*`,
                           contact
                         )
                       };
                       await sleep(2000);
-                      await wbot.sendMessage(
+                      await sendBaileysSocketMessage(
+                        wbot,
                         `${ticket.contact.number}@${
                           ticket.isGroup ? "g.us" : "s.whatsapp.net"
                         }`,
@@ -442,11 +459,12 @@ export const provider = async (
               .catch(async function (error) {
                 const bodyfinaliza = {
                   text: formatBody(
-                    "Opss! Algo de errado aconteceu! Digite *#* para voltar ao menu anterior e fale com um atendente!",
+                    `Opss! Algo de errado aconteceu! Digite *#* para voltar ao menu anterior e fale com um atendente!`,
                     contact
                   )
                 };
-                await wbot.sendMessage(
+                await sendBaileysSocketMessage(
+                  wbot,
                   `${ticket.contact.number}@${
                     ticket.isGroup ? "g.us" : "s.whatsapp.net"
                   }`,
@@ -456,12 +474,13 @@ export const provider = async (
           } else {
             const body = {
               text: formatBody(
-                "Este CPF/CNPJ não é válido!\n\nPor favor tente novamente!\nOu digite *#* para voltar ao *Menu Anterior*",
+                `Este CPF/CNPJ não é válido!\n\nPor favor tente novamente!\nOu digite *#* para voltar ao *Menu Anterior*`,
                 contact
               )
             };
             await sleep(2000);
-            await wbot.sendMessage(
+            await sendBaileysSocketMessage(
+              wbot,
               `${ticket.contact.number}@${
                 ticket.isGroup ? "g.us" : "s.whatsapp.net"
               }`,
@@ -479,20 +498,21 @@ export const provider = async (
           if (isCPFCNPJ) {
             const body = {
               text: formatBody(
-                "Aguarde! Estamos consultando na base de dados!",
+                `Aguarde! Estamos consultando na base de dados!`,
                 contact
               )
             };
             try {
               await sleep(2000);
-              await wbot.sendMessage(
+              await sendBaileysSocketMessage(
+                wbot,
                 `${ticket.contact.number}@${
                   ticket.isGroup ? "g.us" : "s.whatsapp.net"
                 }`,
                 body
               );
             } catch (error) {}
-            const optionsc = {
+            var optionsc = {
               method: "GET",
               url: "https://www.asaas.com/api/v3/customers",
               params: { cpfCnpj: numberCPFCNPJ },
@@ -516,12 +536,13 @@ export const provider = async (
                 if (totalCount === 0) {
                   const body = {
                     text: formatBody(
-                      "Cadastro não localizado! *CPF/CNPJ* incorreto ou inválido. Tenta novamente!",
+                      `Cadastro não localizado! *CPF/CNPJ* incorreto ou inválido. Tenta novamente!`,
                       contact
                     )
                   };
                   await sleep(2000);
-                  await wbot.sendMessage(
+                  await sendBaileysSocketMessage(
+                    wbot,
                     `${ticket.contact.number}@${
                       ticket.isGroup ? "g.us" : "s.whatsapp.net"
                     }`,
@@ -535,13 +556,14 @@ export const provider = async (
                     )
                   };
                   await sleep(2000);
-                  await wbot.sendMessage(
+                  await sendBaileysSocketMessage(
+                    wbot,
                     `${ticket.contact.number}@${
                       ticket.isGroup ? "g.us" : "s.whatsapp.net"
                     }`,
                     body
                   );
-                  const optionsListpaymentOVERDUE = {
+                  var optionsListpaymentOVERDUE = {
                     method: "GET",
                     url: "https://www.asaas.com/api/v3/payments",
                     params: { customer: id_cliente, status: "OVERDUE" },
@@ -560,18 +582,19 @@ export const provider = async (
                       if (totalCount_overdue === 0) {
                         const body = {
                           text: formatBody(
-                            "Você não tem nenhuma fatura vencidada! \nVou te enviar a proxima fatura. Por favor aguarde!",
+                            `Você não tem nenhuma fatura vencidada! \nVou te enviar a proxima fatura. Por favor aguarde!`,
                             contact
                           )
                         };
                         await sleep(2000);
-                        await wbot.sendMessage(
+                        await sendBaileysSocketMessage(
+                          wbot,
                           `${ticket.contact.number}@${
                             ticket.isGroup ? "g.us" : "s.whatsapp.net"
                           }`,
                           body
                         );
-                        const optionsPENDING = {
+                        var optionsPENDING = {
                           method: "GET",
                           url: "https://www.asaas.com/api/v3/payments",
                           params: { customer: id_cliente, status: "PENDING" },
@@ -624,14 +647,15 @@ export const provider = async (
                               )
                             };
                             await sleep(2000);
-                            await wbot.sendMessage(
+                            await sendBaileysSocketMessage(
+                              wbot,
                               `${ticket.contact.number}@${
                                 ticket.isGroup ? "g.us" : "s.whatsapp.net"
                               }`,
                               bodyBoleto
                             );
-                            // GET DADOS PIX
-                            const optionsGetPIX = {
+                            //GET DADOS PIX
+                            var optionsGetPIX = {
                               method: "GET",
                               url: `https://www.asaas.com/api/v3/payments/${id_payment_pending}/pixQrCode`,
                               headers: {
@@ -652,12 +676,13 @@ export const provider = async (
                                 if (success === true) {
                                   const bodyPixCP = {
                                     text: formatBody(
-                                      "Este é o *PIX Copia e Cola*",
+                                      `Este é o *PIX Copia e Cola*`,
                                       contact
                                     )
                                   };
                                   await sleep(2000);
-                                  await wbot.sendMessage(
+                                  await sendBaileysSocketMessage(
+                                    wbot,
                                     `${ticket.contact.number}@${
                                       ticket.isGroup ? "g.us" : "s.whatsapp.net"
                                     }`,
@@ -667,13 +692,14 @@ export const provider = async (
                                     text: formatBody(`${payload}`, contact)
                                   };
                                   await sleep(2000);
-                                  await wbot.sendMessage(
+                                  await sendBaileysSocketMessage(
+                                    wbot,
                                     `${ticket.contact.number}@${
                                       ticket.isGroup ? "g.us" : "s.whatsapp.net"
                                     }`,
                                     bodyPix
                                   );
-                                  const linkBoleto = `https://chart.googleapis.com/chart?cht=qr&chs=500x500&chld=L|0&chl=${payload}`;
+                                  let linkBoleto = `https://chart.googleapis.com/chart?cht=qr&chs=500x500&chld=L|0&chl=${payload}`;
                                   await sleep(2000);
                                   await sendMessageImage(
                                     wbot,
@@ -682,7 +708,7 @@ export const provider = async (
                                     linkBoleto,
                                     ""
                                   );
-                                  const optionsBoletopend = {
+                                  var optionsBoletopend = {
                                     method: "GET",
                                     url: `https://www.asaas.com/api/v3/payments/${id_payment_pending}/identificationField`,
                                     headers: {
@@ -709,12 +735,13 @@ export const provider = async (
                                       ) {
                                         const bodycodigo = {
                                           text: formatBody(
-                                            "Este é o *Código de Barras*!",
+                                            `Este é o *Código de Barras*!`,
                                             contact
                                           )
                                         };
                                         await sleep(2000);
-                                        await wbot.sendMessage(
+                                        await sendBaileysSocketMessage(
+                                          wbot,
                                           `${ticket.contact.number}@${
                                             ticket.isGroup
                                               ? "g.us"
@@ -723,7 +750,8 @@ export const provider = async (
                                           bodycodigo
                                         );
                                         await sleep(2000);
-                                        await wbot.sendMessage(
+                                        await sendBaileysSocketMessage(
+                                          wbot,
                                           `${ticket.contact.number}@${
                                             ticket.isGroup
                                               ? "g.us"
@@ -733,12 +761,13 @@ export const provider = async (
                                         );
                                         const bodyfinaliza = {
                                           text: formatBody(
-                                            "Estamos finalizando esta conversa! Caso precise entre em contato conosco!",
+                                            `Estamos finalizando esta conversa! Caso precise entre em contato conosco!`,
                                             contact
                                           )
                                         };
                                         await sleep(2000);
-                                        await wbot.sendMessage(
+                                        await sendBaileysSocketMessage(
+                                          wbot,
                                           `${ticket.contact.number}@${
                                             ticket.isGroup
                                               ? "g.us"
@@ -755,12 +784,13 @@ export const provider = async (
                                       } else {
                                         const bodyfinaliza = {
                                           text: formatBody(
-                                            "Estamos finalizando esta conversa! Caso precise entre em contato conosco!",
+                                            `Estamos finalizando esta conversa! Caso precise entre em contato conosco!`,
                                             contact
                                           )
                                         };
                                         await sleep(2000);
-                                        await wbot.sendMessage(
+                                        await sendBaileysSocketMessage(
+                                          wbot,
                                           `${ticket.contact.number}@${
                                             ticket.isGroup
                                               ? "g.us"
@@ -778,12 +808,13 @@ export const provider = async (
                                     .catch(async function (error) {
                                       const bodyfinaliza = {
                                         text: formatBody(
-                                          "Estamos finalizando esta conversa! Caso precise entre em contato conosco!",
+                                          `Estamos finalizando esta conversa! Caso precise entre em contato conosco!`,
                                           contact
                                         )
                                       };
                                       await sleep(2000);
-                                      await wbot.sendMessage(
+                                      await sendBaileysSocketMessage(
+                                        wbot,
                                         `${ticket.contact.number}@${
                                           ticket.isGroup
                                             ? "g.us"
@@ -802,12 +833,13 @@ export const provider = async (
                               .catch(async function (error) {
                                 const body = {
                                   text: formatBody(
-                                    "*Opss!!!!*\nOcorreu um erro! Digite *#* e fale com um *Atendente*!",
+                                    `*Opss!!!!*\nOcorreu um erro! Digite *#* e fale com um *Atendente*!`,
                                     contact
                                   )
                                 };
                                 await sleep(2000);
-                                await wbot.sendMessage(
+                                await sendBaileysSocketMessage(
+                                  wbot,
                                   `${ticket.contact.number}@${
                                     ticket.isGroup ? "g.us" : "s.whatsapp.net"
                                   }`,
@@ -818,12 +850,13 @@ export const provider = async (
                           .catch(async function (error) {
                             const body = {
                               text: formatBody(
-                                "*Opss!!!!*\nOcorreu um erro! Digite *#* e fale com um *Atendente*!",
+                                `*Opss!!!!*\nOcorreu um erro! Digite *#* e fale com um *Atendente*!`,
                                 contact
                               )
                             };
                             await sleep(2000);
-                            await wbot.sendMessage(
+                            await sendBaileysSocketMessage(
+                              wbot,
                               `${ticket.contact.number}@${
                                 ticket.isGroup ? "g.us" : "s.whatsapp.net"
                               }`,
@@ -866,7 +899,8 @@ export const provider = async (
                           )
                         };
                         await sleep(2000);
-                        await wbot.sendMessage(
+                        await sendBaileysSocketMessage(
+                          wbot,
                           `${ticket.contact.number}@${
                             ticket.isGroup ? "g.us" : "s.whatsapp.net"
                           }`,
@@ -879,14 +913,15 @@ export const provider = async (
                           )
                         };
                         await sleep(2000);
-                        await wbot.sendMessage(
+                        await sendBaileysSocketMessage(
+                          wbot,
                           `${ticket.contact.number}@${
                             ticket.isGroup ? "g.us" : "s.whatsapp.net"
                           }`,
                           bodyBoleto
                         );
-                        // GET DADOS PIX
-                        const optionsGetPIX = {
+                        //GET DADOS PIX
+                        var optionsGetPIX = {
                           method: "GET",
                           url: `https://www.asaas.com/api/v3/payments/${id_payment_overdue}/pixQrCode`,
                           headers: {
@@ -906,12 +941,13 @@ export const provider = async (
                             if (success === true) {
                               const bodyPixCP = {
                                 text: formatBody(
-                                  "Este é o *PIX Copia e Cola*",
+                                  `Este é o *PIX Copia e Cola*`,
                                   contact
                                 )
                               };
                               await sleep(2000);
-                              await wbot.sendMessage(
+                              await sendBaileysSocketMessage(
+                                wbot,
                                 `${ticket.contact.number}@${
                                   ticket.isGroup ? "g.us" : "s.whatsapp.net"
                                 }`,
@@ -921,13 +957,14 @@ export const provider = async (
                                 text: formatBody(`${payload}`, contact)
                               };
                               await sleep(2000);
-                              await wbot.sendMessage(
+                              await sendBaileysSocketMessage(
+                                wbot,
                                 `${ticket.contact.number}@${
                                   ticket.isGroup ? "g.us" : "s.whatsapp.net"
                                 }`,
                                 bodyPix
                               );
-                              const linkBoleto = `https://chart.googleapis.com/chart?cht=qr&chs=500x500&chld=L|0&chl=${payload}`;
+                              let linkBoleto = `https://chart.googleapis.com/chart?cht=qr&chs=500x500&chld=L|0&chl=${payload}`;
                               await sleep(2000);
                               await sendMessageImage(
                                 wbot,
@@ -936,7 +973,7 @@ export const provider = async (
                                 linkBoleto,
                                 ""
                               );
-                              const optionsBoleto = {
+                              var optionsBoleto = {
                                 method: "GET",
                                 url: `https://www.asaas.com/api/v3/payments/${id_payment_overdue}/identificationField`,
                                 headers: {
@@ -963,12 +1000,13 @@ export const provider = async (
                                   ) {
                                     const bodycodigo = {
                                       text: formatBody(
-                                        "Este é o *Código de Barras*!",
+                                        `Este é o *Código de Barras*!`,
                                         contact
                                       )
                                     };
                                     await sleep(2000);
-                                    await wbot.sendMessage(
+                                    await sendBaileysSocketMessage(
+                                      wbot,
                                       `${ticket.contact.number}@${
                                         ticket.isGroup
                                           ? "g.us"
@@ -977,7 +1015,8 @@ export const provider = async (
                                       bodycodigo
                                     );
                                     await sleep(2000);
-                                    await wbot.sendMessage(
+                                    await sendBaileysSocketMessage(
+                                      wbot,
                                       `${ticket.contact.number}@${
                                         ticket.isGroup
                                           ? "g.us"
@@ -987,12 +1026,13 @@ export const provider = async (
                                     );
                                     const bodyfinaliza = {
                                       text: formatBody(
-                                        "Estamos finalizando esta conversa! Caso precise entre em contato conosco!",
+                                        `Estamos finalizando esta conversa! Caso precise entre em contato conosco!`,
                                         contact
                                       )
                                     };
                                     await sleep(2000);
-                                    await wbot.sendMessage(
+                                    await sendBaileysSocketMessage(
+                                      wbot,
                                       `${ticket.contact.number}@${
                                         ticket.isGroup
                                           ? "g.us"
@@ -1008,12 +1048,13 @@ export const provider = async (
                                   } else {
                                     const bodyfinaliza = {
                                       text: formatBody(
-                                        "Estamos finalizando esta conversa! Caso precise entre em contato conosco!",
+                                        `Estamos finalizando esta conversa! Caso precise entre em contato conosco!`,
                                         contact
                                       )
                                     };
                                     await sleep(2000);
-                                    await wbot.sendMessage(
+                                    await sendBaileysSocketMessage(
+                                      wbot,
                                       `${ticket.contact.number}@${
                                         ticket.isGroup
                                           ? "g.us"
@@ -1029,7 +1070,7 @@ export const provider = async (
                                   }
                                 })
                                 .catch(function (error) {
-                                  // console.error(error);
+                                  //console.error(error);
                                 });
                             }
                           })
@@ -1039,12 +1080,13 @@ export const provider = async (
                     .catch(async function (error) {
                       const body = {
                         text: formatBody(
-                          "*Opss!!!!*\nOcorreu um erro! Digite *#* e fale com um *Atendente*!",
+                          `*Opss!!!!*\nOcorreu um erro! Digite *#* e fale com um *Atendente*!`,
                           contact
                         )
                       };
                       await sleep(2000);
-                      await wbot.sendMessage(
+                      await sendBaileysSocketMessage(
+                        wbot,
                         `${ticket.contact.number}@${
                           ticket.isGroup ? "g.us" : "s.whatsapp.net"
                         }`,
@@ -1056,12 +1098,13 @@ export const provider = async (
               .catch(async function (error) {
                 const body = {
                   text: formatBody(
-                    "*Opss!!!!*\nOcorreu um erro! Digite *#* e fale com um *Atendente*!",
+                    `*Opss!!!!*\nOcorreu um erro! Digite *#* e fale com um *Atendente*!`,
                     contact
                   )
                 };
                 await sleep(2000);
-                await wbot.sendMessage(
+                await sendBaileysSocketMessage(
+                  wbot,
                   `${ticket.contact.number}@${
                     ticket.isGroup ? "g.us" : "s.whatsapp.net"
                   }`,
@@ -1094,16 +1137,17 @@ export const provider = async (
               numberCPFCNPJ = numberCPFCNPJ.replace(/\.(\d{3})(\d)/, ".$1/$2");
               numberCPFCNPJ = numberCPFCNPJ.replace(/(\d{4})(\d)/, "$1-$2");
             }
-            // const token = await CheckSettingsHelper("OBTEM O TOKEN DO BANCO (dei insert na tabela settings)")
+            //const token = await CheckSettingsHelper("OBTEM O TOKEN DO BANCO (dei insert na tabela settings)")
             const body = {
               text: formatBody(
-                "Aguarde! Estamos consultando na base de dados!",
+                `Aguarde! Estamos consultando na base de dados!`,
                 contact
               )
             };
             try {
               await sleep(2000);
-              await wbot.sendMessage(
+              await sendBaileysSocketMessage(
+                wbot,
                 `${ticket.contact.number}@${
                   ticket.isGroup ? "g.us" : "s.whatsapp.net"
                 }`,
@@ -1135,12 +1179,13 @@ export const provider = async (
                   console.log("Error response", response.data.message);
                   const body = {
                     text: formatBody(
-                      "*Opss!!!!*\nOcorreu um erro! Digite *#* e fale com um *Atendente*!",
+                      `*Opss!!!!*\nOcorreu um erro! Digite *#* e fale com um *Atendente*!`,
                       contact
                     )
                   };
                   await sleep(2000);
-                  await wbot.sendMessage(
+                  await sendBaileysSocketMessage(
+                    wbot,
                     `${ticket.contact.number}@${
                       ticket.isGroup ? "g.us" : "s.whatsapp.net"
                     }`,
@@ -1150,13 +1195,14 @@ export const provider = async (
                 if (response.data.total === 0) {
                   const body = {
                     text: formatBody(
-                      "Cadastro não localizado! *CPF/CNPJ* incorreto ou inválido. Tenta novamente!",
+                      `Cadastro não localizado! *CPF/CNPJ* incorreto ou inválido. Tenta novamente!`,
                       contact
                     )
                   };
                   try {
                     await sleep(2000);
-                    await wbot.sendMessage(
+                    await sendBaileysSocketMessage(
+                      wbot,
                       `${ticket.contact.number}@${
                         ticket.isGroup ? "g.us" : "s.whatsapp.net"
                       }`,
@@ -1179,13 +1225,14 @@ export const provider = async (
                     )
                   };
                   await sleep(2000);
-                  await wbot.sendMessage(
+                  await sendBaileysSocketMessage(
+                    wbot,
                     `${ticket.contact.number}@${
                       ticket.isGroup ? "g.us" : "s.whatsapp.net"
                     }`,
                     body
                   );
-                  const boleto = {
+                  var boleto = {
                     method: "GET",
                     url: `${urlixc}/webservice/v1/fn_areceber`,
                     headers: {
@@ -1229,19 +1276,19 @@ export const provider = async (
                         .reverse()
                         .join("/");
 
-                      // INFORMAÇÕES BOLETO
+                      //INFORMAÇÕES BOLETO
                       const bodyBoleto = {
                         text: formatBody(
                           `Segue a segunda-via da sua Fatura!\n\n*Fatura:* ${idboleto}\n*Nome:* ${nome}\n*Valor:* R$ ${valorCorrigido}\n*Data Vencimento:* ${datavencCorrigida}\n\nVou mandar o *código de barras* na próxima mensagem para ficar mais fácil para você copiar!`,
                           contact
                         )
                       };
-                      // await sleep(2000)
-                      // await wbot.sendMessage(`${ticket.contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`, bodyBoleto);
-                      // LINHA DIGITAVEL
+                      //await sleep(2000)
+                      //await sendBaileysSocketMessage(wbot, `${ticket.contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`, bodyBoleto);
+                      //LINHA DIGITAVEL
                       if (impresso !== "S") {
-                        // IMPRIME BOLETO PARA GERAR CODIGO BARRAS
-                        const boletopdf = {
+                        //IMPRIME BOLETO PARA GERAR CODIGO BARRAS
+                        var boletopdf = {
                           method: "GET",
                           url: `${urlixc}/webservice/v1/get_boleto`,
                           headers: {
@@ -1266,8 +1313,8 @@ export const provider = async (
                           });
                       }
 
-                      // SE TIVER PIX ENVIA O PIX
-                      const optionsPix = {
+                      //SE TIVER PIX ENVIA O PIX
+                      var optionsPix = {
                         method: "GET",
                         url: `${urlixc}/webservice/v1/get_pix`,
                         headers: {
@@ -1292,7 +1339,8 @@ export const provider = async (
                                 contact
                               )
                             };
-                            await wbot.sendMessage(
+                            await sendBaileysSocketMessage(
+                              wbot,
                               `${ticket.contact.number}@${
                                 ticket.isGroup ? "g.us" : "s.whatsapp.net"
                               }`,
@@ -1305,7 +1353,8 @@ export const provider = async (
                               )
                             };
                             await sleep(2000);
-                            await wbot.sendMessage(
+                            await sendBaileysSocketMessage(
+                              wbot,
                               `${ticket.contact.number}@${
                                 ticket.isGroup ? "g.us" : "s.whatsapp.net"
                               }`,
@@ -1315,7 +1364,8 @@ export const provider = async (
                             const body_linha_digitavel = {
                               text: formatBody(`${linha_digitavel}`, contact)
                             };
-                            await wbot.sendMessage(
+                            await sendBaileysSocketMessage(
+                              wbot,
                               `${ticket.contact.number}@${
                                 ticket.isGroup ? "g.us" : "s.whatsapp.net"
                               }`,
@@ -1328,7 +1378,8 @@ export const provider = async (
                               )
                             };
                             await sleep(2000);
-                            await wbot.sendMessage(
+                            await sendBaileysSocketMessage(
+                              wbot,
                               `${ticket.contact.number}@${
                                 ticket.isGroup ? "g.us" : "s.whatsapp.net"
                               }`,
@@ -1338,7 +1389,8 @@ export const provider = async (
                             const body_pix_dig = {
                               text: formatBody(`${pix}`, contact)
                             };
-                            await wbot.sendMessage(
+                            await sendBaileysSocketMessage(
+                              wbot,
                               `${ticket.contact.number}@${
                                 ticket.isGroup ? "g.us" : "s.whatsapp.net"
                               }`,
@@ -1348,13 +1400,14 @@ export const provider = async (
                               text: formatBody("QR CODE do *PIX*", contact)
                             };
                             await sleep(2000);
-                            await wbot.sendMessage(
+                            await sendBaileysSocketMessage(
+                              wbot,
                               `${ticket.contact.number}@${
                                 ticket.isGroup ? "g.us" : "s.whatsapp.net"
                               }`,
                               body_pixqr
                             );
-                            const linkBoleto = `https://chart.googleapis.com/chart?cht=qr&chs=500x500&chld=L|0&chl=${pix}`;
+                            let linkBoleto = `https://chart.googleapis.com/chart?cht=qr&chs=500x500&chld=L|0&chl=${pix}`;
                             await sleep(2000);
                             await sendMessageImage(
                               wbot,
@@ -1363,7 +1416,7 @@ export const provider = async (
                               linkBoleto,
                               ""
                             );
-                            /// VE SE ESTA BLOQUEADO PARA LIBERAR!
+                            ///VE SE ESTA BLOQUEADO PARA LIBERAR!
                             var optionscontrato = {
                               method: "POST",
                               url: `${urlixc}/webservice/v1/cliente_contrato`,
@@ -1397,7 +1450,8 @@ export const provider = async (
                                     )
                                   };
                                   await sleep(2000);
-                                  await wbot.sendMessage(
+                                  await sendBaileysSocketMessage(
+                                    wbot,
                                     `${ticket.contact.number}@${
                                       ticket.isGroup ? "g.us" : "s.whatsapp.net"
                                     }`,
@@ -1405,19 +1459,20 @@ export const provider = async (
                                   );
                                   const bodyqrcode = {
                                     text: formatBody(
-                                      "Estou liberando seu acesso. Por favor aguarde!",
+                                      `Estou liberando seu acesso. Por favor aguarde!`,
                                       contact
                                     )
                                   };
                                   await sleep(2000);
-                                  await wbot.sendMessage(
+                                  await sendBaileysSocketMessage(
+                                    wbot,
                                     `${ticket.contact.number}@${
                                       ticket.isGroup ? "g.us" : "s.whatsapp.net"
                                     }`,
                                     bodyqrcode
                                   );
-                                  // REALIZANDO O DESBLOQUEIO
-                                  const optionsdesbloqeuio = {
+                                  //REALIZANDO O DESBLOQUEIO
+                                  var optionsdesbloqeuio = {
                                     method: "POST",
                                     url: `${urlixc}/webservice/v1/desbloqueio_confianca`,
                                     headers: {
@@ -1434,8 +1489,8 @@ export const provider = async (
                                       tipo = response.data?.tipo;
                                       mensagem = response.data?.mensagem;
                                       if (tipo === "sucesso") {
-                                        // DESCONECTANDO O CLIENTE PARA VOLTAR O ACESSO
-                                        const optionsRadius = {
+                                        //DESCONECTANDO O CLIENTE PARA VOLTAR O ACESSO
+                                        var optionsRadius = {
                                           method: "GET",
                                           url: `${urlixc}/webservice/v1/radusuarios`,
                                           headers: {
@@ -1466,7 +1521,8 @@ export const provider = async (
                                                 )
                                               };
                                               await sleep(2000);
-                                              await wbot.sendMessage(
+                                              await sendBaileysSocketMessage(
+                                                wbot,
                                                 `${ticket.contact.number}@${
                                                   ticket.isGroup
                                                     ? "g.us"
@@ -1476,12 +1532,13 @@ export const provider = async (
                                               );
                                               const bodyPdf = {
                                                 text: formatBody(
-                                                  "Fiz os procedimentos de liberação! Agora aguarde até 5 minutos e veja se sua conexão irá retornar! .\n\nCaso não tenha voltado, retorne o contato e fale com um atendente!",
+                                                  `Fiz os procedimentos de liberação! Agora aguarde até 5 minutos e veja se sua conexão irá retornar! .\n\nCaso não tenha voltado, retorne o contato e fale com um atendente!`,
                                                   contact
                                                 )
                                               };
                                               await sleep(2000);
-                                              await wbot.sendMessage(
+                                              await sendBaileysSocketMessage(
+                                                wbot,
                                                 `${ticket.contact.number}@${
                                                   ticket.isGroup
                                                     ? "g.us"
@@ -1491,12 +1548,13 @@ export const provider = async (
                                               );
                                               const bodyfinaliza = {
                                                 text: formatBody(
-                                                  "Estamos finalizando esta conversa! Caso precise entre em contato conosco!",
+                                                  `Estamos finalizando esta conversa! Caso precise entre em contato conosco!`,
                                                   contact
                                                 )
                                               };
                                               await sleep(2000);
-                                              await wbot.sendMessage(
+                                              await sendBaileysSocketMessage(
+                                                wbot,
                                                 `${ticket.contact.number}@${
                                                   ticket.isGroup
                                                     ? "g.us"
@@ -1516,13 +1574,13 @@ export const provider = async (
                                           .catch(function (error) {
                                             console.error(error);
                                           });
-                                        // FIM DA DESCONEXÃO
+                                        //FIM DA DESCONEXÃO
                                       } else {
-                                        const msgerrolbieracao =
+                                        var msgerrolbieracao =
                                           response.data.mensagem;
                                         const bodyerro = {
                                           text: formatBody(
-                                            "Ops! Ocorreu um erro e nao consegui desbloquear",
+                                            `Ops! Ocorreu um erro e nao consegui desbloquear`,
                                             contact
                                           )
                                         };
@@ -1533,7 +1591,8 @@ export const provider = async (
                                           )
                                         };
                                         await sleep(2000);
-                                        await wbot.sendMessage(
+                                        await sendBaileysSocketMessage(
+                                          wbot,
                                           `${ticket.contact.number}@${
                                             ticket.isGroup
                                               ? "g.us"
@@ -1542,7 +1601,8 @@ export const provider = async (
                                           bodyerro
                                         );
                                         await sleep(2000);
-                                        await wbot.sendMessage(
+                                        await sendBaileysSocketMessage(
+                                          wbot,
                                           `${ticket.contact.number}@${
                                             ticket.isGroup
                                               ? "g.us"
@@ -1552,12 +1612,13 @@ export const provider = async (
                                         );
                                         const bodyerroatendent = {
                                           text: formatBody(
-                                            "Digite *#* para voltar o menu e fale com um atendente!",
+                                            `Digite *#* para voltar o menu e fale com um atendente!`,
                                             contact
                                           )
                                         };
                                         await sleep(2000);
-                                        await wbot.sendMessage(
+                                        await sendBaileysSocketMessage(
+                                          wbot,
                                           `${ticket.contact.number}@${
                                             ticket.isGroup
                                               ? "g.us"
@@ -1570,12 +1631,13 @@ export const provider = async (
                                     .catch(async function (error) {
                                       const bodyerro = {
                                         text: formatBody(
-                                          "Ops! Ocorreu um erro digite *#* e fale com um atendente!",
+                                          `Ops! Ocorreu um erro digite *#* e fale com um atendente!`,
                                           contact
                                         )
                                       };
                                       await sleep(2000);
-                                      await wbot.sendMessage(
+                                      await sendBaileysSocketMessage(
+                                        wbot,
                                         `${ticket.contact.number}@${
                                           ticket.isGroup
                                             ? "g.us"
@@ -1587,12 +1649,13 @@ export const provider = async (
                                 } else {
                                   const bodyfinaliza = {
                                     text: formatBody(
-                                      "Estamos finalizando esta conversa! Caso precise entre em contato conosco!",
+                                      `Estamos finalizando esta conversa! Caso precise entre em contato conosco!`,
                                       contact
                                     )
                                   };
                                   await sleep(8000);
-                                  await wbot.sendMessage(
+                                  await sendBaileysSocketMessage(
+                                    wbot,
                                     `${ticket.contact.number}@${
                                       ticket.isGroup ? "g.us" : "s.whatsapp.net"
                                     }`,
@@ -1610,19 +1673,20 @@ export const provider = async (
                               .catch(async function (error) {
                                 const bodyerro = {
                                   text: formatBody(
-                                    "Ops! Ocorreu um erro digite *#* e fale com um atendente!",
+                                    `Ops! Ocorreu um erro digite *#* e fale com um atendente!`,
                                     contact
                                   )
                                 };
                                 await sleep(2000);
-                                await wbot.sendMessage(
+                                await sendBaileysSocketMessage(
+                                  wbot,
                                   `${ticket.contact.number}@${
                                     ticket.isGroup ? "g.us" : "s.whatsapp.net"
                                   }`,
                                   bodyerro
                                 );
                               });
-                            /// VE SE ESTA BLOQUEADO PARA LIBERAR!
+                            ///VE SE ESTA BLOQUEADO PARA LIBERAR!
                           } else {
                             const bodyBoleto = {
                               text: formatBody(
@@ -1631,7 +1695,8 @@ export const provider = async (
                               )
                             };
                             await sleep(2000);
-                            await wbot.sendMessage(
+                            await sendBaileysSocketMessage(
+                              wbot,
                               `${ticket.contact.number}@${
                                 ticket.isGroup ? "g.us" : "s.whatsapp.net"
                               }`,
@@ -1639,12 +1704,13 @@ export const provider = async (
                             );
                             const body = {
                               text: formatBody(
-                                "Este é o *Codigo de Barras*",
+                                `Este é o *Codigo de Barras*`,
                                 contact
                               )
                             };
                             await sleep(2000);
-                            await wbot.sendMessage(
+                            await sendBaileysSocketMessage(
+                              wbot,
                               `${ticket.contact.number}@${
                                 ticket.isGroup ? "g.us" : "s.whatsapp.net"
                               }`,
@@ -1654,13 +1720,14 @@ export const provider = async (
                             const body_linha_digitavel = {
                               text: formatBody(`${linha_digitavel}`, contact)
                             };
-                            await wbot.sendMessage(
+                            await sendBaileysSocketMessage(
+                              wbot,
                               `${ticket.contact.number}@${
                                 ticket.isGroup ? "g.us" : "s.whatsapp.net"
                               }`,
                               body_linha_digitavel
                             );
-                            /// VE SE ESTA BLOQUEADO PARA LIBERAR!
+                            ///VE SE ESTA BLOQUEADO PARA LIBERAR!
                             var optionscontrato = {
                               method: "POST",
                               url: `${urlixc}/webservice/v1/cliente_contrato`,
@@ -1694,7 +1761,8 @@ export const provider = async (
                                     )
                                   };
                                   await sleep(2000);
-                                  await wbot.sendMessage(
+                                  await sendBaileysSocketMessage(
+                                    wbot,
                                     `${ticket.contact.number}@${
                                       ticket.isGroup ? "g.us" : "s.whatsapp.net"
                                     }`,
@@ -1702,19 +1770,20 @@ export const provider = async (
                                   );
                                   const bodyqrcode = {
                                     text: formatBody(
-                                      "Estou liberando seu acesso. Por favor aguarde!",
+                                      `Estou liberando seu acesso. Por favor aguarde!`,
                                       contact
                                     )
                                   };
                                   await sleep(2000);
-                                  await wbot.sendMessage(
+                                  await sendBaileysSocketMessage(
+                                    wbot,
                                     `${ticket.contact.number}@${
                                       ticket.isGroup ? "g.us" : "s.whatsapp.net"
                                     }`,
                                     bodyqrcode
                                   );
-                                  // REALIZANDO O DESBLOQUEIO
-                                  const optionsdesbloqeuio = {
+                                  //REALIZANDO O DESBLOQUEIO
+                                  var optionsdesbloqeuio = {
                                     method: "POST",
                                     url: `${urlixc}/webservice/v1/desbloqueio_confianca`,
                                     headers: {
@@ -1731,8 +1800,8 @@ export const provider = async (
                                       tipo = response.data?.tipo;
                                       mensagem = response.data?.mensagem;
                                       if (tipo === "sucesso") {
-                                        // DESCONECTANDO O CLIENTE PARA VOLTAR O ACESSO
-                                        const optionsRadius = {
+                                        //DESCONECTANDO O CLIENTE PARA VOLTAR O ACESSO
+                                        var optionsRadius = {
                                           method: "GET",
                                           url: `${urlixc}/webservice/v1/radusuarios`,
                                           headers: {
@@ -1763,7 +1832,8 @@ export const provider = async (
                                             };
                                             if (tipo === "success") {
                                               await sleep(2000);
-                                              await wbot.sendMessage(
+                                              await sendBaileysSocketMessage(
+                                                wbot,
                                                 `${ticket.contact.number}@${
                                                   ticket.isGroup
                                                     ? "g.us"
@@ -1773,12 +1843,13 @@ export const provider = async (
                                               );
                                               const bodyPdf = {
                                                 text: formatBody(
-                                                  "Fiz os procedimentos de liberação! Agora aguarde até 5 minutos e veja se sua conexão irá retornar! .\n\nCaso não tenha voltado, retorne o contato e fale com um atendente!",
+                                                  `Fiz os procedimentos de liberação! Agora aguarde até 5 minutos e veja se sua conexão irá retornar! .\n\nCaso não tenha voltado, retorne o contato e fale com um atendente!`,
                                                   contact
                                                 )
                                               };
                                               await sleep(2000);
-                                              await wbot.sendMessage(
+                                              await sendBaileysSocketMessage(
+                                                wbot,
                                                 `${ticket.contact.number}@${
                                                   ticket.isGroup
                                                     ? "g.us"
@@ -1788,12 +1859,13 @@ export const provider = async (
                                               );
                                               const bodyfinaliza = {
                                                 text: formatBody(
-                                                  "Estamos finalizando esta conversa! Caso precise entre em contato conosco!",
+                                                  `Estamos finalizando esta conversa! Caso precise entre em contato conosco!`,
                                                   contact
                                                 )
                                               };
                                               await sleep(2000);
-                                              await wbot.sendMessage(
+                                              await sendBaileysSocketMessage(
+                                                wbot,
                                                 `${ticket.contact.number}@${
                                                   ticket.isGroup
                                                     ? "g.us"
@@ -1810,7 +1882,8 @@ export const provider = async (
                                               });
                                             } else {
                                               await sleep(2000);
-                                              await wbot.sendMessage(
+                                              await sendBaileysSocketMessage(
+                                                wbot,
                                                 `${ticket.contact.number}@${
                                                   ticket.isGroup
                                                     ? "g.us"
@@ -1820,12 +1893,13 @@ export const provider = async (
                                               );
                                               const bodyPdf = {
                                                 text: formatBody(
-                                                  "Vou precisar que você *retire* seu equipamento da tomada.\n\n*OBS: Somente retire da tomada.* \nAguarde 1 minuto e ligue novamente!",
+                                                  `Vou precisar que você *retire* seu equipamento da tomada.\n\n*OBS: Somente retire da tomada.* \nAguarde 1 minuto e ligue novamente!`,
                                                   contact
                                                 )
                                               };
                                               await sleep(2000);
-                                              await wbot.sendMessage(
+                                              await sendBaileysSocketMessage(
+                                                wbot,
                                                 `${ticket.contact.number}@${
                                                   ticket.isGroup
                                                     ? "g.us"
@@ -1835,12 +1909,13 @@ export const provider = async (
                                               );
                                               const bodyqrcode = {
                                                 text: formatBody(
-                                                  "Veja se seu acesso voltou! Caso não tenha voltado retorne o contato e fale com um atendente!",
+                                                  `Veja se seu acesso voltou! Caso não tenha voltado retorne o contato e fale com um atendente!`,
                                                   contact
                                                 )
                                               };
                                               await sleep(2000);
-                                              await wbot.sendMessage(
+                                              await sendBaileysSocketMessage(
+                                                wbot,
                                                 `${ticket.contact.number}@${
                                                   ticket.isGroup
                                                     ? "g.us"
@@ -1850,12 +1925,13 @@ export const provider = async (
                                               );
                                               const bodyfinaliza = {
                                                 text: formatBody(
-                                                  "Estamos finalizando esta conversa! Caso precise entre em contato conosco!",
+                                                  `Estamos finalizando esta conversa! Caso precise entre em contato conosco!`,
                                                   contact
                                                 )
                                               };
                                               await sleep(2000);
-                                              await wbot.sendMessage(
+                                              await sendBaileysSocketMessage(
+                                                wbot,
                                                 `${ticket.contact.number}@${
                                                   ticket.isGroup
                                                     ? "g.us"
@@ -1875,16 +1951,17 @@ export const provider = async (
                                           .catch(function (error) {
                                             console.error(error);
                                           });
-                                        // FIM DA DESCONEXÃO
+                                        //FIM DA DESCONEXÃO
                                       } else {
                                         const bodyerro = {
                                           text: formatBody(
-                                            "Ops! Ocorreu um erro e nao consegui desbloquear! Digite *#* e fale com um atendente!",
+                                            `Ops! Ocorreu um erro e nao consegui desbloquear! Digite *#* e fale com um atendente!`,
                                             contact
                                           )
                                         };
                                         await sleep(2000);
-                                        await wbot.sendMessage(
+                                        await sendBaileysSocketMessage(
+                                          wbot,
                                           `${ticket.contact.number}@${
                                             ticket.isGroup
                                               ? "g.us"
@@ -1897,12 +1974,13 @@ export const provider = async (
                                     .catch(async function (error) {
                                       const bodyerro = {
                                         text: formatBody(
-                                          "Ops! Ocorreu um erro digite *#* e fale com um atendente!",
+                                          `Ops! Ocorreu um erro digite *#* e fale com um atendente!`,
                                           contact
                                         )
                                       };
                                       await sleep(2000);
-                                      await wbot.sendMessage(
+                                      await sendBaileysSocketMessage(
+                                        wbot,
                                         `${ticket.contact.number}@${
                                           ticket.isGroup
                                             ? "g.us"
@@ -1914,12 +1992,13 @@ export const provider = async (
                                 } else {
                                   const bodyfinaliza = {
                                     text: formatBody(
-                                      "Estamos finalizando esta conversa! Caso precise entre em contato conosco!",
+                                      `Estamos finalizando esta conversa! Caso precise entre em contato conosco!`,
                                       contact
                                     )
                                   };
                                   await sleep(2000);
-                                  await wbot.sendMessage(
+                                  await sendBaileysSocketMessage(
+                                    wbot,
                                     `${ticket.contact.number}@${
                                       ticket.isGroup ? "g.us" : "s.whatsapp.net"
                                     }`,
@@ -1937,25 +2016,26 @@ export const provider = async (
                               .catch(async function (error) {
                                 const bodyerro = {
                                   text: formatBody(
-                                    "Ops! Ocorreu um erro digite *#* e fale com um atendente!",
+                                    `Ops! Ocorreu um erro digite *#* e fale com um atendente!`,
                                     contact
                                   )
                                 };
                                 await sleep(2000);
-                                await wbot.sendMessage(
+                                await sendBaileysSocketMessage(
+                                  wbot,
                                   `${ticket.contact.number}@${
                                     ticket.isGroup ? "g.us" : "s.whatsapp.net"
                                   }`,
                                   bodyerro
                                 );
                               });
-                            /// VE SE ESTA BLOQUEADO PARA LIBERAR!
+                            ///VE SE ESTA BLOQUEADO PARA LIBERAR!
                           }
                         })
                         .catch(function (error) {
                           console.error(error);
                         });
-                      // FIM DO PÌX
+                      //FIM DO PÌX
                     })
                     .catch(function (error) {
                       console.error(error);
@@ -1965,12 +2045,13 @@ export const provider = async (
               .catch(async function (error) {
                 const body = {
                   text: formatBody(
-                    "*Opss!!!!*\nOcorreu um erro! Digite *#* e fale com um *Atendente*!",
+                    `*Opss!!!!*\nOcorreu um erro! Digite *#* e fale com um *Atendente*!`,
                     contact
                   )
                 };
                 await sleep(2000);
-                await wbot.sendMessage(
+                await sendBaileysSocketMessage(
+                  wbot,
                   `${ticket.contact.number}@${
                     ticket.isGroup ? "g.us" : "s.whatsapp.net"
                   }`,
@@ -1980,12 +2061,13 @@ export const provider = async (
           } else {
             const body = {
               text: formatBody(
-                "Este CPF/CNPJ não é válido!\n\nPor favor tente novamente!\nOu digite *#* para voltar ao *Menu Anterior*",
+                `Este CPF/CNPJ não é válido!\n\nPor favor tente novamente!\nOu digite *#* para voltar ao *Menu Anterior*`,
                 contact
               )
             };
             await sleep(2000);
-            await wbot.sendMessage(
+            await sendBaileysSocketMessage(
+              wbot,
               `${ticket.contact.number}@${
                 ticket.isGroup ? "g.us" : "s.whatsapp.net"
               }`,
@@ -2051,8 +2133,8 @@ export const provider = async (
       urlmkauth = urlmkauth.slice(0, -1);
     }
 
-    // VARS
-    const url = `${urlmkauth}/api/`;
+    //VARS
+    let url = `${urlmkauth}/api/`;
     const Client_Id = clientidmkauth.value;
     const Client_Secret = clientesecretmkauth.value;
     const ixckeybase64 = btoa(ixcapikey.value);
@@ -2083,16 +2165,17 @@ export const provider = async (
               numberCPFCNPJ = numberCPFCNPJ.replace(/\.(\d{3})(\d)/, ".$1/$2");
               numberCPFCNPJ = numberCPFCNPJ.replace(/(\d{4})(\d)/, "$1-$2");
             }
-            // const token = await CheckSettingsHelper("OBTEM O TOKEN DO BANCO (dei insert na tabela settings)")
+            //const token = await CheckSettingsHelper("OBTEM O TOKEN DO BANCO (dei insert na tabela settings)")
             const body = {
               text: formatBody(
-                "Aguarde! Estamos consultando na base de dados!",
+                `Aguarde! Estamos consultando na base de dados!`,
                 contact
               )
             };
             try {
               await sleep(2000);
-              await wbot.sendMessage(
+              await sendBaileysSocketMessage(
+                wbot,
                 `${ticket.contact.number}@${
                   ticket.isGroup ? "g.us" : "s.whatsapp.net"
                 }`,
@@ -2123,12 +2206,13 @@ export const provider = async (
                 if (response.data.type === "error") {
                   const body = {
                     text: formatBody(
-                      "*Opss!!!!*\nOcorreu um erro! Digite *#* e fale com um *Atendente*!",
+                      `*Opss!!!!*\nOcorreu um erro! Digite *#* e fale com um *Atendente*!`,
                       contact
                     )
                   };
                   await sleep(2000);
-                  await wbot.sendMessage(
+                  await sendBaileysSocketMessage(
+                    wbot,
                     `${ticket.contact.number}@${
                       ticket.isGroup ? "g.us" : "s.whatsapp.net"
                     }`,
@@ -2138,13 +2222,14 @@ export const provider = async (
                 if (response.data.total === 0) {
                   const body = {
                     text: formatBody(
-                      "Cadastro não localizado! *CPF/CNPJ* incorreto ou inválido. Tenta novamente!",
+                      `Cadastro não localizado! *CPF/CNPJ* incorreto ou inválido. Tenta novamente!`,
                       contact
                     )
                   };
                   try {
                     await sleep(2000);
-                    await wbot.sendMessage(
+                    await sendBaileysSocketMessage(
+                      wbot,
                       `${ticket.contact.number}@${
                         ticket.isGroup ? "g.us" : "s.whatsapp.net"
                       }`,
@@ -2167,14 +2252,15 @@ export const provider = async (
                     )
                   };
                   await sleep(2000);
-                  await wbot.sendMessage(
+                  await sendBaileysSocketMessage(
+                    wbot,
                     `${ticket.contact.number}@${
                       ticket.isGroup ? "g.us" : "s.whatsapp.net"
                     }`,
                     body
                   );
-                  /// VE SE ESTA BLOQUEADO PARA LIBERAR!
-                  const optionscontrato = {
+                  ///VE SE ESTA BLOQUEADO PARA LIBERAR!
+                  var optionscontrato = {
                     method: "POST",
                     url: `${urlixc}/webservice/v1/cliente_contrato`,
                     headers: {
@@ -2207,7 +2293,8 @@ export const provider = async (
                           )
                         };
                         await sleep(2000);
-                        await wbot.sendMessage(
+                        await sendBaileysSocketMessage(
+                          wbot,
                           `${ticket.contact.number}@${
                             ticket.isGroup ? "g.us" : "s.whatsapp.net"
                           }`,
@@ -2215,19 +2302,20 @@ export const provider = async (
                         );
                         const bodyqrcode = {
                           text: formatBody(
-                            "Estou liberando seu acesso. Por favor aguarde!",
+                            `Estou liberando seu acesso. Por favor aguarde!`,
                             contact
                           )
                         };
                         await sleep(2000);
-                        await wbot.sendMessage(
+                        await sendBaileysSocketMessage(
+                          wbot,
                           `${ticket.contact.number}@${
                             ticket.isGroup ? "g.us" : "s.whatsapp.net"
                           }`,
                           bodyqrcode
                         );
-                        // REALIZANDO O DESBLOQUEIO
-                        const optionsdesbloqeuio = {
+                        //REALIZANDO O DESBLOQUEIO
+                        var optionsdesbloqeuio = {
                           method: "POST",
                           url: `${urlixc}/webservice/v1/desbloqueio_confianca`,
                           headers: {
@@ -2247,8 +2335,8 @@ export const provider = async (
                               text: formatBody(`${mensagem}`, contact)
                             };
                             if (tipo === "sucesso") {
-                              // DESCONECTANDO O CLIENTE PARA VOLTAR O ACESSO
-                              const optionsRadius = {
+                              //DESCONECTANDO O CLIENTE PARA VOLTAR O ACESSO
+                              var optionsRadius = {
                                 method: "GET",
                                 url: `${urlixc}/webservice/v1/radusuarios`,
                                 headers: {
@@ -2274,7 +2362,8 @@ export const provider = async (
 
                                   if (tipo === "success") {
                                     await sleep(2000);
-                                    await wbot.sendMessage(
+                                    await sendBaileysSocketMessage(
+                                      wbot,
                                       `${ticket.contact.number}@${
                                         ticket.isGroup
                                           ? "g.us"
@@ -2284,12 +2373,13 @@ export const provider = async (
                                     );
                                     const bodyPdf = {
                                       text: formatBody(
-                                        "Fiz os procedimentos de liberação! Agora aguarde até 5 minutos e veja se sua conexão irá retornar! .\n\nCaso não tenha voltado, retorne o contato e fale com um atendente!",
+                                        `Fiz os procedimentos de liberação! Agora aguarde até 5 minutos e veja se sua conexão irá retornar! .\n\nCaso não tenha voltado, retorne o contato e fale com um atendente!`,
                                         contact
                                       )
                                     };
                                     await sleep(2000);
-                                    await wbot.sendMessage(
+                                    await sendBaileysSocketMessage(
+                                      wbot,
                                       `${ticket.contact.number}@${
                                         ticket.isGroup
                                           ? "g.us"
@@ -2299,12 +2389,13 @@ export const provider = async (
                                     );
                                     const bodyfinaliza = {
                                       text: formatBody(
-                                        "Estamos finalizando esta conversa! Caso precise entre em contato conosco!",
+                                        `Estamos finalizando esta conversa! Caso precise entre em contato conosco!`,
                                         contact
                                       )
                                     };
                                     await sleep(2000);
-                                    await wbot.sendMessage(
+                                    await sendBaileysSocketMessage(
+                                      wbot,
                                       `${ticket.contact.number}@${
                                         ticket.isGroup
                                           ? "g.us"
@@ -2319,7 +2410,8 @@ export const provider = async (
                                     });
                                   } else {
                                     await sleep(2000);
-                                    await wbot.sendMessage(
+                                    await sendBaileysSocketMessage(
+                                      wbot,
                                       `${ticket.contact.number}@${
                                         ticket.isGroup
                                           ? "g.us"
@@ -2329,12 +2421,13 @@ export const provider = async (
                                     );
                                     const bodyPdf = {
                                       text: formatBody(
-                                        "Vou precisar que você *retire* seu equipamento da tomada.\n\n*OBS: Somente retire da tomada.* \nAguarde 1 minuto e ligue novamente!",
+                                        `Vou precisar que você *retire* seu equipamento da tomada.\n\n*OBS: Somente retire da tomada.* \nAguarde 1 minuto e ligue novamente!`,
                                         contact
                                       )
                                     };
                                     await sleep(2000);
-                                    await wbot.sendMessage(
+                                    await sendBaileysSocketMessage(
+                                      wbot,
                                       `${ticket.contact.number}@${
                                         ticket.isGroup
                                           ? "g.us"
@@ -2344,12 +2437,13 @@ export const provider = async (
                                     );
                                     const bodyqrcode = {
                                       text: formatBody(
-                                        "Veja se seu acesso voltou! Caso não tenha voltado retorne o contato e fale com um atendente!",
+                                        `Veja se seu acesso voltou! Caso não tenha voltado retorne o contato e fale com um atendente!`,
                                         contact
                                       )
                                     };
                                     await sleep(2000);
-                                    await wbot.sendMessage(
+                                    await sendBaileysSocketMessage(
+                                      wbot,
                                       `${ticket.contact.number}@${
                                         ticket.isGroup
                                           ? "g.us"
@@ -2359,12 +2453,13 @@ export const provider = async (
                                     );
                                     const bodyfinaliza = {
                                       text: formatBody(
-                                        "Estamos finalizando esta conversa! Caso precise entre em contato conosco!",
+                                        `Estamos finalizando esta conversa! Caso precise entre em contato conosco!`,
                                         contact
                                       )
                                     };
                                     await sleep(2000);
-                                    await wbot.sendMessage(
+                                    await sendBaileysSocketMessage(
+                                      wbot,
                                       `${ticket.contact.number}@${
                                         ticket.isGroup
                                           ? "g.us"
@@ -2382,23 +2477,25 @@ export const provider = async (
                                 .catch(function (error) {
                                   console.error(error);
                                 });
-                              // FIM DA DESCONEXÃO
+                              //FIM DA DESCONEXÃO
                             } else {
                               const bodyerro = {
                                 text: formatBody(
-                                  "Ops! Ocorreu um erro e nao consegui desbloquear!",
+                                  `Ops! Ocorreu um erro e nao consegui desbloquear!`,
                                   contact
                                 )
                               };
                               await sleep(2000);
-                              await wbot.sendMessage(
+                              await sendBaileysSocketMessage(
+                                wbot,
                                 `${ticket.contact.number}@${
                                   ticket.isGroup ? "g.us" : "s.whatsapp.net"
                                 }`,
                                 bodyerro
                               );
                               await sleep(2000);
-                              await wbot.sendMessage(
+                              await sendBaileysSocketMessage(
+                                wbot,
                                 `${ticket.contact.number}@${
                                   ticket.isGroup ? "g.us" : "s.whatsapp.net"
                                 }`,
@@ -2406,12 +2503,13 @@ export const provider = async (
                               );
                               const bodyerroatendente = {
                                 text: formatBody(
-                                  "Digite *#* e fale com um atendente!",
+                                  `Digite *#* e fale com um atendente!`,
                                   contact
                                 )
                               };
                               await sleep(2000);
-                              await wbot.sendMessage(
+                              await sendBaileysSocketMessage(
+                                wbot,
                                 `${ticket.contact.number}@${
                                   ticket.isGroup ? "g.us" : "s.whatsapp.net"
                                 }`,
@@ -2421,18 +2519,19 @@ export const provider = async (
                                  const bodyerro = {
                   text: formatBody(`Ops! Ocorreu um erro e nao consegui desbloquear! Digite *#* e fale com um atendente!`
                                  await sleep(2000)
-                                 await wbot.sendMessage(`${ticket.contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`,bodyerro);
+                                 await sendBaileysSocketMessage(wbot, `${ticket.contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`,bodyerro);
                              } */
                           })
                           .catch(async function (error) {
                             const bodyerro = {
                               text: formatBody(
-                                "Ops! Ocorreu um erro digite *#* e fale com um atendente!",
+                                `Ops! Ocorreu um erro digite *#* e fale com um atendente!`,
                                 contact
                               )
                             };
                             await sleep(2000);
-                            await wbot.sendMessage(
+                            await sendBaileysSocketMessage(
+                              wbot,
                               `${ticket.contact.number}@${
                                 ticket.isGroup ? "g.us" : "s.whatsapp.net"
                               }`,
@@ -2442,12 +2541,13 @@ export const provider = async (
                       } else {
                         const bodysembloqueio = {
                           text: formatBody(
-                            "Sua Conexão não está bloqueada! Caso esteja com dificuldades de navegação, retorne o contato e fale com um atendente!",
+                            `Sua Conexão não está bloqueada! Caso esteja com dificuldades de navegação, retorne o contato e fale com um atendente!`,
                             contact
                           )
                         };
                         await sleep(2000);
-                        await wbot.sendMessage(
+                        await sendBaileysSocketMessage(
+                          wbot,
                           `${ticket.contact.number}@${
                             ticket.isGroup ? "g.us" : "s.whatsapp.net"
                           }`,
@@ -2455,12 +2555,13 @@ export const provider = async (
                         );
                         const bodyfinaliza = {
                           text: formatBody(
-                            "Estamos finalizando esta conversa! Caso precise entre em contato conosco!",
+                            `Estamos finalizando esta conversa! Caso precise entre em contato conosco!`,
                             contact
                           )
                         };
                         await sleep(2000);
-                        await wbot.sendMessage(
+                        await sendBaileysSocketMessage(
+                          wbot,
                           `${ticket.contact.number}@${
                             ticket.isGroup ? "g.us" : "s.whatsapp.net"
                           }`,
@@ -2478,12 +2579,13 @@ export const provider = async (
                     .catch(async function (error) {
                       const bodyerro = {
                         text: formatBody(
-                          "Ops! Ocorreu um erro digite *#* e fale com um atendente!",
+                          `Ops! Ocorreu um erro digite *#* e fale com um atendente!`,
                           contact
                         )
                       };
                       await sleep(2000);
-                      await wbot.sendMessage(
+                      await sendBaileysSocketMessage(
+                        wbot,
                         `${ticket.contact.number}@${
                           ticket.isGroup ? "g.us" : "s.whatsapp.net"
                         }`,
@@ -2495,12 +2597,13 @@ export const provider = async (
               .catch(async function (error) {
                 const body = {
                   text: formatBody(
-                    "*Opss!!!!*\nOcorreu um erro! Digite *#* e fale com um *Atendente*!",
+                    `*Opss!!!!*\nOcorreu um erro! Digite *#* e fale com um *Atendente*!`,
                     contact
                   )
                 };
                 await sleep(2000);
-                await wbot.sendMessage(
+                await sendBaileysSocketMessage(
+                  wbot,
                   `${ticket.contact.number}@${
                     ticket.isGroup ? "g.us" : "s.whatsapp.net"
                   }`,
@@ -2510,12 +2613,13 @@ export const provider = async (
           } else {
             const body = {
               text: formatBody(
-                "Este CPF/CNPJ não é válido!\n\nPor favor tente novamente!\nOu digite *#* para voltar ao *Menu Anterior*",
+                `Este CPF/CNPJ não é válido!\n\nPor favor tente novamente!\nOu digite *#* para voltar ao *Menu Anterior*`,
                 contact
               )
             };
             await sleep(2000);
-            await wbot.sendMessage(
+            await sendBaileysSocketMessage(
+              wbot,
               `${ticket.contact.number}@${
                 ticket.isGroup ? "g.us" : "s.whatsapp.net"
               }`,

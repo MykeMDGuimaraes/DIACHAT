@@ -76,6 +76,13 @@ class Whatsapp extends Model<Whatsapp> {
   @Column({ defaultValue: "stable" })
   provider: string;
 
+  @Default("baileys")
+  @Column
+  channelType: string;
+
+  @Column
+  baileysMode: string;
+
   @Default(false)
   @AllowNull
   @Column

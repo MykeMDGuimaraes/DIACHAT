@@ -51,6 +51,12 @@ class Company extends Model<Company> {
   @Column
   language: string;
 
+  @Column({ defaultValue: 60 })
+  messagingRequestsPerMinute: number;
+
+  @Column({ defaultValue: 100 })
+  messagingUploadMbPerMinute: number;
+
   @Column({
     type: DataType.JSONB
   })

@@ -8,15 +8,14 @@ import makeWASocket, {
   // makeInMemoryStore,
   isJidBroadcast,
   CacheStore
-} from "baileys";
-import makeWALegacySocket from "baileys";
+} from "../messaging/public/baileys";
 import P from "pino";
 
-import MAIN_LOGGER from "baileys/lib/Utils/logger";
 import { Boom } from "@hapi/boom";
 import NodeCache from "node-cache";
 import Whatsapp from "../models/Whatsapp";
 import { logger } from "../utils/logger";
+import { BaileysLogger as MAIN_LOGGER } from "../messaging/public/baileys";
 import authState from "../helpers/authState";
 import AppError from "../errors/AppError";
 import { getIO } from "./socket";
@@ -36,6 +35,11 @@ type Session = WASocket & {
 };
 
 const sessions: Session[] = [];
+
+export const getWbotSessionIds = (): number[] =>
+  sessions
+    .map(session => session.id)
+    .filter((id): id is number => typeof id === "number");
 
 const retriesQrCodeMap = new Map<number, number>();
 

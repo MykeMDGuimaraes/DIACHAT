@@ -1,31 +1,32 @@
+import { sendBaileysSocketMessage } from "./messaging/public/baileys";
 import * as Sentry from "@sentry/node";
 import BullQueue from "bull";
-import moment from "moment";
-import { Op, QueryTypes, Sequelize } from "sequelize";
-import { isEmpty, isNil, isArray } from "lodash";
-import path from "path";
-import { addSeconds, differenceInSeconds } from "date-fns";
 import { MessageData, SendMessage } from "./helpers/SendMessage";
 import Whatsapp from "./models/Whatsapp";
 import { logger } from "./utils/logger";
+import moment from "moment";
 import Schedule from "./models/Schedule";
 import Contact from "./models/Contact";
+import { Op, QueryTypes, Sequelize } from "sequelize";
 import GetDefaultWhatsApp from "./helpers/GetDefaultWhatsApp";
 import Campaign from "./models/Campaign";
 import ContactList from "./models/ContactList";
 import ContactListItem from "./models/ContactListItem";
+import { isEmpty, isNil, isArray } from "lodash";
 import CampaignSetting from "./models/CampaignSetting";
 import CampaignShipping from "./models/CampaignShipping";
 import GetWhatsappWbot from "./helpers/GetWhatsappWbot";
 import sequelize from "./database";
 import { getMessageOptions } from "./services/WbotServices/SendWhatsAppMedia";
 import { getIO } from "./libs/socket";
+import path from "path";
 import User from "./models/User";
 import Company from "./models/Company";
 import Plan from "./models/Plan";
 import Ticket from "./models/Ticket";
 import ShowFileService from "./services/FileServices/ShowService";
 import FilesOptions from "./models/FilesOptions";
+import { addSeconds, differenceInSeconds } from "date-fns";
 import formatBody from "./helpers/Mustache";
 import { ClosedAllOpenTickets } from "./services/WbotServices/wbotClosedTickets";
 
@@ -93,7 +94,8 @@ async function handleSendMessage(job) {
   }
 }
 
-/* async function handleVerifyQueue(job) {
+{
+  /*async function handleVerifyQueue(job) {
   logger.info("Buscando atendimentos perdidos nas filas");
   try {
     const companies = await Company.findAll({
@@ -113,9 +115,11 @@ async function handleSendMessage(job) {
           }
         },
       ]
-    });
+    }); */
+}
 
-    companies.map(async c => {
+{
+  /*    companies.map(async c => {
       c.whatsapps.map(async w => {
 
         if (w.status === "CONNECTED") {
@@ -196,6 +200,7 @@ async function handleSendMessage(job) {
     throw e;
   }
 }; */
+}
 
 async function handleCloseTicketsAutomatic() {
   const job = new CronJob("*/1 * * * *", async () => {
@@ -311,7 +316,7 @@ async function handleVerifyCampaigns(job) {
   if (campaigns.length > 0)
     logger.info(`[🚩] - Campanhas encontradas: ${campaigns.length}`);
 
-  for (const campaign of campaigns) {
+  for (let campaign of campaigns) {
     try {
       const now = moment();
       const scheduledAt = moment(campaign.scheduledAt);
@@ -338,7 +343,7 @@ async function handleVerifyCampaigns(job) {
 }
 
 async function getCampaign(id) {
-  return Campaign.findByPk(id, {
+  return await Campaign.findByPk(id, {
     include: [
       {
         model: ContactList,
@@ -368,7 +373,7 @@ async function getCampaign(id) {
 }
 
 async function getContact(id) {
-  return ContactListItem.findByPk(id, {
+  return await ContactListItem.findByPk(id, {
     attributes: ["id", "name", "number", "email"]
   });
 }
@@ -379,9 +384,9 @@ async function getSettings(campaign) {
     attributes: ["key", "value"]
   });
 
-  let messageInterval = 20;
-  let longerIntervalAfter = 20;
-  let greaterInterval = 60;
+  let messageInterval: number = 20;
+  let longerIntervalAfter: number = 20;
+  let greaterInterval: number = 60;
   let variables: any[] = [];
 
   settings.forEach(setting => {
@@ -522,14 +527,15 @@ function calculateDelay(
   const diffSeconds = differenceInSeconds(baseDelay, new Date());
   if (index > longerIntervalAfter) {
     return diffSeconds * 1000 + greaterInterval;
+  } else {
+    return diffSeconds * 1000 + messageInterval;
   }
-  return diffSeconds * 1000 + messageInterval;
 }
 
 async function getCampaignContacts(
   campaignId: number,
-  batchSize = 100,
-  offset = 0
+  batchSize: number = 100,
+  offset: number = 0
 ) {
   // Primeiro, busca a campanha para obter o contactListId
   const campaign = await Campaign.findByPk(campaignId, {
@@ -541,21 +547,21 @@ async function getCampaignContacts(
   }
 
   // Busca contatos da lista de contatos com paginação
-  return ContactListItem.findAll({
+  return await ContactListItem.findAll({
     attributes: ["id", "name", "number", "email"],
     where: {
       contactListId: campaign.contactListId,
       isWhatsappValid: true
     },
     limit: batchSize,
-    offset
+    offset: offset
   });
 }
 
 async function handleProcessCampaign(job) {
   const startTime = Date.now();
   logger.info(
-    `[🏁] - Iniciou o processamento da campanha de ID: ${job.data.id}`
+    "[🏁] - Iniciou o processamento da campanha de ID: " + job.data.id
   );
 
   try {
@@ -606,7 +612,6 @@ async function handleProcessCampaign(job) {
       if (contacts.length === 0) {
         logger.info(`[📊] - Nenhum contato encontrado para a campanha ${id}`);
         hasMoreContacts = false;
-        // eslint-disable-next-line no-continue
         continue;
       }
 
@@ -665,10 +670,9 @@ async function handleProcessCampaign(job) {
       logger.info(`[📊] - Progresso da campanha ${id}:`, {
         processed: totalProcessed,
         currentBatch: contacts.length,
-        offset,
-        memoryUsage: `${Math.round(
-          process.memoryUsage().heapUsed / 1024 / 1024
-        )}MB`
+        offset: offset,
+        memoryUsage:
+          Math.round(process.memoryUsage().heapUsed / 1024 / 1024) + "MB"
       });
 
       // Pausa entre batches para não sobrecarregar o sistema
@@ -681,18 +685,16 @@ async function handleProcessCampaign(job) {
     logger.info(`[✅] - Campanha ${id} processada com sucesso:`, {
       totalContacts: totalProcessed,
       duration: `${Math.round(duration / 1000)}s`,
-      memoryUsage: `${Math.round(
-        process.memoryUsage().heapUsed / 1024 / 1024
-      )}MB`
+      memoryUsage:
+        Math.round(process.memoryUsage().heapUsed / 1024 / 1024) + "MB"
     });
   } catch (err: any) {
     Sentry.captureException(err);
     logger.error(`[🚨] - Erro ao processar campanha ${job.data.id}:`, {
       error: err.message,
       stack: err.stack,
-      memoryUsage: `${Math.round(
-        process.memoryUsage().heapUsed / 1024 / 1024
-      )}MB`
+      memoryUsage:
+        Math.round(process.memoryUsage().heapUsed / 1024 / 1024) + "MB"
     });
 
     // Tenta reprocessar o job em caso de erro
@@ -734,8 +736,8 @@ async function handlePrepareContact(job) {
     // Verifica se já existe um registro de envio para este contato nesta campanha
     const existingShipping = await CampaignShipping.findOne({
       where: {
-        campaignId,
-        contactId
+        campaignId: campaignId,
+        contactId: contactId
       }
     });
 
@@ -869,7 +871,7 @@ async function handleDispatchCampaign(job) {
 
     const chatId = `${campaignShipping.number}@s.whatsapp.net`;
 
-    const body = campaignShipping.message;
+    let body = campaignShipping.message;
 
     if (!isNil(campaign.fileListId)) {
       logger.info(
@@ -889,7 +891,7 @@ async function handleDispatchCampaign(job) {
             path.resolve(folder, file.path),
             file.name
           );
-          await wbot.sendMessage(chatId, { ...options });
+          await sendBaileysSocketMessage(wbot, chatId, { ...options });
 
           logger.info(
             `[🚩] - Enviou arquivo: ${file.name} | CampaignShippingId: ${campaignShippingId} CampanhaID: ${campaignId}`
@@ -914,14 +916,14 @@ async function handleDispatchCampaign(job) {
         body
       );
       if (Object.keys(options).length) {
-        await wbot.sendMessage(chatId, { ...options });
+        await sendBaileysSocketMessage(wbot, chatId, { ...options });
       }
     } else {
       logger.info(
         `[🚩] - Enviando mensagem de texto da campanha | CampaignShippingId: ${campaignShippingId} CampanhaID: ${campaignId}`
       );
 
-      await wbot.sendMessage(chatId, {
+      await sendBaileysSocketMessage(wbot, chatId, {
         text: body
       });
     }
@@ -959,10 +961,10 @@ async function handleDispatchCampaign(job) {
 
 async function handleLoginStatus(job) {
   const users: { id: number }[] = await sequelize.query(
-    'select id from "Users" where "updatedAt" < now() - \'5 minutes\'::interval and online = true',
+    `select id from "Users" where "updatedAt" < now() - '5 minutes'::interval and online = true`,
     { type: QueryTypes.SELECT }
   );
-  for (const item of users) {
+  for (let item of users) {
     try {
       const user = await User.findByPk(item.id);
       await user.update({ online: false });
@@ -978,16 +980,16 @@ async function handleInvoiceCreate() {
   const job = new CronJob("*/5 * * * * *", async () => {
     const companies = await Company.findAll();
     companies.map(async c => {
-      const dueDate = c.dueDate;
+      var dueDate = c.dueDate;
       const date = moment(dueDate).format();
       const timestamp = moment().format();
       const hoje = moment(moment()).format("DD/MM/yyyy");
-      const vencimento = moment(dueDate).format("DD/MM/yyyy");
+      var vencimento = moment(dueDate).format("DD/MM/yyyy");
 
-      const diff = moment(vencimento, "DD/MM/yyyy").diff(
+      var diff = moment(vencimento, "DD/MM/yyyy").diff(
         moment(hoje, "DD/MM/yyyy")
       );
-      const dias = moment.duration(diff).asDays();
+      var dias = moment.duration(diff).asDays();
 
       if (dias < 20) {
         const plan = await Plan.findByPk(c.planId);
@@ -1063,7 +1065,7 @@ export async function startQueueProcess() {
 
   campaignQueue.process("DispatchCampaign", 1, handleDispatchCampaign);
 
-  // queueMonitor.process("VerifyQueueStatus", handleVerifyQueue);
+  //queueMonitor.process("VerifyQueueStatus", handleVerifyQueue);
 
   async function cleanupCampaignQueue() {
     try {
@@ -1089,8 +1091,8 @@ export async function startQueueProcess() {
     logger.info("[📌] - Status da fila de campanhas:", {
       jobs: jobCounts,
       memory: {
-        heapUsed: `${Math.round(memoryUsage.heapUsed / 1024 / 1024)}MB`,
-        heapTotal: `${Math.round(memoryUsage.heapTotal / 1024 / 1024)}MB`
+        heapUsed: Math.round(memoryUsage.heapUsed / 1024 / 1024) + "MB",
+        heapTotal: Math.round(memoryUsage.heapTotal / 1024 / 1024) + "MB"
       }
     });
   }, 5 * 60 * 1000);

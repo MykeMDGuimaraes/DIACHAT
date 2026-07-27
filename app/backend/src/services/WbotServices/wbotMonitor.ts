@@ -1,4 +1,9 @@
-import { WASocket, BinaryNode, Contact as BContact } from "baileys";
+import { sendBaileysSocketMessage } from "../../messaging/public/baileys";
+import {
+  WASocket,
+  BinaryNode,
+  Contact as BContact
+} from "../../messaging/public/baileys";
 import * as Sentry from "@sentry/node";
 
 import { Op } from "sequelize";
@@ -49,7 +54,7 @@ const wbotMonitor = async (
         if (sendMsgCall.value === "disabled") {
           const company = await Company.findByPk(companyId);
 
-          await wbot.sendMessage(node.attrs.from, {
+          await sendBaileysSocketMessage(wbot, node.attrs.from, {
             text: translatedMessage[company.language]
           });
 
@@ -63,7 +68,7 @@ const wbotMonitor = async (
             where: {
               contactId: contact.id,
               whatsappId: wbot.id,
-              // status: { [Op.or]: ["close"] },
+              //status: { [Op.or]: ["close"] },
               companyId
             }
           });
@@ -97,7 +102,7 @@ const wbotMonitor = async (
             });
           }
 
-          return CreateMessageService({ messageData, companyId });
+          return CreateMessageService({ messageData, companyId: companyId });
         }
       }
     });

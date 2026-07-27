@@ -1,4 +1,4 @@
-import WALegacySocket, { proto } from "baileys";
+import { proto } from "../messaging/public/baileys";
 import Ticket from "../models/Ticket";
 import GetTicketWbot from "./GetTicketWbot";
 import AppError from "../errors/AppError";
@@ -11,7 +11,7 @@ export const GetWbotMessage = async (
 ): Promise<proto.WebMessageInfo | Message> => {
   const getSock = await GetTicketWbot(ticket);
 
-  const limit = 20;
+  let limit = 20;
 
   const fetchWbotMessagesGradually = async (): Promise<
     proto.WebMessageInfo | Message | null | undefined

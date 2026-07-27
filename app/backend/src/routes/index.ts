@@ -36,10 +36,13 @@ import flowBuilder from "./flowBuilderRoutes";
 import flowCampaignRoutes from "./flowCampaignRoutes";
 import serviceCredentialRoutes from "./serviceCredentialRoutes";
 import internalV1Routes from "./internalV1Routes";
-
+import messagingApiRoutes from "./messagingApiRoutes";
+import healthRoutes from "./healthRoutes";
 const routes = Router();
 
+routes.use(healthRoutes);
 routes.use("/internal/v1", internalV1Routes);
+routes.use("/api/v1", messagingApiRoutes);
 
 routes.use(userRoutes);
 routes.use(serviceCredentialRoutes);

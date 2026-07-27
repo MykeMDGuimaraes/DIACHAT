@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 
 npm_install() {
   # Clean up stale npm temp rename dirs (cause ENOTEMPTY on rename) and retry once.

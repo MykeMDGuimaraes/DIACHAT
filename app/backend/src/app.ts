@@ -9,13 +9,16 @@ import fs from "fs";
 import * as Sentry from "@sentry/node";
 
 import "./database";
-import bodyParser from "body-parser";
 import uploadConfig from "./config/upload";
 import mediaAuth from "./middleware/mediaAuth";
 import AppError from "./errors/AppError";
 import routes from "./routes";
 import { logger } from "./utils/logger";
 import { messageQueue, sendScheduledMessages } from "./queues";
+import {
+  configureJsonBodyParsing,
+  payloadTooLargeErrorHandler
+} from "./middleware/metaWebhookBodyParser";
 
 Sentry.init({ dsn: process.env.SENTRY_DSN });
 
@@ -26,9 +29,7 @@ app.set("queues", {
   sendScheduledMessages
 });
 
-const bodyparser = require("body-parser");
-
-app.use(bodyParser.json({ limit: "10mb" }));
+configureJsonBodyParsing(app);
 
 app.use(
   cors({
@@ -37,7 +38,6 @@ app.use(
   })
 );
 app.use(cookieParser());
-app.use(express.json());
 app.use(Sentry.Handlers.requestHandler());
 app.use("/public", mediaAuth, express.static(uploadConfig.directory));
 app.use(routes);
@@ -70,6 +70,7 @@ if (serveFrontend) {
 }
 
 app.use(Sentry.Handlers.errorHandler());
+app.use(payloadTooLargeErrorHandler);
 
 app.use(async (err: Error, req: Request, res: Response, _: NextFunction) => {
   if (err instanceof AppError) {

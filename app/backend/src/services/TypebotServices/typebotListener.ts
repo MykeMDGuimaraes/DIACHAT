@@ -1,10 +1,11 @@
+import { sendBaileysSocketMessage } from "../../messaging/public/baileys";
 import axios, { AxiosRequestConfig } from "axios";
-import { WASocket, delay, proto } from "baileys";
-import { isNil } from "lodash";
 import Ticket from "../../models/Ticket";
 import QueueIntegrations from "../../models/QueueIntegrations";
+import { WASocket, delay, proto } from "../../messaging/public/baileys";
 import { getBodyMessage } from "../WbotServices/wbotMessageListener";
 import { logger } from "../../utils/logger";
+import { isNil } from "lodash";
 import UpdateTicketService from "../TicketServices/UpdateTicketService";
 
 type Session = WASocket & {
@@ -39,7 +40,7 @@ const typebotListener = async ({
 
   const number = msg.key.remoteJid.replace(/\D/g, "");
 
-  const body = getBodyMessage(msg);
+  let body = getBodyMessage(msg);
 
   async function createSession(msg, typebot, number) {
     try {
@@ -51,7 +52,7 @@ const typebotListener = async ({
         resultId: "string",
         isOnlyRegistering: false,
         prefilledVariables: {
-          number,
+          number: number,
           pushName: msg.pushName || ""
         }
       });
@@ -109,7 +110,7 @@ const typebotListener = async ({
 
     if (!status) return;
 
-    // let body = getConversationMessage(msg);
+    //let body = getConversationMessage(msg);
 
     if (body !== typebotKeywordFinish && body !== typebotKeywordRestart) {
       let requestContinue;
@@ -120,7 +121,7 @@ const typebotListener = async ({
           message: body
         });
 
-        const config: AxiosRequestConfig = {
+        let config: AxiosRequestConfig = {
           method: "post",
           maxBodyLength: Infinity,
           url: `${url}/api/v1/sessions/${sessionId}/continueChat`,
@@ -139,7 +140,7 @@ const typebotListener = async ({
       }
 
       if (messages?.length === 0) {
-        await wbot.sendMessage(`${number}@c.us`, {
+        await sendBaileysSocketMessage(wbot, `${number}@c.us`, {
           text: typebotUnknownMessage
         });
       } else {
@@ -232,10 +233,10 @@ const typebotListener = async ({
             }
 
             if (formattedText.startsWith("#")) {
-              const gatilho = formattedText.replace("#", "");
+              let gatilho = formattedText.replace("#", "");
 
               try {
-                const jsonGatilho = JSON.parse(gatilho);
+                let jsonGatilho = JSON.parse(gatilho);
 
                 if (
                   jsonGatilho.stopBot &&
@@ -294,17 +295,19 @@ const typebotListener = async ({
             }
 
             await wbot.presenceSubscribe(msg.key.remoteJid);
-            // await delay(2000)
+            //await delay(2000)
             await wbot.sendPresenceUpdate("composing", msg.key.remoteJid);
             await delay(typebotDelayMessage);
             await wbot.sendPresenceUpdate("paused", msg.key.remoteJid);
 
-            await wbot.sendMessage(msg.key.remoteJid, { text: formattedText });
+            await sendBaileysSocketMessage(wbot, msg.key.remoteJid, {
+              text: formattedText
+            });
           }
 
           if (message.type === "audio") {
             await wbot.presenceSubscribe(msg.key.remoteJid);
-            // await delay(2000)
+            //await delay(2000)
             await wbot.sendPresenceUpdate("composing", msg.key.remoteJid);
             await delay(typebotDelayMessage);
             await wbot.sendPresenceUpdate("paused", msg.key.remoteJid);
@@ -315,7 +318,7 @@ const typebotListener = async ({
                 ptt: true
               }
             };
-            await wbot.sendMessage(msg.key.remoteJid, media);
+            await sendBaileysSocketMessage(wbot, msg.key.remoteJid, media);
           }
 
           // if (message.type === 'embed') {
@@ -331,12 +334,12 @@ const typebotListener = async ({
           //         caption: ""
 
           //     }
-          //     await wbot.sendMessage(msg.key.remoteJid, media);
+          //     await sendBaileysSocketMessage(wbot, msg.key.remoteJid, media);
           // }
 
           if (message.type === "image") {
             await wbot.presenceSubscribe(msg.key.remoteJid);
-            // await delay(2000)
+            //await delay(2000)
             await wbot.sendPresenceUpdate("composing", msg.key.remoteJid);
             await delay(typebotDelayMessage);
             await wbot.sendPresenceUpdate("paused", msg.key.remoteJid);
@@ -345,7 +348,7 @@ const typebotListener = async ({
                 url: message.content.url
               }
             };
-            await wbot.sendMessage(msg.key.remoteJid, media);
+            await sendBaileysSocketMessage(wbot, msg.key.remoteJid, media);
           }
 
           // if (message.type === 'video' ) {
@@ -360,23 +363,25 @@ const typebotListener = async ({
           //         },
 
           //     }
-          //     await wbot.sendMessage(msg.key.remoteJid, media);
+          //     await sendBaileysSocketMessage(wbot, msg.key.remoteJid, media);
           // }
         }
         if (input) {
           if (input.type === "choice input") {
             let formattedText = "";
-            const { items } = input;
+            const items = input.items;
             for (const item of items) {
               formattedText += `▶️ ${item.content}\n`;
             }
             formattedText = formattedText.replace(/\n$/, "");
             await wbot.presenceSubscribe(msg.key.remoteJid);
-            // await delay(2000)
+            //await delay(2000)
             await wbot.sendPresenceUpdate("composing", msg.key.remoteJid);
             await delay(typebotDelayMessage);
             await wbot.sendPresenceUpdate("paused", msg.key.remoteJid);
-            await wbot.sendMessage(msg.key.remoteJid, { text: formattedText });
+            await sendBaileysSocketMessage(wbot, msg.key.remoteJid, {
+              text: formattedText
+            });
           }
         }
       }
@@ -389,7 +394,9 @@ const typebotListener = async ({
 
       await ticket.reload();
 
-      await wbot.sendMessage(`${number}@c.us`, { text: typebotRestartMessage });
+      await sendBaileysSocketMessage(wbot, `${number}@c.us`, {
+        text: typebotRestartMessage
+      });
     }
     if (body === typebotKeywordFinish) {
       await UpdateTicketService({
@@ -401,6 +408,8 @@ const typebotListener = async ({
         ticketId: ticket.id,
         companyId: ticket.companyId
       });
+
+      return;
     }
   } catch (error) {
     logger.info("Error on typebotListener: ", error);

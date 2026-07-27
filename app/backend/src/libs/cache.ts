@@ -63,6 +63,10 @@ export function del(key: string) {
   return delPromisefy(key);
 }
 
+export function ping() {
+  return redis.ping();
+}
+
 export async function delFromPattern(pattern: string) {
   const all = await getKeys(pattern);
   for (const item of all) {
@@ -77,6 +81,7 @@ export const cacheLayer = {
   getFromParams,
   getKeys,
   del,
+  ping,
   delFromParams,
   delFromPattern
 };

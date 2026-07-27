@@ -1,6 +1,6 @@
-import fs from "fs";
 import Whatsapp from "../models/Whatsapp";
 import GetWhatsappWbot from "./GetWhatsappWbot";
+import fs from "fs";
 
 import { getMessageOptions } from "../services/WbotServices/SendWhatsAppMedia";
 
@@ -13,8 +13,8 @@ export type MessageData = {
 export const SendMessageFlow = async (
   whatsapp: Whatsapp,
   messageData: MessageData,
-  isFlow = false,
-  isRecord = false
+  isFlow: boolean = false,
+  isRecord: boolean = false
 ): Promise<any> => {
   try {
     const wbot = await GetWhatsappWbot(whatsapp);
@@ -23,25 +23,14 @@ export const SendMessageFlow = async (
     let message;
 
     const templateButtons = [
-      {
-        index: 1,
-        urlButton: {
-          displayText: "⭐ Star Baileys on GitHub!",
-          url: "https://github.com/adiwajshing/Baileys"
-        }
-      },
-      { index: 2, callButton: { displayText: "Call me!+1 (234) 5678-901" } },
-      {
-        index: 3,
-        quickReplyButton: {
-          displayText: "This is a reply, just like normal buttons!",
-          id: "id-like-buttons-message"
-        }
-      }
-    ];
+      {index: 1, urlButton: {displayText: '⭐ Star Baileys on GitHub!', url: 'https://github.com/adiwajshing/Baileys'}},
+      {index: 2, callButton: {displayText: 'Call me!+1 (234) 5678-901'}},
+      {index: 3, quickReplyButton: {displayText: 'This is a reply, just like normal buttons!', id: 'id-like-buttons-message'}},
+  ]
 
     const body = `\u200e${messageData.body}`;
-    message = ""; // await wbot.sendMessage(chatId, { text: body, templateButtons: templateButtons }); TODO: Fix error on this template Buttons
+    message = ""; // TODO: reimplementar template buttons pela porta de mensageria.
+
 
     return message;
   } catch (err: any) {
