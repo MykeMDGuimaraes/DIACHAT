@@ -1,3 +1,5 @@
+export {};
+
 const migration = require("../20241125223219-add-language-company");
 
 describe("20241125223219-add-language-company", () => {
