@@ -6,7 +6,10 @@ on:
     branches:
       - main
       - master
-      - codex/messaging-v1
+
+concurrency:
+  group: messaging-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   validate:
