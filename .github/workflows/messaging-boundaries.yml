@@ -76,7 +76,7 @@ jobs:
       - run: bash replit-start.sh --patches-only
       - run: npm run build
         env:
-          CI: "true"
+          CI: "false"
           REACT_APP_BACKEND_URL: ""
           GENERATE_SOURCEMAP: "false"
           NODE_OPTIONS: "--openssl-legacy-provider --max-old-space-size=2560"
