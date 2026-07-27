@@ -48,6 +48,7 @@
     "fluent-ffmpeg": "^2.1.2",
     "gn-api-sdk-typescript": "^1.0.7",
     "http-graceful-shutdown": "^3.1.6",
+    "ioredis": "^5.11.1",
     "jsonwebtoken": "^9.0.2",
     "microsoft-cognitiveservices-speech-sdk": "1.31.0",
     "mime-types": "^2.1.35",

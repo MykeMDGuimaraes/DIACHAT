@@ -37,8 +37,10 @@ import flowCampaignRoutes from "./flowCampaignRoutes";
 import serviceCredentialRoutes from "./serviceCredentialRoutes";
 import internalV1Routes from "./internalV1Routes";
 import messagingApiRoutes from "./messagingApiRoutes";
+import healthRoutes from "./healthRoutes";
 const routes = Router();
 
+routes.use(healthRoutes);
 routes.use("/internal/v1", internalV1Routes);
 routes.use("/api/v1", messagingApiRoutes);
 
@@ -77,7 +79,7 @@ routes.use(queueIntegrationRoutes);
 routes.use(forgotsRoutes);
 
 routes.use(flowDefaultRoutes);
-routes.use(flowBuilder)
-routes.use(flowCampaignRoutes)
+routes.use(flowBuilder);
+routes.use(flowCampaignRoutes);
 
 export default routes;

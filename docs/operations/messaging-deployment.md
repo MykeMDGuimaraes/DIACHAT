@@ -3,22 +3,28 @@
 ## Secrets obrigatórios
 
 ```text
+DATABASE_URL=postgresql://...?...sslmode=require
 API_KEY_PEPPER=<aleatório, estável e fora do banco>
 MESSAGING_WEBHOOK_VERIFY_TOKEN_PEPPER=<aleatório, estável>
 MESSAGING_ENCRYPTION_ACTIVE_KEY_ID=v1
 MESSAGING_ENCRYPTION_KEY_V1=<32 bytes em base64>
 META_GRAPH_VERSION=v23.0
 BACKEND_URL=https://dominio-publico
+FRONTEND_URL=https://dominio-publico
+JWT_SECRET=<mínimo 32 bytes>
+JWT_REFRESH_SECRET=<mínimo 32 bytes e diferente do JWT_SECRET>
 ```
 
 `META_GRAPH_VERSION` é fallback da plataforma e nunca pode ser `latest`; cada canal também persiste a versão validada pela empresa. Configure `META_GRAPH_SUNSET_AT` para que `/internal/v1/messaging/metrics` alerte nos 90 dias anteriores ao sunset.
+
+O processo executa `DeploymentPreflight` antes de Redis e migrations. A publicação é recusada quando `DATABASE_URL` não é PostgreSQL com transporte TLS (`sslmode=require` ou `DB_SSL=true`), a origem não usa HTTPS, um segredo obrigatório está ausente, a chave AES não decodifica para 32 bytes ou `RUN_SEEDS=true` não possui `PRODUCTION_SEED_CONFIRMATION=I_UNDERSTAND`.
 
 ## Ordem do deploy
 
 1. Faça backup do PostgreSQL e confirme os secrets.
 2. Execute as migrations Sequelize antes de iniciar o novo código.
 3. Inicie uma única instância da aplicação; não permita duas sessões Baileys para o mesmo número.
-4. Confira `GET /internal/v1/messaging/metrics` com credencial de serviço.
+4. Confira `GET /health/live`, `GET /health/ready` e `GET /internal/v1/messaging/metrics` com credencial de serviço.
 5. Em staging, execute o capacity gate com 20 conexões reais por 30 minutos; não promova se qualquer gate falhar.
 6. Valide um envio idempotente e um webhook HMAC em uma empresa controlada.
 7. Faça canário com uma empresa Meta, acompanhando idade da outbox/inbox, dead-letter, leases expirados, RSS e pool PostgreSQL.
