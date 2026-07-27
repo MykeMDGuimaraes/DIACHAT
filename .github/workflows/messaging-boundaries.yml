@@ -55,7 +55,11 @@ jobs:
       - run: npm run check:boundary-fixtures
       - run: npm run build
       - run: npx sequelize db:migrate
-      - run: npx sequelize db:migrate:undo:all
+      - name: Revert messaging migrations
+        run: |
+          for _ in $(seq 1 12); do
+            npx sequelize db:migrate:undo
+          done
       - run: npx sequelize db:migrate
       - run: npx jest --runInBand --coverage=false
 
