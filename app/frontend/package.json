@@ -25,7 +25,6 @@
     "chart.js": "^3.9.1",
     "chartjs-plugin-datalabels": "^2.1.0",
     "compressorjs": "^1.2.1",
-    "context": "^4.0.0",
     "date-fns": "^2.16.1",
     "emoji-mart": "^3.0.0",
     "formik": "^2.2.0",
