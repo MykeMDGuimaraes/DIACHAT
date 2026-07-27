@@ -89,7 +89,9 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
     integrationId
   });
 
-  StartWhatsAppSession(whatsapp, companyId);
+  if (whatsapp.channelType === "baileys") {
+    StartWhatsAppSession(whatsapp, companyId);
+  }
 
   const io = getIO();
   io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-whatsapp`, {

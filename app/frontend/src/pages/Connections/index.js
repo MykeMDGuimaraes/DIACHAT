@@ -35,6 +35,10 @@ import TableRowSkeleton from "../../components/TableRowSkeleton";
 
 import api from "../../services/api";
 import WhatsAppModal from "../../components/WhatsAppModal";
+import ChannelProviderModal from "../../components/ChannelProviderModal";
+import MetaCloudChannelModal from "../../components/MetaCloudChannelModal";
+import WebhookSubscriptionsModal from "../../components/WebhookSubscriptionsModal";
+import ApiCredentialsModal from "../../components/ApiCredentialsModal";
 import ConfirmationModal from "../../components/ConfirmationModal";
 import QrcodeModal from "../../components/QrcodeModal";
 import { i18n } from "../../translate/i18n";
@@ -101,6 +105,10 @@ const Connections = () => {
 	const { user } = useContext(AuthContext);
 	const { whatsApps, loading } = useContext(WhatsAppsContext);
 	const [whatsAppModalOpen, setWhatsAppModalOpen] = useState(false);
+	const [providerModalOpen, setProviderModalOpen] = useState(false);
+	const [metaCloudModalOpen, setMetaCloudModalOpen] = useState(false);
+	const [webhooksModalOpen, setWebhooksModalOpen] = useState(false);
+	const [apiCredentialsModalOpen, setApiCredentialsModalOpen] = useState(false);
 	const [qrModalOpen, setQrModalOpen] = useState(false);
 	const [selectedWhatsApp, setSelectedWhatsApp] = useState(null);
 	const [confirmModalOpen, setConfirmModalOpen] = useState(false);
@@ -133,7 +141,16 @@ const Connections = () => {
 
 	const handleOpenWhatsAppModal = () => {
 		setSelectedWhatsApp(null);
-		setWhatsAppModalOpen(true);
+		setProviderModalOpen(true);
+	};
+
+	const handleSelectProvider = provider => {
+		setProviderModalOpen(false);
+		if (provider === "meta_cloud") {
+			setMetaCloudModalOpen(true);
+		} else {
+			setWhatsAppModalOpen(true);
+		}
 	};
 
 	const handleCloseWhatsAppModal = useCallback(() => {
@@ -153,7 +170,11 @@ const Connections = () => {
 
 	const handleEditWhatsApp = whatsApp => {
 		setSelectedWhatsApp(whatsApp);
-		setWhatsAppModalOpen(true);
+		if (whatsApp.channelType === "meta_cloud") {
+			setMetaCloudModalOpen(true);
+		} else {
+			setWhatsAppModalOpen(true);
+		}
 	};
 
 	const handleOpenConfirmationModal = (action, whatsAppId) => {
@@ -313,9 +334,48 @@ const Connections = () => {
 				onClose={handleCloseWhatsAppModal}
 				whatsAppId={!qrModalOpen && selectedWhatsApp?.id}
 			/>
+			<ChannelProviderModal
+				open={providerModalOpen}
+				onClose={() => setProviderModalOpen(false)}
+				onSelect={handleSelectProvider}
+			/>
+			<MetaCloudChannelModal
+				open={metaCloudModalOpen}
+				onClose={() => {
+					setMetaCloudModalOpen(false);
+					setSelectedWhatsApp(null);
+				}}
+				whatsappId={selectedWhatsApp?.channelType === "meta_cloud" ? selectedWhatsApp.id : null}
+			/>
+			<WebhookSubscriptionsModal
+				open={webhooksModalOpen}
+				onClose={() => setWebhooksModalOpen(false)}
+				connections={whatsApps}
+			/>
+			<ApiCredentialsModal
+				open={apiCredentialsModalOpen}
+				onClose={() => setApiCredentialsModalOpen(false)}
+				connections={whatsApps}
+			/>
 			<MainHeader>
 				<Title>{i18n.t("connections.title")}</Title>
 				<MainHeaderButtonsWrapper>
+					<Button
+						variant="outlined"
+						color="primary"
+						onClick={() => setApiCredentialsModalOpen(true)}
+						style={{ marginRight: 8 }}
+					>
+						API pública
+					</Button>
+					<Button
+						variant="outlined"
+						color="primary"
+						onClick={() => setWebhooksModalOpen(true)}
+						style={{ marginRight: 8 }}
+					>
+						Webhooks
+					</Button>
 					<Can
 						role={user.profile}
 						perform="connections-page:addConnection"

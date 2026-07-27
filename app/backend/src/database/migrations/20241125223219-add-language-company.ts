@@ -8,6 +8,6 @@ module.exports = {
     });
   },
   down: async (queryInterface: QueryInterface) => {
-    await queryInterface.removeColumn("Campaigns", "language");
+    await queryInterface.removeColumn("Companies", "language");
   }
 };

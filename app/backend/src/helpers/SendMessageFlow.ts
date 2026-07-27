@@ -29,7 +29,7 @@ export const SendMessageFlow = async (
   ]
 
     const body = `\u200e${messageData.body}`;
-    message = ''; // await wbot.sendMessage(chatId, { text: body, templateButtons: templateButtons }); TODO: Fix error on this template Buttons
+    message = ""; // TODO: reimplementar template buttons pela porta de mensageria.
 
 
     return message;

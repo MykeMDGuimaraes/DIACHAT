@@ -15,6 +15,10 @@
     "test:isolation": "node scripts/isolationTests.js",
     "posttest": "NODE_ENV=test sequelize db:migrate:undo:all",
     "lint": "eslint src/**/*.ts",
+    "check:messaging-boundaries": "node scripts/checkMessagingBoundaries.js",
+    "check:messaging-architecture": "depcruise src --config .dependency-cruiser.js",
+    "check:boundary-fixtures": "node scripts/checkBoundaryFixtures.js",
+    "capacity:messaging": "node scripts/messagingCapacityGate.js",
     "docker:push": "docker buildx build --platform linux/amd64,linux/arm64 -t rafaeldomenegueti/atendechat-backend:latest . --push",
     "docker:push:hml": "docker buildx build --platform linux/amd64,linux/arm64 -t rafaeldomenegueti/atendechat-backend:hml . --push"
   },
@@ -44,6 +48,7 @@
     "fluent-ffmpeg": "^2.1.2",
     "gn-api-sdk-typescript": "^1.0.7",
     "http-graceful-shutdown": "^3.1.6",
+    "ioredis": "^5.11.1",
     "jsonwebtoken": "^9.0.2",
     "microsoft-cognitiveservices-speech-sdk": "1.31.0",
     "mime-types": "^2.1.35",
@@ -85,6 +90,7 @@
     "@typescript-eslint/eslint-plugin": "^5.13.0",
     "@typescript-eslint/parser": "^5.13.0",
     "chance": "^1.1.8",
+    "dependency-cruiser": "^16.10.4",
     "eslint": "^8.10.0",
     "eslint-config-airbnb-base": "^15.0.0",
     "eslint-config-prettier": "^8.5.0",
@@ -133,7 +139,7 @@
       "body-parser": "^1.20.6"
     },
     "sequelize-cli": {
-      "js-beautify": "^2.0.3"
+      "js-beautify": "1.15.4"
     },
     "http-proxy-middleware": "^2.0.7",
     "ip": "^2.0.1",

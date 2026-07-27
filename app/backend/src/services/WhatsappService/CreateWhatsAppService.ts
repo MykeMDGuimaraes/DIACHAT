@@ -18,6 +18,8 @@ interface Request {
   isDefault?: boolean;
   token?: string;
   provider?: string;
+  channelType?: string;
+  baileysMode?: string;
   //sendIdQueue?: number;
   //timeSendQueue?: number;
   transferQueueId?: number;
@@ -47,6 +49,8 @@ const CreateWhatsAppService = async ({
   companyId,
   token = "",
   provider = "beta",
+  channelType = "baileys",
+  baileysMode,
   //timeSendQueue,
   //sendIdQueue,
   transferQueueId,
@@ -160,6 +164,8 @@ const CreateWhatsAppService = async ({
       companyId,
       token,
       provider,
+      channelType,
+      baileysMode,
       //timeSendQueue,
       //sendIdQueue,
 	    transferQueueId,

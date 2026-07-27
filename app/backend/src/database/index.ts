@@ -45,6 +45,14 @@ import { FlowImgModel } from "../models/FlowImg";
 import ServiceCredential from "../models/ServiceCredential";
 import V1MessageIdempotency from "../models/V1MessageIdempotency";
 import AuditLog from "../models/AuditLog";
+import MessageCommand from "../messaging/persistence/models/MessageCommand";
+import ApiCredential from "../messaging/persistence/models/ApiCredential";
+import MessagingOutboxEvent from "../messaging/persistence/models/MessagingOutboxEvent";
+import MetaCloudCredential from "../messaging/persistence/models/MetaCloudCredential";
+import MessagingInboxEvent from "../messaging/persistence/models/MessagingInboxEvent";
+import WebhookSubscription from "../messaging/persistence/models/WebhookSubscription";
+import WebhookDelivery from "../messaging/persistence/models/WebhookDelivery";
+import MessagingCapacitySample from "../messaging/persistence/models/MessagingCapacitySample";
 
 // eslint-disable-next-line
 const dbConfig = require("../config/database");
@@ -99,6 +107,14 @@ const models = [
   ServiceCredential,
   V1MessageIdempotency,
   AuditLog,
+  MessageCommand,
+  ApiCredential,
+  MessagingOutboxEvent,
+  MetaCloudCredential,
+  MessagingInboxEvent,
+  WebhookSubscription,
+  WebhookDelivery,
+  MessagingCapacitySample,
 ];
 
 sequelize.addModels(models);
