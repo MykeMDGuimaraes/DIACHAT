@@ -5,7 +5,9 @@ const crypto = require("crypto");
 const percentile = (values, quantile) => {
   if (!values.length) return 0;
   const sorted = [...values].sort((a, b) => a - b);
-  return sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * quantile) - 1)];
+  return sorted[
+    Math.min(sorted.length - 1, Math.ceil(sorted.length * quantile) - 1)
+  ];
 };
 
 const loadConfig = environment => {
@@ -21,14 +23,18 @@ const loadConfig = environment => {
     .filter(Boolean)
     .map(Number);
   if (!targetUrl || !serviceToken) {
-    throw new Error("CAPACITY_TARGET_URL e CAPACITY_SERVICE_TOKEN sao obrigatorios.");
+    throw new Error(
+      "CAPACITY_TARGET_URL e CAPACITY_SERVICE_TOKEN sao obrigatorios."
+    );
   }
   if (
     connectionIds.length !== 20 ||
     connectionIds.some(id => !Number.isInteger(id)) ||
     new Set(connectionIds).size !== 20
   ) {
-    throw new Error("CAPACITY_CONNECTION_IDS deve conter exatamente 20 IDs reais e unicos.");
+    throw new Error(
+      "CAPACITY_CONNECTION_IDS deve conter exatamente 20 IDs reais e unicos."
+    );
   }
   return {
     targetUrl: targetUrl.replace(/\/$/, ""),
@@ -38,7 +44,9 @@ const loadConfig = environment => {
     durationSeconds: Number(environment.CAPACITY_DURATION_SECONDS || 1800),
     maxP95Ms: Number(environment.CAPACITY_MAX_P95_MS || 250),
     maxRssMb: Number(environment.CAPACITY_MAX_RSS_MB || 6656),
-    maxOutboxAgeSeconds: Number(environment.CAPACITY_MAX_OUTBOX_AGE_SECONDS || 30)
+    maxOutboxAgeSeconds: Number(
+      environment.CAPACITY_MAX_OUTBOX_AGE_SECONDS || 30
+    )
   };
 };
 
@@ -56,7 +64,9 @@ const requestProbe = async (config, runId) => {
   });
   const payload = await response.json();
   if (!response.ok) {
-    throw new Error(`Probe HTTP ${response.status}: ${JSON.stringify(payload)}`);
+    throw new Error(
+      `Probe HTTP ${response.status}: ${JSON.stringify(payload)}`
+    );
   }
   return { latencyMs: performance.now() - startedAt, payload };
 };
@@ -104,7 +114,8 @@ const run = async config => {
       );
     });
     const remaining = 1000 - (performance.now() - tickStartedAt);
-    if (remaining > 0) await new Promise(resolve => setTimeout(resolve, remaining));
+    if (remaining > 0)
+      await new Promise(resolve => setTimeout(resolve, remaining));
   }
 
   const report = {
@@ -133,8 +144,7 @@ const run = async config => {
       zeroFailures: failures.length === 0,
       p95: percentile(latencies, 0.95) <= config.maxP95Ms,
       rss: maxRss / 1024 / 1024 <= config.maxRssMb,
-      outboxAge: maxOutboxAgeSeconds <= config.maxOutboxAgeSeconds
-      ,
+      outboxAge: maxOutboxAgeSeconds <= config.maxOutboxAgeSeconds,
       observationBacklog: maxCapacityAgeSeconds <= config.maxOutboxAgeSeconds,
       observerThroughput: maxObservedLastMinute >= config.requestsPerSecond
     },

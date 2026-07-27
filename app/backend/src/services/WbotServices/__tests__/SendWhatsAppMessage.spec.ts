@@ -1,36 +1,31 @@
-jest.mock("../../../messaging/public/baileys", () => ({
-  __esModule: true,
-  baileysTicketMessagingProvider: { sendText: jest.fn() }
-}));
-
 jest.mock("../../../helpers/GetTicketWbot", () => ({
   __esModule: true,
   default: jest.fn().mockResolvedValue({ sendMessage: jest.fn() })
 }));
 
 import SendWhatsAppMessage from "../SendWhatsAppMessage";
-import { baileysTicketMessagingProvider } from "../../../messaging/public/baileys";
+import GetTicketWbot from "../../../helpers/GetTicketWbot";
 
 describe("SendWhatsAppMessage", () => {
-  it("delegates ticket text delivery to the messaging adapter", async () => {
+  it("delivers ticket text through the public ticket messaging facade", async () => {
     const ticket = {
       isGroup: false,
       contact: { number: "5511999999999" },
       update: jest.fn()
     } as any;
     const sentMessage = { key: { id: "wa_1" } };
-    (baileysTicketMessagingProvider.sendText as jest.Mock).mockResolvedValue(
-      sentMessage
-    );
+    const sendMessage = jest.fn().mockResolvedValue(sentMessage);
+    (GetTicketWbot as jest.Mock).mockResolvedValue({ sendMessage });
 
     await expect(SendWhatsAppMessage({ body: "Olá", ticket })).resolves.toBe(
       sentMessage
     );
 
-    expect(baileysTicketMessagingProvider.sendText).toHaveBeenCalledWith({
-      ticket,
-      text: "Olá",
-      quoted: undefined
-    });
+    expect(sendMessage).toHaveBeenCalledWith(
+      "5511999999999@s.whatsapp.net",
+      { text: "Olá" },
+      undefined
+    );
+    expect(ticket.update).toHaveBeenCalledWith({ lastMessage: "Olá" });
   });
 });

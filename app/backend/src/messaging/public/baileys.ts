@@ -8,5 +8,4 @@
 export * from "../adapters/baileys/BaileysExports";
 export { default } from "../adapters/baileys/BaileysExports";
 export { sendBaileysSocketMessage } from "../adapters/baileys/BaileysSocketPort";
-export { default as baileysTicketMessagingProvider } from "../adapters/baileys/getBaileysTicketMessagingProvider";
 export { default as BaileysLogger } from "../adapters/baileys/BaileysLogger";

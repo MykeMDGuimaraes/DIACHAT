@@ -8,6 +8,9 @@ import {
   computeRetryDelayMs,
   MAX_SEND_ATTEMPTS
 } from "../../domain/MessagingStates";
+import sequelize from "../../../database";
+import MessageCommand from "../../persistence/models/MessageCommand";
+import MessagingOutboxEvent from "../../persistence/models/MessagingOutboxEvent";
 import MessageCommandDispatcher, {
   buildMessageFailedEvent,
   buildMessageSentEvent,
@@ -48,6 +51,30 @@ const buildDependencies = (
 });
 
 describe("MessageCommandDispatcher", () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it("classifies a missing provider as permanent", async () => {
+    const dispatcher = new MessageCommandDispatcher(undefined, []);
+    const dependencies = (dispatcher as any).dependencies;
+    dependencies.claimNext = jest.fn().mockResolvedValue(claim());
+    dependencies.markFailed = jest.fn().mockResolvedValue(true);
+    dependencies.markUnknown = jest.fn().mockResolvedValue(true);
+
+    await expect(dispatcher.dispatchOne()).resolves.toEqual({
+      status: "failed"
+    });
+    expect(dependencies.markFailed).toHaveBeenCalledWith(
+      claim(),
+      expect.objectContaining({
+        classification: "permanent",
+        code: "PROVIDER_NOT_SUPPORTED"
+      })
+    );
+    expect(dependencies.markUnknown).not.toHaveBeenCalled();
+  });
+
   it("delivers a claimed command and finalizes the pair as sent", async () => {
     const dependencies = buildDependencies();
     const dispatcher = new MessageCommandDispatcher(dependencies);
@@ -184,6 +211,35 @@ describe("MessageCommandDispatcher", () => {
     await expect(dispatcher.dispatchOne()).resolves.toEqual({
       status: "fenced"
     });
+  });
+
+  it("rolls back and fences when the outbox side of the leased pair diverges", async () => {
+    let transactionRolledBack = false;
+    jest.spyOn(sequelize, "transaction").mockImplementation((async (
+      callback: (transaction: any) => unknown
+    ) => {
+      try {
+        return await callback({ LOCK: { UPDATE: "UPDATE" } });
+      } catch (error) {
+        transactionRolledBack = true;
+        throw error;
+      }
+    }) as any);
+    jest.spyOn(MessageCommand, "update").mockResolvedValue([1] as any);
+    jest.spyOn(MessagingOutboxEvent, "update").mockResolvedValue([0] as any);
+    const createFollowUp = jest
+      .spyOn(MessagingOutboxEvent, "create")
+      .mockResolvedValue({} as any);
+
+    const dispatcher = new MessageCommandDispatcher(undefined, []);
+    const finalized = await (dispatcher as any).dependencies.markSent(
+      claim(),
+      "wamid.divergent"
+    );
+
+    expect(finalized).toBe(false);
+    expect(transactionRolledBack).toBe(true);
+    expect(createFollowUp).not.toHaveBeenCalled();
   });
 
   it("builds the durable events with typed payloads", () => {

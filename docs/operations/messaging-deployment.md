@@ -19,10 +19,14 @@ BACKEND_URL=https://dominio-publico
 2. Execute as migrations Sequelize antes de iniciar o novo código.
 3. Inicie uma única instância da aplicação; não permita duas sessões Baileys para o mesmo número.
 4. Confira `GET /internal/v1/messaging/metrics` com credencial de serviço.
-5. Valide um envio idempotente e um webhook HMAC em tenant controlado.
-6. Só então habilite canais Meta das empresas.
+5. Em staging, execute o capacity gate com 20 conexões reais por 30 minutos; não promova se qualquer gate falhar.
+6. Valide um envio idempotente e um webhook HMAC em uma empresa controlada.
+7. Faça canário com uma empresa Meta, acompanhando idade da outbox/inbox, dead-letter, leases expirados, RSS e pool PostgreSQL.
+8. Só então habilite gradualmente os canais Meta das demais empresas.
 
 Redis pode ser apagado/reiniciado sem perda de comandos de mensageria. Os reconciliadores recuperam leases vencidos do PostgreSQL. Um comando que estava em `sending` vira `unknown` e não é reenviado automaticamente.
+
+O capacity gate e o canário usam conexões e credenciais reais configuradas pelas próprias empresas. Não há provider mock no runtime; os segredos são inseridos pelo wizard do frontend, validados na Meta e armazenados cifrados.
 
 ## Rotação da chave de dados
 

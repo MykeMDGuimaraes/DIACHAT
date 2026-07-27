@@ -160,20 +160,43 @@ class MetaCloudMessageCommandProvider implements MessagingProvider {
       throw new AppError("Tipo de mensagem Meta nao suportado", 400);
     }
 
-    const credential = await this.dependencies.findCredential(
-      command.companyId,
-      command.whatsappId
-    );
+    let credential: any;
+    try {
+      credential = await this.dependencies.findCredential(
+        command.companyId,
+        command.whatsappId
+      );
+    } catch (error) {
+      if (error instanceof ProviderSendError) {
+        throw error;
+      }
+      throw new RetryableSendError({
+        code: "META_CREDENTIAL_STORE_UNAVAILABLE",
+        message: "Falha ao carregar credenciais Meta antes do envio"
+      });
+    }
     if (!credential) {
       throw new AppError("Credenciais Meta do canal nao encontradas", 404);
     }
     if (credential.validationStatus === "REVOKED" || credential.revokedAt) {
       throw new AppError("Credenciais Meta do canal foram revogadas", 409);
     }
-    const accessToken = this.dependencies.decryptSecret(
-      credential.accessTokenCiphertext,
-      this.dependencies.getKeyring()
-    );
+    let accessToken: string;
+    try {
+      const keyring = this.dependencies.getKeyring();
+      accessToken = this.dependencies.decryptSecret(
+        credential.accessTokenCiphertext,
+        keyring
+      );
+    } catch (error) {
+      if (error instanceof ProviderSendError) {
+        throw error;
+      }
+      throw new PermanentSendError({
+        code: "META_CREDENTIAL_DECRYPTION_FAILED",
+        message: "Credencial Meta indisponivel para descriptografia"
+      });
+    }
 
     if (command.messageKind === "text") {
       const text = command.requestPayload.text;

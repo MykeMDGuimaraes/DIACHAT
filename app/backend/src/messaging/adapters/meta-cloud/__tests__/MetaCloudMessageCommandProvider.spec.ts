@@ -1,6 +1,67 @@
 import MetaCloudMessageCommandProvider from "../MetaCloudMessageCommandProvider";
 
+const textCommand = {
+  id: "command_1",
+  companyId: 7,
+  whatsappId: 42,
+  provider: "meta_cloud",
+  messageKind: "text",
+  recipient: "5511999999999",
+  requestPayload: { text: "Oi" }
+} as const;
+
 describe("MetaCloudMessageCommandProvider", () => {
+  it("classifies a credential-store failure before transmission as retryable", async () => {
+    const provider = new MetaCloudMessageCommandProvider({
+      findCredential: jest.fn().mockRejectedValue(new Error("db offline")),
+      decryptSecret: jest.fn(),
+      getKeyring: jest.fn(),
+      sendText: jest.fn()
+    } as any);
+
+    await expect(provider.send(textCommand)).rejects.toMatchObject({
+      classification: "retryable",
+      code: "META_CREDENTIAL_STORE_UNAVAILABLE"
+    });
+  });
+
+  it.each([
+    {
+      name: "keyring loading",
+      getKeyring: jest.fn(() => {
+        throw new Error("missing platform key");
+      }),
+      decryptSecret: jest.fn()
+    },
+    {
+      name: "tenant-token decryption",
+      getKeyring: jest
+        .fn()
+        .mockReturnValue({ activeKeyId: "v1", keys: { v1: "unused" } }),
+      decryptSecret: jest.fn(() => {
+        throw new Error("invalid authentication tag");
+      })
+    }
+  ])(
+    "classifies $name failure as permanent operational, never unknown",
+    async ({ getKeyring, decryptSecret }) => {
+      const provider = new MetaCloudMessageCommandProvider({
+        findCredential: jest.fn().mockResolvedValue({
+          phoneNumberId: "phone_1",
+          accessTokenCiphertext: "ciphertext"
+        }),
+        decryptSecret,
+        getKeyring,
+        sendText: jest.fn()
+      } as any);
+
+      await expect(provider.send(textCommand)).rejects.toMatchObject({
+        classification: "permanent",
+        code: "META_CREDENTIAL_DECRYPTION_FAILED"
+      });
+    }
+  );
+
   it("rejects a revoked credential before decrypting it", async () => {
     const decryptSecret = jest.fn();
     const provider = new MetaCloudMessageCommandProvider({

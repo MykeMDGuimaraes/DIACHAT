@@ -7,6 +7,7 @@ import {
 } from "../contracts/MessagingProvider";
 import {
   isProviderSendError,
+  PermanentSendError,
   ProviderSendError,
   UnknownSendError
 } from "../contracts/ProviderSendError";
@@ -145,44 +146,64 @@ export interface MessageCommandDispatcherDependencies {
   random?: () => number;
 }
 
+class OutboundPairFencedError extends Error {
+  constructor() {
+    super("outbound pair lease diverged");
+    this.name = "OutboundPairFencedError";
+  }
+}
+
 const finalizePair = async (
   claim: ClaimedDispatch,
   commandValues: Record<string, unknown>,
   eventValues: Record<string, unknown>,
   followUpEvent?: MessageOutboxEventDto
-): Promise<boolean> =>
-  sequelize.transaction(async transaction => {
-    const [commandUpdated] = await MessageCommand.update(
-      { ...commandValues, leaseToken: null },
-      {
-        where: {
-          id: claim.command.id,
-          status: MESSAGE_COMMAND_STATUS.SENDING,
-          leaseToken: claim.leaseToken
-        },
-        transaction
+): Promise<boolean> => {
+  try {
+    return await sequelize.transaction(async transaction => {
+      const [commandUpdated] = await MessageCommand.update(
+        { ...commandValues, leaseToken: null },
+        {
+          where: {
+            id: claim.command.id,
+            status: MESSAGE_COMMAND_STATUS.SENDING,
+            leaseToken: claim.leaseToken
+          },
+          transaction
+        }
+      );
+      if (commandUpdated !== 1) {
+        throw new OutboundPairFencedError();
       }
-    );
-    if (commandUpdated === 0) {
-      // Fencing: outro worker/recovery assumiu este comando
+      const [eventUpdated] = await MessagingOutboxEvent.update(
+        { ...eventValues, leaseToken: null },
+        {
+          where: {
+            id: claim.eventId,
+            status: OUTBOX_EVENT_STATUS.PROCESSING,
+            leaseToken: claim.leaseToken
+          },
+          transaction
+        }
+      );
+      if (eventUpdated !== 1) {
+        // Lançar dentro da transação reverte também a atualização do comando.
+        throw new OutboundPairFencedError();
+      }
+      if (followUpEvent) {
+        await MessagingOutboxEvent.create(followUpEvent as any, {
+          transaction
+        });
+      }
+      return true;
+    });
+  } catch (error) {
+    if (error instanceof OutboundPairFencedError) {
       return false;
     }
-    await MessagingOutboxEvent.update(
-      { ...eventValues, leaseToken: null },
-      {
-        where: {
-          id: claim.eventId,
-          status: OUTBOX_EVENT_STATUS.PROCESSING,
-          leaseToken: claim.leaseToken
-        },
-        transaction
-      }
-    );
-    if (followUpEvent) {
-      await MessagingOutboxEvent.create(followUpEvent as any, { transaction });
-    }
-    return true;
-  });
+    throw error;
+  }
+};
 
 const createDefaultDependencies = (
   providers: MessagingProvider[]
@@ -256,7 +277,7 @@ const createDefaultDependencies = (
   send: async command => {
     const provider = providers.find(item => item.provider === command.provider);
     if (!provider) {
-      throw new UnknownSendError({
+      throw new PermanentSendError({
         code: "PROVIDER_NOT_SUPPORTED",
         message: `Provider de mensageria nao suportado: ${command.provider}`
       });

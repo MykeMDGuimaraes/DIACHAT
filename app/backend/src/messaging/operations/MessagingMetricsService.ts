@@ -12,9 +12,11 @@ import {
 import MessagingCapacitySample from "../persistence/models/MessagingCapacitySample";
 import AuditLog from "../../models/AuditLog";
 import {
+  INBOX_EVENT_STATUS,
   MESSAGE_COMMAND_ERROR_CODE,
   MESSAGE_COMMAND_STATUS,
-  OUTBOX_EVENT_STATUS
+  OUTBOX_EVENT_STATUS,
+  WEBHOOK_DELIVERY_STATUS
 } from "../domain/MessagingStates";
 
 const oldestAgeSeconds = (createdAt?: Date | null): number =>
@@ -53,11 +55,17 @@ class MessagingMetricsService {
       outboxDeadLetter,
       outboxExpiredLeases,
       inboxPending,
+      inboxInFlight,
+      inboxDeadLetter,
+      inboxExpiredLeases,
       webhookReady,
+      webhookInFlight,
       webhookDead,
+      webhookExpiredLeases,
       pausedSubscriptions,
       oldestCommand,
       oldestOutbox,
+      oldestInbox,
       oldestWebhook,
       capacityReady,
       capacityObservedLastMinute,
@@ -106,11 +114,54 @@ class MessagingMetricsService {
         }
       }),
       MessagingInboxEvent.count({
-        where: { ...companyWhere, status: "received" }
+        where: {
+          ...companyWhere,
+          status: INBOX_EVENT_STATUS.RECEIVED
+        }
       }),
-      WebhookDelivery.count({ where: { ...companyWhere, status: "ready" } }),
+      MessagingInboxEvent.count({
+        where: {
+          ...companyWhere,
+          status: INBOX_EVENT_STATUS.PROCESSING
+        }
+      }),
+      MessagingInboxEvent.count({
+        where: {
+          ...companyWhere,
+          status: INBOX_EVENT_STATUS.DEAD_LETTER
+        }
+      }),
+      MessagingInboxEvent.count({
+        where: {
+          ...companyWhere,
+          status: INBOX_EVENT_STATUS.PROCESSING,
+          leaseExpiresAt: { [Op.lte]: now }
+        }
+      }),
       WebhookDelivery.count({
-        where: { ...companyWhere, status: "dead_letter" }
+        where: {
+          ...companyWhere,
+          status: WEBHOOK_DELIVERY_STATUS.READY
+        }
+      }),
+      WebhookDelivery.count({
+        where: {
+          ...companyWhere,
+          status: WEBHOOK_DELIVERY_STATUS.PROCESSING
+        }
+      }),
+      WebhookDelivery.count({
+        where: {
+          ...companyWhere,
+          status: WEBHOOK_DELIVERY_STATUS.DEAD_LETTER
+        }
+      }),
+      WebhookDelivery.count({
+        where: {
+          ...companyWhere,
+          status: WEBHOOK_DELIVERY_STATUS.PROCESSING,
+          leaseExpiresAt: { [Op.lte]: now }
+        }
       }),
       WebhookSubscription.count({
         where: { ...companyWhere, pausedAt: { [Op.not]: null } }
@@ -138,8 +189,29 @@ class MessagingMetricsService {
         attributes: ["createdAt"],
         order: [["createdAt", "ASC"]]
       }),
+      MessagingInboxEvent.findOne({
+        where: {
+          ...companyWhere,
+          status: {
+            [Op.in]: [
+              INBOX_EVENT_STATUS.RECEIVED,
+              INBOX_EVENT_STATUS.PROCESSING
+            ]
+          }
+        },
+        attributes: ["createdAt"],
+        order: [["createdAt", "ASC"]]
+      }),
       WebhookDelivery.findOne({
-        where: { ...companyWhere, status: { [Op.in]: ["ready", "leased"] } },
+        where: {
+          ...companyWhere,
+          status: {
+            [Op.in]: [
+              WEBHOOK_DELIVERY_STATUS.READY,
+              WEBHOOK_DELIVERY_STATUS.PROCESSING
+            ]
+          }
+        },
         attributes: ["createdAt"],
         order: [["createdAt", "ASC"]]
       }),
@@ -204,12 +276,21 @@ class MessagingMetricsService {
         oldestPendingSeconds: oldestAgeSeconds(oldestOutbox?.createdAt)
       },
       alerts: {
-        deadLetter: commandsDeadLetter > 0 || outboxDeadLetter > 0
+        deadLetter:
+          commandsDeadLetter > 0 || outboxDeadLetter > 0 || inboxDeadLetter > 0
       },
-      inbox: { pending: inboxPending },
+      inbox: {
+        pending: inboxPending,
+        inFlight: inboxInFlight,
+        deadLetter: inboxDeadLetter,
+        expiredLeases: inboxExpiredLeases,
+        oldestPendingSeconds: oldestAgeSeconds(oldestInbox?.createdAt)
+      },
       webhooks: {
         ready: webhookReady,
+        inFlight: webhookInFlight,
         deadLetter: webhookDead,
+        expiredLeases: webhookExpiredLeases,
         pausedSubscriptions,
         oldestPendingSeconds: oldestAgeSeconds(oldestWebhook?.createdAt)
       },

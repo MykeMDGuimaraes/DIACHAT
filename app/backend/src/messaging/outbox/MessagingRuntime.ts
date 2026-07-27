@@ -18,7 +18,9 @@ interface DispatchRunner {
 }
 
 interface InboxRunner {
-  processOne: () => Promise<{ status: "idle" | "processed" | "retry" }>;
+  processOne: () => Promise<{
+    status: "idle" | "processed" | "retry" | "dead_letter";
+  }>;
 }
 
 interface WebhookFanoutRunner {
@@ -77,8 +79,8 @@ class MessagingRuntime {
 
     for (let index = 0; index < this.batchSize; index += 1) {
       const result = await this.inbox.processOne();
-      if (result.status !== "processed") break;
-      processedInbox += 1;
+      if (result.status === "idle") break;
+      if (result.status === "processed") processedInbox += 1;
     }
 
     for (let index = 0; index < this.batchSize; index += 1) {

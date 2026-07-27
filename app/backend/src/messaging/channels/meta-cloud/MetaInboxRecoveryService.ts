@@ -4,7 +4,7 @@ import MessagingInboxEvent from "../../persistence/models/MessagingInboxEvent";
 class MetaInboxRecoveryService {
   async recover(now = new Date()): Promise<{ recovered: number }> {
     const [recovered] = await MessagingInboxEvent.update(
-      { status: "received", leaseExpiresAt: null },
+      { status: "received", availableAt: now, leaseExpiresAt: null },
       {
         where: {
           provider: "meta_cloud",

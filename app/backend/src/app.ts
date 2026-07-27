@@ -15,7 +15,10 @@ import AppError from "./errors/AppError";
 import routes from "./routes";
 import { logger } from "./utils/logger";
 import { messageQueue, sendScheduledMessages } from "./queues";
-import bodyParser from 'body-parser';
+import {
+  configureJsonBodyParsing,
+  payloadTooLargeErrorHandler
+} from "./middleware/metaWebhookBodyParser";
 
 Sentry.init({ dsn: process.env.SENTRY_DSN });
 
@@ -26,13 +29,7 @@ app.set("queues", {
   sendScheduledMessages
 });
 
-const bodyparser = require('body-parser');
-app.use(bodyParser.json({
-  limit: '10mb',
-  verify: (req, _res, buffer) => {
-    (req as Request & { rawBody?: Buffer }).rawBody = Buffer.from(buffer);
-  }
-}));
+configureJsonBodyParsing(app);
 
 app.use(
   cors({
@@ -41,7 +38,6 @@ app.use(
   })
 );
 app.use(cookieParser());
-app.use(express.json());
 app.use(Sentry.Handlers.requestHandler());
 app.use("/public", mediaAuth, express.static(uploadConfig.directory));
 app.use(routes);
@@ -53,9 +49,7 @@ const frontendBuildDir = path.resolve(
   "frontend",
   "build"
 );
-const serveFrontend = fs.existsSync(
-  path.join(frontendBuildDir, "index.html")
-);
+const serveFrontend = fs.existsSync(path.join(frontendBuildDir, "index.html"));
 
 if (serveFrontend) {
   app.use(express.static(frontendBuildDir));
@@ -76,9 +70,9 @@ if (serveFrontend) {
 }
 
 app.use(Sentry.Handlers.errorHandler());
+app.use(payloadTooLargeErrorHandler);
 
 app.use(async (err: Error, req: Request, res: Response, _: NextFunction) => {
-
   if (err instanceof AppError) {
     logger.warn(err);
     return res.status(err.statusCode).json({ error: err.message });

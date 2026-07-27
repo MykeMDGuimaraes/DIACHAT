@@ -1,4 +1,6 @@
-import WebhookDeliveryDispatcher, { nextSubscriptionFailureState } from "../WebhookDeliveryDispatcher";
+import WebhookDeliveryDispatcher, {
+  nextSubscriptionFailureState
+} from "../WebhookDeliveryDispatcher";
 
 const delivery = {
   id: "del_1",
@@ -16,7 +18,9 @@ describe("WebhookDeliveryDispatcher", () => {
     const dispatcher = new WebhookDeliveryDispatcher({
       claimNext: jest.fn().mockResolvedValue(delivery),
       decryptSecret: jest.fn().mockReturnValue("signing-secret"),
-      getKeyring: jest.fn().mockReturnValue({ activeKeyId: "v1", keys: { v1: "unused" } }),
+      getKeyring: jest
+        .fn()
+        .mockReturnValue({ activeKeyId: "v1", keys: { v1: "unused" } }),
       post,
       complete,
       retry: jest.fn(),
@@ -27,44 +31,130 @@ describe("WebhookDeliveryDispatcher", () => {
       jitter: jest.fn().mockReturnValue(0)
     });
 
-    await expect(dispatcher.dispatchOne()).resolves.toEqual({ status: "delivered" });
-    expect(post).toHaveBeenCalledWith(expect.objectContaining({
-      url: delivery.urlSnapshot,
-      rawBody: JSON.stringify(delivery.payload),
-      headers: expect.objectContaining({
-        "X-DiaChat-Timestamp": "1784894400",
-        "X-DiaChat-Signature": expect.stringMatching(/^sha256=/),
-        "X-DiaChat-Delivery": "del_1",
-        "X-DiaChat-Event": "evt_1"
+    await expect(dispatcher.dispatchOne()).resolves.toEqual({
+      status: "delivered"
+    });
+    expect(post).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: delivery.urlSnapshot,
+        rawBody: JSON.stringify(delivery.payload),
+        headers: expect.objectContaining({
+          "X-DiaChat-Timestamp": "1784894400",
+          "X-DiaChat-Signature": expect.stringMatching(/^sha256=/),
+          "X-DiaChat-Delivery": "del_1",
+          "X-DiaChat-Event": "evt_1"
+        })
       })
-    }));
+    );
     expect(complete).toHaveBeenCalled();
   });
 
   it("requeues retryable failures with bounded backoff", async () => {
     const retry = jest.fn();
     const dispatcher = new WebhookDeliveryDispatcher({
-      claimNext: jest.fn().mockResolvedValue(delivery), decryptSecret: jest.fn().mockReturnValue("secret"),
+      claimNext: jest.fn().mockResolvedValue(delivery),
+      decryptSecret: jest.fn().mockReturnValue("secret"),
       getKeyring: jest.fn().mockReturnValue({ activeKeyId: "v1", keys: {} }),
-      post: jest.fn().mockResolvedValue({ status: 503, body: "unavailable" }), complete: jest.fn(), retry,
-      deadLetter: jest.fn(), recordSuccess: jest.fn(), recordFailure: jest.fn(),
-      now: jest.fn().mockReturnValue(new Date("2026-07-24T12:00:00.000Z")), jitter: jest.fn().mockReturnValue(0)
+      post: jest.fn().mockResolvedValue({ status: 503, body: "unavailable" }),
+      complete: jest.fn(),
+      retry,
+      deadLetter: jest.fn(),
+      recordSuccess: jest.fn(),
+      recordFailure: jest.fn(),
+      now: jest.fn().mockReturnValue(new Date("2026-07-24T12:00:00.000Z")),
+      jitter: jest.fn().mockReturnValue(0)
     });
-    await expect(dispatcher.dispatchOne()).resolves.toEqual({ status: "retry" });
-    expect(retry).toHaveBeenCalledWith("del_1", expect.any(Date), 503, "unavailable");
+    await expect(dispatcher.dispatchOne()).resolves.toEqual({
+      status: "retry"
+    });
+    expect(retry).toHaveBeenCalledWith(
+      "del_1",
+      expect.any(Date),
+      503,
+      "unavailable"
+    );
   });
 
   it("dead-letters the sixth failure", async () => {
     const deadLetter = jest.fn();
     const dispatcher = new WebhookDeliveryDispatcher({
-      claimNext: jest.fn().mockResolvedValue({ ...delivery, attemptCount: 6 }), decryptSecret: jest.fn().mockReturnValue("secret"),
+      claimNext: jest.fn().mockResolvedValue({ ...delivery, attemptCount: 6 }),
+      decryptSecret: jest.fn().mockReturnValue("secret"),
       getKeyring: jest.fn().mockReturnValue({ activeKeyId: "v1", keys: {} }),
-      post: jest.fn().mockRejectedValue(new Error("timeout")), complete: jest.fn(), retry: jest.fn(),
-      deadLetter, recordSuccess: jest.fn(), recordFailure: jest.fn(),
-      now: jest.fn().mockReturnValue(new Date()), jitter: jest.fn().mockReturnValue(0)
+      post: jest.fn().mockRejectedValue(new Error("timeout")),
+      complete: jest.fn(),
+      retry: jest.fn(),
+      deadLetter,
+      recordSuccess: jest.fn(),
+      recordFailure: jest.fn(),
+      now: jest.fn().mockReturnValue(new Date()),
+      jitter: jest.fn().mockReturnValue(0)
     });
-    await expect(dispatcher.dispatchOne()).resolves.toEqual({ status: "dead_letter" });
+    await expect(dispatcher.dispatchOne()).resolves.toEqual({
+      status: "dead_letter"
+    });
     expect(deadLetter).toHaveBeenCalledWith("del_1", undefined, "timeout");
+  });
+
+  it("requeues a delivery when loading the signing keyring fails", async () => {
+    const retry = jest.fn();
+    const dispatcher = new WebhookDeliveryDispatcher({
+      claimNext: jest.fn().mockResolvedValue(delivery),
+      decryptSecret: jest.fn(),
+      getKeyring: jest.fn(() => {
+        throw new Error("keyring indisponível");
+      }),
+      post: jest.fn(),
+      complete: jest.fn(),
+      retry,
+      deadLetter: jest.fn(),
+      recordSuccess: jest.fn(),
+      recordFailure: jest.fn(),
+      now: jest.fn().mockReturnValue(new Date("2026-07-24T12:00:00.000Z")),
+      jitter: jest.fn().mockReturnValue(0)
+    });
+
+    await expect(dispatcher.dispatchOne()).resolves.toEqual({
+      status: "retry"
+    });
+    expect(retry).toHaveBeenCalledWith(
+      "del_1",
+      expect.any(Date),
+      undefined,
+      "keyring indisponível"
+    );
+  });
+
+  it("dead-letters the sixth failure when decrypting the signing secret fails", async () => {
+    const deadLetter = jest.fn();
+    const recordFailure = jest.fn();
+    const dispatcher = new WebhookDeliveryDispatcher({
+      claimNext: jest.fn().mockResolvedValue({ ...delivery, attemptCount: 6 }),
+      decryptSecret: jest.fn(() => {
+        throw new Error("segredo inválido");
+      }),
+      getKeyring: jest
+        .fn()
+        .mockReturnValue({ activeKeyId: "v1", keys: { v1: "unused" } }),
+      post: jest.fn(),
+      complete: jest.fn(),
+      retry: jest.fn(),
+      deadLetter,
+      recordSuccess: jest.fn(),
+      recordFailure,
+      now: jest.fn().mockReturnValue(new Date("2026-07-24T12:00:00.000Z")),
+      jitter: jest.fn().mockReturnValue(0)
+    });
+
+    await expect(dispatcher.dispatchOne()).resolves.toEqual({
+      status: "dead_letter"
+    });
+    expect(deadLetter).toHaveBeenCalledWith(
+      "del_1",
+      undefined,
+      "segredo inválido"
+    );
+    expect(recordFailure).toHaveBeenCalledWith("sub_1");
   });
 
   it("pauses a subscription on its fiftieth consecutive terminal failure", () => {

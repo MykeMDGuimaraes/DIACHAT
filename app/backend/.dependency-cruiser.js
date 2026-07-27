@@ -15,11 +15,32 @@ const MESSAGING_ALLOWED_CORE_TARGETS = [
   "^src/helpers/GetTicketWbot",
   "^src/libs/wbot",
   "^src/models/(AuditLog|Company|Contact|Message|Ticket|Whatsapp|Queue|User|Setting)(\\.ts)?$",
+  "^src/services/MessageServices/CreateMessageService",
   "^src/services/WhatsappService/CreateWhatsAppService"
 ];
 
 module.exports = {
   forbidden: [
+    {
+      name: "baileys-somente-no-adapter",
+      severity: "error",
+      comment:
+        "Dependencias diretas de Baileys pertencem exclusivamente ao adapter de mensageria",
+      from: {
+        pathNot: ["^src/messaging/adapters/baileys(?:/|$)"]
+      },
+      to: {
+        path: "(?:^|/)node_modules/(?:@adiwajshing/)?baileys(?:/|$)|^(?:@adiwajshing/)?baileys(?:/|$)"
+      }
+    },
+    {
+      name: "messaging-public-sem-ciclos",
+      severity: "error",
+      comment:
+        "Fachadas publicas de mensageria nao podem participar de dependencias circulares",
+      from: { path: "^src/messaging/public(?:/|$)" },
+      to: { circular: true }
+    },
     {
       name: "core-nao-importa-internals-de-messaging",
       severity: "error",
@@ -62,7 +83,7 @@ module.exports = {
     tsPreCompilationDeps: true,
     tsConfig: { fileName: "tsconfig.json" },
     exclude: {
-      path: ["node_modules", "\\.spec\\.ts$", "__tests__", "\\.d\\.ts$"]
+      path: ["\\.spec\\.ts$", "__tests__", "\\.d\\.ts$"]
     }
   }
 };

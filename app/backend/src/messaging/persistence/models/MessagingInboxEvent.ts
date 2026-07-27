@@ -53,6 +53,11 @@ class MessagingInboxEvent extends Model<MessagingInboxEvent> {
   @Column(DataType.DATE)
   leaseExpiresAt: Date;
 
+  @Default(DataType.NOW)
+  @AllowNull(false)
+  @Column(DataType.DATE)
+  availableAt: Date;
+
   @Column(DataType.TEXT)
   lastError: string;
 

@@ -71,8 +71,7 @@ class OutboundPairRecoveryService {
       const command = await MessageCommand.findOne({
         where: { id: commandId },
         transaction,
-        lock: transaction.LOCK.UPDATE,
-        skipLocked: true
+        lock: transaction.LOCK.UPDATE
       });
 
       const event = await this.lockEvent(eventId, commandId, transaction);
@@ -174,8 +173,7 @@ class OutboundPairRecoveryService {
       return MessagingOutboxEvent.findOne({
         where: { id: eventId, status: OUTBOX_EVENT_STATUS.PROCESSING },
         transaction,
-        lock: transaction.LOCK.UPDATE,
-        skipLocked: true
+        lock: transaction.LOCK.UPDATE
       });
     }
     return MessagingOutboxEvent.findOne({
@@ -185,8 +183,7 @@ class OutboundPairRecoveryService {
         status: OUTBOX_EVENT_STATUS.PROCESSING
       },
       transaction,
-      lock: transaction.LOCK.UPDATE,
-      skipLocked: true
+      lock: transaction.LOCK.UPDATE
     });
   }
 }

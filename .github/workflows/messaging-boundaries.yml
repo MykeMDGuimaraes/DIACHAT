@@ -11,6 +11,29 @@ on:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: diachat_test
+          POSTGRES_USER: diachat
+          POSTGRES_PASSWORD: diachat
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U diachat -d diachat_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      NODE_ENV: test
+      DB_DIALECT: postgres
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_NAME: diachat_test
+      DB_USER: diachat
+      DB_PASS: diachat
+      NPM_CONFIG_ENGINE_STRICT: "true"
     defaults:
       run:
         working-directory: app/backend
@@ -23,4 +46,10 @@ jobs:
           cache-dependency-path: app/backend/package-lock.json
       - run: npm ci
       - run: npm run check:messaging-boundaries
+      - run: npm run check:messaging-architecture
+      - run: npm run check:boundary-fixtures
       - run: npm run build
+      - run: npx sequelize db:migrate
+      - run: npx sequelize db:migrate:undo:all
+      - run: npx sequelize db:migrate
+      - run: npx jest --runInBand --coverage=false

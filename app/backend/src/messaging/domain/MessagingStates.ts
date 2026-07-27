@@ -30,7 +30,7 @@ export const INBOX_EVENT_STATUS = {
 
 export const WEBHOOK_DELIVERY_STATUS = {
   READY: "ready",
-  LEASED: "leased",
+  PROCESSING: "processing",
   DELIVERED: "delivered",
   DEAD_LETTER: "dead_letter"
 } as const;

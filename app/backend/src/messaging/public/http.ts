@@ -8,6 +8,7 @@ export { default as apiKeyAuth } from "../api/apiKeyAuth";
 export { default as requireApiScope } from "../api/requireApiScope";
 export { default as publicApiRateLimit } from "../api/publicApiRateLimit";
 export { default as legacyApiDeprecation } from "../api/legacyApiDeprecation";
+export { default as isMessagingAdmin } from "../api/MessagingAdminGuard";
 export {
   createIssueApiCredentialHandler,
   listApiCredentialsHandler,

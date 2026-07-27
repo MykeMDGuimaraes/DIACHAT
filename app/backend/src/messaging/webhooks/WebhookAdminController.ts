@@ -16,12 +16,82 @@ interface WebhookAdminDependencies {
   retryDelivery(companyId: number, id: string): Promise<void>;
 }
 
+const subscriptionResponseFields = [
+  "id",
+  "companyId",
+  "name",
+  "url",
+  "enabled",
+  "events",
+  "connectionIds",
+  "messageKinds",
+  "includeApiOrigin",
+  "consecutiveFailures",
+  "pausedAt",
+  "lastSuccessAt",
+  "lastFailureAt",
+  "createdAt",
+  "updatedAt"
+] as const;
+
+const deliveryResponseFields = [
+  "id",
+  "subscriptionId",
+  "companyId",
+  "eventId",
+  "eventType",
+  "urlSnapshot",
+  "payload",
+  "status",
+  "attemptCount",
+  "availableAt",
+  "leaseExpiresAt",
+  "responseStatus",
+  "lastError",
+  "deliveredAt",
+  "createdAt",
+  "updatedAt"
+] as const;
+
+const toPlainRecord = (value: any): Record<string, unknown> => {
+  if (value && typeof value.toJSON === "function") {
+    return value.toJSON();
+  }
+  return value || {};
+};
+
+const selectResponseFields = (
+  value: any,
+  fields: readonly string[]
+): Record<string, unknown> => {
+  const plain = toPlainRecord(value);
+  return fields.reduce<Record<string, unknown>>((result, field) => {
+    if (plain[field] !== undefined) result[field] = plain[field];
+    return result;
+  }, {});
+};
+
+const serializeSubscription = (value: any): Record<string, unknown> =>
+  selectResponseFields(value, subscriptionResponseFields);
+
+const serializeSubscriptionMutation = (value: any): Record<string, unknown> => {
+  const result = serializeSubscription(value);
+  const plain = toPlainRecord(value);
+  if (plain.signingSecret !== undefined) {
+    result.signingSecret = plain.signingSecret;
+  }
+  return result;
+};
+
+const serializeDelivery = (value: any): Record<string, unknown> =>
+  selectResponseFields(value, deliveryResponseFields);
+
 const defaults: WebhookAdminDependencies = {
   create: createWebhookSubscription,
   list: companyId =>
     WebhookSubscription.findAll({
       where: { companyId },
-      attributes: { exclude: ["secretCiphertext"] },
+      attributes: { exclude: ["secretCiphertext", "keyVersion"] },
       order: [["createdAt", "DESC"]]
     }),
   update: updateWebhookSubscription,
@@ -38,6 +108,7 @@ const defaults: WebhookAdminDependencies = {
     if (query.status) where.status = query.status;
     return WebhookDelivery.findAll({
       where,
+      attributes: [...deliveryResponseFields],
       order: [["createdAt", "DESC"]],
       limit: 100
     });
@@ -67,17 +138,21 @@ export const createWebhookAdminHandlers = (
       ...req.body,
       companyId: req.user.companyId
     });
-    return res.status(201).json(result);
+    return res.status(201).json(serializeSubscriptionMutation(result));
   },
   list: async (req: Request, res: Response): Promise<Response> =>
-    res.json(await dependencies.list(req.user.companyId)),
+    res.json(
+      (await dependencies.list(req.user.companyId)).map(serializeSubscription)
+    ),
   update: async (req: Request, res: Response): Promise<Response> =>
     res.json(
-      await dependencies.update({
-        ...req.body,
-        companyId: req.user.companyId,
-        id: req.params.subscriptionId
-      })
+      serializeSubscriptionMutation(
+        await dependencies.update({
+          ...req.body,
+          companyId: req.user.companyId,
+          id: req.params.subscriptionId
+        })
+      )
     ),
   remove: async (req: Request, res: Response): Promise<Response> => {
     await dependencies.remove(req.user.companyId, req.params.subscriptionId);
@@ -85,7 +160,9 @@ export const createWebhookAdminHandlers = (
   },
   listDeliveries: async (req: Request, res: Response): Promise<Response> =>
     res.json(
-      await dependencies.listDeliveries(req.user.companyId, req.query as any)
+      (
+        await dependencies.listDeliveries(req.user.companyId, req.query as any)
+      ).map(serializeDelivery)
     ),
   retryDelivery: async (req: Request, res: Response): Promise<Response> => {
     await dependencies.retryDelivery(req.user.companyId, req.params.deliveryId);

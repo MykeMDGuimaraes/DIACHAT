@@ -3,9 +3,14 @@ import type { WAMessage } from "../../messaging/public/baileys";
 import AppError from "../../errors/AppError";
 import Message from "../../models/Message";
 import Ticket from "../../models/Ticket";
-import { baileysTicketMessagingProvider } from "../../messaging/public/baileys";
+import { BaileysTicketMessagingProvider } from "../../messaging/public/baileysTicketMessaging";
+import GetTicketWbot from "../../helpers/GetTicketWbot";
 
 import formatBody from "../../helpers/Mustache";
+
+const baileysTicketMessagingProvider = new BaileysTicketMessagingProvider(
+  GetTicketWbot
+);
 
 interface Request {
   body: string;

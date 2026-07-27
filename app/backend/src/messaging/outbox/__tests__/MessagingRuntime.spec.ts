@@ -29,8 +29,18 @@ describe("MessagingRuntime", () => {
           })
           .mockResolvedValue({ status: "idle" as const })
       },
-      { fanoutOne: jest.fn().mockResolvedValueOnce({ status: "created", deliveries: 2 }).mockResolvedValue({ status: "idle", deliveries: 0 }) },
-      { dispatchOne: jest.fn().mockResolvedValueOnce({ status: "delivered" }).mockResolvedValue({ status: "idle" }) }
+      {
+        fanoutOne: jest
+          .fn()
+          .mockResolvedValueOnce({ status: "created", deliveries: 2 })
+          .mockResolvedValue({ status: "idle", deliveries: 0 })
+      },
+      {
+        dispatchOne: jest
+          .fn()
+          .mockResolvedValueOnce({ status: "delivered" })
+          .mockResolvedValue({ status: "idle" })
+      }
     );
 
     await expect(runtime.runOnce()).resolves.toEqual({
@@ -42,5 +52,25 @@ describe("MessagingRuntime", () => {
       capacitySamplesObserved: 0
     });
     expect(events).toEqual(["recover", "inbox", "dispatch"]);
+  });
+
+  it("continues draining inbox events after retry and dead-letter outcomes", async () => {
+    const processOne = jest
+      .fn()
+      .mockResolvedValueOnce({ status: "retry" as const })
+      .mockResolvedValueOnce({ status: "dead_letter" as const })
+      .mockResolvedValueOnce({ status: "processed" as const })
+      .mockResolvedValue({ status: "idle" as const });
+    const runtime = new MessagingRuntime(
+      { recover: jest.fn().mockResolvedValue({ recovered: 0 }) },
+      { dispatchOne: jest.fn().mockResolvedValue({ status: "idle" }) },
+      5,
+      { processOne }
+    );
+
+    await expect(runtime.runOnce()).resolves.toEqual(
+      expect.objectContaining({ processedInbox: 1 })
+    );
+    expect(processOne).toHaveBeenCalledTimes(4);
   });
 });
