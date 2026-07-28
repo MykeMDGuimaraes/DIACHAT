@@ -12,3 +12,4 @@
 - [Build CRA de produção sem OOM](cra-build-oom.md) — só compila com GENERATE_SOURCEMAP=false + heap ~2560MB e dev server parado; processos em background do bash morrem, use workflow temporário.
 - [Preflight de produção](deploy-preflight-env.md) — publish "waiting for ready" sem logs = preflight falhou; vars novas vão no app/backend/.env (embarcado na imagem), validar preflight local antes.
 - [Drift de schema no publish](publish-schema-sync-drift.md) — sync dev→prod adiciona colunas em tabelas existentes sem SequelizeMeta; migrações precisam ser idempotentes (guards describeTable/to_regclass/pg_indexes).
+- [Custom DNS lookup no Node >=18](node-lookup-all-true.md) — https.request chama lookup com all=true esperando array; retorno único quebra com "Invalid IP address: undefined"; validar rede com disparo real, não só mocks.
