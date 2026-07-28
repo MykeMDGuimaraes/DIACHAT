@@ -58,7 +58,14 @@ interface EmitMessageReceivedInput {
 export const emitMessageReceived = async (
   input: EmitMessageReceivedInput
 ): Promise<void> => {
-  if (!input.whatsappId) return;
+  if (!input.whatsappId) {
+    // Sem whatsappId o filtro de conexões da assinatura não consegue casar;
+    // registrar para não perder webhooks silenciosamente.
+    logger.warn(
+      `[webhooks] message.received não emitido: ticket ${input.ticketId} sem whatsappId (mensagem ${input.messageId})`
+    );
+    return;
+  }
   await emitMessagingDomainEvent({
     companyId: input.companyId,
     eventType: "message.received",
