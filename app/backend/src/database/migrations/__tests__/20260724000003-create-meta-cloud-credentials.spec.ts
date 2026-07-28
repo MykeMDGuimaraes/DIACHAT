@@ -6,7 +6,8 @@ describe("20260724000003-create-meta-cloud-credentials", () => {
   it("adds provider identity to channels and stores Meta credentials in messaging", async () => {
     const queryInterface = {
       addColumn: jest.fn(),
-      sequelize: { query: jest.fn() },
+      describeTable: jest.fn().mockResolvedValue({}),
+      sequelize: { query: jest.fn().mockResolvedValue([[]]) },
       createTable: jest.fn(),
       addIndex: jest.fn()
     };
