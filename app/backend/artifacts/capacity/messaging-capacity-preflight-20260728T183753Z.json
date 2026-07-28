@@ -1,0 +1,75 @@
+{
+  "generatedAt": "2026-07-28T18:37:53.439Z",
+  "reportType": "capacity-preflight",
+  "issue": "https://github.com/MykeMDGuimaraes/DIACHAT/issues/2",
+  "source": {
+    "branch": "codex/messaging-capacity-gate",
+    "mainSha": "d3c53412fb165b93ebf6ceb4cfb9471c7c143475"
+  },
+  "target": {
+    "provider": "replit",
+    "app": "DIA CHAT",
+    "publicOrigin": "https://dia-chat.replit.app",
+    "environmentObserved": "production",
+    "distinctStagingEnvironmentConfirmed": false
+  },
+  "safety": {
+    "providerMockUsed": false,
+    "messagesSent": 0,
+    "secretValuesRead": false,
+    "secretValuesRecorded": false
+  },
+  "deployment": {
+    "lastBuildId": "8241669d",
+    "lastBuildCompleted": true,
+    "lastPromotionCompleted": false,
+    "promotionFailure": "Replit image registry returned HTTP 500",
+    "publicRuntime": "crash-loop",
+    "healthLiveStatus": 502,
+    "healthReadyStatus": 502
+  },
+  "configurationPresence": {
+    "DATABASE_URL": true,
+    "API_KEY_PEPPER": true,
+    "MESSAGING_WEBHOOK_VERIFY_TOKEN_PEPPER": true,
+    "MESSAGING_ENCRYPTION_ACTIVE_KEY_ID": true,
+    "MESSAGING_ENCRYPTION_ACTIVE_KEY": true,
+    "META_GRAPH_VERSION": true,
+    "BACKEND_URL": "derived-at-runtime",
+    "FRONTEND_URL": "derived-at-runtime",
+    "JWT_SECRET": true,
+    "JWT_REFRESH_SECRET": true,
+    "MESSAGING_CAPACITY_PROBE_ENABLED": false
+  },
+  "databaseRecovery": {
+    "platformPointInTimeRecoveryReported": true,
+    "restorationWindowIndependentlyConfirmed": false,
+    "projectOwnedSnapshotConfirmed": false
+  },
+  "serviceAuthentication": {
+    "activeCredentialsReported": 5,
+    "capacityCredentialTokenRetrieved": false
+  },
+  "realConnections": {
+    "registered": 2,
+    "active": 0,
+    "required": 20,
+    "connectionIdsRetrieved": 0
+  },
+  "capacityRun": {
+    "started": false,
+    "durationSeconds": 0,
+    "requestsPerSecond": 0,
+    "requests": 0,
+    "failures": 0,
+    "passed": false,
+    "blocked": true,
+    "blockers": [
+      "No distinct staging environment was confirmed",
+      "The public runtime returns HTTP 502",
+      "MESSAGING_CAPACITY_PROBE_ENABLED is effectively false",
+      "There are 0 active real connections; exactly 20 are required",
+      "A restorable PostgreSQL recovery point was not independently confirmed"
+    ]
+  }
+}
