@@ -10,3 +10,4 @@
 - [Backend clean install vs firewall](backend-clean-install.md) — override→graceful-fs; baileys vendorado em vendor/; após merge que muda package.json, regenerar lock (rm + install --package-lock-only) ou o npm ci do deploy falha.
 - [ESLint --fix hazards no backend](eslint-autofix-hazards.md) — fix em massa quebrou sequelize/types, dot-notation e @ts-ignore; sempre rodar tsc + reiniciar Backend depois.
 - [Build CRA de produção sem OOM](cra-build-oom.md) — só compila com GENERATE_SOURCEMAP=false + heap ~2560MB e dev server parado; processos em background do bash morrem, use workflow temporário.
+- [Preflight de produção](deploy-preflight-env.md) — publish "waiting for ready" sem logs = preflight falhou; vars novas vão no app/backend/.env (embarcado na imagem), validar preflight local antes.
