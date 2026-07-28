@@ -8,6 +8,7 @@ class WebhookDelivery extends Model<WebhookDelivery> {
   @AllowNull(false) @Column(DataType.STRING) eventId: string;
   @AllowNull(false) @Column(DataType.STRING) eventType: string;
   @AllowNull(false) @Column(DataType.TEXT) urlSnapshot: string;
+  @Default("POST") @AllowNull(false) @Column(DataType.STRING) methodSnapshot: string;
   @AllowNull(false) @Column(DataType.TEXT) secretCiphertextSnapshot: string;
   @AllowNull(false) @Column(DataType.STRING) keyVersion: string;
   @AllowNull(false) @Column(DataType.JSONB) payload: Record<string, unknown>;

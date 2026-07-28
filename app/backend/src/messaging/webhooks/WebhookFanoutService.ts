@@ -114,6 +114,7 @@ class WebhookFanoutService {
               eventId: event.id,
               eventType: event.eventType,
               urlSnapshot: subscription.url,
+              methodSnapshot: subscription.method || "POST",
               secretCiphertextSnapshot: subscription.secretCiphertext,
               keyVersion: subscription.keyVersion,
               payload: {

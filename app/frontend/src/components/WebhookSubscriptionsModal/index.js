@@ -9,6 +9,7 @@ import {
   DialogTitle,
   FormControlLabel,
   IconButton,
+  MenuItem,
   Switch,
   TextField,
   Typography
@@ -34,6 +35,7 @@ const WebhookSubscriptionsModal = ({ open, onClose, connections = [] }) => {
   const [deliveries, setDeliveries] = useState([]);
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
+  const [method, setMethod] = useState("POST");
   const [includeApiOrigin, setIncludeApiOrigin] = useState(false);
   const [createdSecret, setCreatedSecret] = useState("");
   const [selectedEvents, setSelectedEvents] = useState(supportedEvents);
@@ -62,11 +64,14 @@ const WebhookSubscriptionsModal = ({ open, onClose, connections = [] }) => {
       const { data } = await api.post("/api/v1/webhook-subscriptions", {
         name,
         url,
+        method,
         events: selectedEvents,
         messageKinds: selectedKinds,
         connectionIds: connectionIds
           .split(",")
-          .map(value => Number(value.trim()))
+          .map(value => value.trim())
+          .filter(Boolean)
+          .map(Number)
           .filter(Number.isInteger),
         includeApiOrigin,
         enabled: true
@@ -74,6 +79,7 @@ const WebhookSubscriptionsModal = ({ open, onClose, connections = [] }) => {
       setCreatedSecret(data.signingSecret || "");
       setName("");
       setUrl("");
+      setMethod("POST");
       setConnectionIds("");
       await load();
       toast.success("Webhook criado.");
@@ -127,6 +133,20 @@ const WebhookSubscriptionsModal = ({ open, onClose, connections = [] }) => {
         <Typography variant="h6">Nova assinatura</Typography>
         <TextField fullWidth margin="dense" variant="outlined" label="Nome" value={name} onChange={event => setName(event.target.value)} />
         <TextField fullWidth margin="dense" variant="outlined" label="URL HTTPS" value={url} onChange={event => setUrl(event.target.value)} />
+        <TextField
+          select
+          fullWidth
+          margin="dense"
+          variant="outlined"
+          label="Método HTTP"
+          value={method}
+          onChange={event => setMethod(event.target.value)}
+          helperText="Método usado na requisição enviada ao seu endpoint"
+        >
+          {["POST", "PUT", "PATCH"].map(option => (
+            <MenuItem key={option} value={option}>{option}</MenuItem>
+          ))}
+        </TextField>
         <Typography color="textSecondary">Eventos</Typography>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
           {supportedEvents.map(event => (
@@ -166,7 +186,7 @@ const WebhookSubscriptionsModal = ({ open, onClose, connections = [] }) => {
         {items.map(item => (
           <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 8, margin: "8px 0" }}>
             <Chip label={item.pausedAt ? "Pausado" : item.enabled ? "Ativo" : "Desativado"} color={item.pausedAt ? "secondary" : "primary"} />
-            <Typography style={{ flex: 1 }}>{item.name} — {item.url}</Typography>
+            <Typography style={{ flex: 1 }}>{item.name} — {item.method || "POST"} {item.url}</Typography>
             <Button size="small" onClick={() => update(item.id, { enabled: !item.enabled })}>
               {item.enabled ? "Desativar" : "Ativar"}
             </Button>

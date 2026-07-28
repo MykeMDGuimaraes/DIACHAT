@@ -26,6 +26,7 @@ import { getIO } from "../../libs/socket";
 import { publishTenantEvent } from "../../libs/tenantEvents";
 import { toConversationMessageDTO } from "../InternalV1Services/Dtos";
 import CreateMessageService from "../MessageServices/CreateMessageService";
+import { emitMessageReceived } from "../../messaging/outbox/EmitMessagingDomainEvent";
 import { logger } from "../../utils/logger";
 import CreateOrUpdateContactService from "../ContactServices/CreateOrUpdateContactService";
 import FindOrCreateTicketService from "../TicketServices/FindOrCreateTicketService";
@@ -942,6 +943,17 @@ export const verifyMediaMessage = async (
     companyId: ticket.companyId
   });
 
+  if (!msg.key.fromMe) {
+    await emitMessageReceived({
+      companyId: ticket.companyId,
+      messageId: newMessage.id,
+      ticketId: ticket.id,
+      contactId: contact?.id,
+      whatsappId: ticket.whatsappId,
+      mediaType: messageData.mediaType
+    });
+  }
+
   if (!msg.key.fromMe && ticket.status === "closed") {
     await ticket.update({ status: "pending" });
     await ticket.reload({
@@ -1006,6 +1018,17 @@ export const verifyMessage = async (
   });
 
   await CreateMessageService({ messageData, companyId: ticket.companyId });
+
+  if (!msg.key.fromMe && !isEdited) {
+    await emitMessageReceived({
+      companyId: ticket.companyId,
+      messageId: messageData.id,
+      ticketId: ticket.id,
+      contactId: contact?.id,
+      whatsappId: ticket.whatsappId,
+      mediaType: messageData.mediaType
+    });
+  }
 
   if (!msg.key.fromMe && ticket.status === "closed") {
     await ticket.update({ status: "pending" });

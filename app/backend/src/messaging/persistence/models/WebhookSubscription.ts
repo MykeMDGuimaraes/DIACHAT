@@ -6,6 +6,7 @@ class WebhookSubscription extends Model<WebhookSubscription> {
   @AllowNull(false) @Column(DataType.INTEGER) companyId: number;
   @AllowNull(false) @Column(DataType.STRING) name: string;
   @AllowNull(false) @Column(DataType.TEXT) url: string;
+  @Default("POST") @AllowNull(false) @Column(DataType.STRING) method: string;
   @Default(true) @AllowNull(false) @Column(DataType.BOOLEAN) enabled: boolean;
   @AllowNull(false) @Column(DataType.JSONB) events: string[];
   @Default([]) @AllowNull(false) @Column(DataType.JSONB) connectionIds: number[];

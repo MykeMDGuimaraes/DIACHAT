@@ -19,10 +19,30 @@ const supportedEvents = new Set([
   "contact.updated"
 ]);
 
+const supportedMethods = new Set(["POST", "PUT", "PATCH"]);
+
+const normalizeWebhookMethod = (method?: string): string => {
+  const normalized = (method || "POST").trim().toUpperCase();
+  if (!supportedMethods.has(normalized)) {
+    throw new AppError(
+      "Método HTTP de webhook inválido (use POST, PUT ou PATCH)",
+      400
+    );
+  }
+  return normalized;
+};
+
+// IDs de conexão começam em 1; valores inválidos (ex.: 0 gerado por campo
+// vazio na UI) fariam o filtro nunca casar e silenciariam as entregas.
+const sanitizeConnectionIds = (ids?: number[]): number[] => [
+  ...new Set((ids || []).filter(id => Number.isInteger(id) && id > 0))
+];
+
 export interface CreateWebhookSubscriptionInput {
   companyId: number;
   name: string;
   url: string;
+  method?: string;
   events: string[];
   connectionIds?: number[];
   messageKinds?: string[];
@@ -55,15 +75,17 @@ export const createWebhookSubscription = async (
   ) {
     throw new AppError("Configuração de webhook inválida", 400);
   }
+  const method = normalizeWebhookMethod(input.method);
 
   const signingSecret = dependencies.generateSecret();
   const subscription = await dependencies.create({
     companyId: input.companyId,
     name: input.name.trim(),
     url: input.url,
+    method,
     enabled: true,
     events: [...new Set(input.events)],
-    connectionIds: [...new Set(input.connectionIds || [])],
+    connectionIds: sanitizeConnectionIds(input.connectionIds),
     messageKinds: [...new Set(input.messageKinds || [])],
     includeApiOrigin: input.includeApiOrigin === true,
     secretCiphertext: dependencies.encryptSecret(
@@ -81,6 +103,7 @@ export interface UpdateWebhookSubscriptionInput {
   id: string;
   name?: string;
   url?: string;
+  method?: string;
   enabled?: boolean;
   events?: string[];
   connectionIds?: number[];
@@ -120,9 +143,11 @@ export const updateWebhookSubscription = async (
   for (const key of ["name", "url", "enabled", "includeApiOrigin"] as const) {
     if (input[key] !== undefined) changes[key] = input[key];
   }
+  if (input.method !== undefined)
+    changes.method = normalizeWebhookMethod(input.method);
   if (input.events) changes.events = [...new Set(input.events)];
   if (input.connectionIds)
-    changes.connectionIds = [...new Set(input.connectionIds)];
+    changes.connectionIds = sanitizeConnectionIds(input.connectionIds);
   if (input.messageKinds)
     changes.messageKinds = [...new Set(input.messageKinds)];
   let signingSecret: string | undefined;

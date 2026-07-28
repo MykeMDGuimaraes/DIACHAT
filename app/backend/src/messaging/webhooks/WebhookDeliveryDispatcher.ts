@@ -21,6 +21,7 @@ interface ClaimedDelivery {
   id: string;
   subscriptionId: string;
   urlSnapshot: string;
+  methodSnapshot?: string;
   secretCiphertextSnapshot: string;
   payload: Record<string, any>;
   attemptCount: number;
@@ -33,6 +34,7 @@ interface PostResult {
 }
 interface PostInput {
   url: string;
+  method: string;
   rawBody: string;
   headers: Record<string, string>;
 }
@@ -68,11 +70,17 @@ export const nextSubscriptionFailureState = (
   };
 };
 
+const supportedMethods = new Set(["POST", "PUT", "PATCH"]);
+
 const securePost = async ({
   url: value,
   rawBody,
-  headers
+  headers,
+  method: rawMethod
 }: PostInput): Promise<PostResult> => {
+  const method = supportedMethods.has((rawMethod || "").toUpperCase())
+    ? rawMethod.toUpperCase()
+    : "POST";
   const url = validateWebhookUrl(value);
   const addresses = await dns.lookup(url.hostname, {
     all: true,
@@ -86,15 +94,34 @@ const securePost = async ({
     const request = https.request(
       url,
       {
-        method: "POST",
+        method,
         headers: {
           ...headers,
           "Content-Type": "application/json",
           "Content-Length": Buffer.byteLength(rawBody)
         },
         timeout: 10000,
-        lookup: (_hostname, _options, callback) =>
-          callback(null, selected.address, selected.family)
+        // Node >= 18 invoca o lookup customizado com all: true e espera um
+        // array de endereços; devolvemos a lista validada/pinned completa.
+        // (a tipagem do LookupFunction só cobre o formato de endereço único)
+        lookup: (_hostname, options, callback) => {
+          if (options && (options as { all?: boolean }).all) {
+            (
+              callback as unknown as (
+                err: NodeJS.ErrnoException | null,
+                all: Array<{ address: string; family: number }>
+              ) => void
+            )(
+              null,
+              addresses.map(item => ({
+                address: item.address,
+                family: item.family
+              }))
+            );
+            return;
+          }
+          callback(null, selected.address, selected.family);
+        }
       },
       response => {
         const chunks: Buffer[] = [];
@@ -249,6 +276,7 @@ class WebhookDeliveryDispatcher {
       );
       const response = await this.dependencies.post({
         url: delivery.urlSnapshot,
+        method: delivery.methodSnapshot || "POST",
         rawBody,
         headers: {
           "X-DiaChat-Timestamp": timestamp,
