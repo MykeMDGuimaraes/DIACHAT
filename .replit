@@ -76,3 +76,10 @@ timeoutMs = 600000
 deploymentTarget = "vm"
 run = ["bash", "scripts/deploy-run.sh"]
 build = ["bash", "scripts/deploy-build.sh"]
+
+[userenv]
+
+[userenv.production]
+DB_SSL = "true"
+MESSAGING_ENCRYPTION_ACTIVE_KEY_ID = "k1"
+META_GRAPH_VERSION = "v23.0"
