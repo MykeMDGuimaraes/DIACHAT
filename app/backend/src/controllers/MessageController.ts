@@ -1,5 +1,7 @@
 import { Request, Response } from "express";
+import { UniqueConstraintError } from "sequelize";
 import AppError from "../errors/AppError";
+import V1MessageIdempotency from "../models/V1MessageIdempotency";
 
 import SetTicketMessagesAsRead from "../helpers/SetTicketMessagesAsRead";
 import { getIO } from "../libs/socket";
@@ -32,6 +34,7 @@ type MessageData = {
   quotedMsg?: Message;
   number?: string;
   closeTicket?: true;
+  clientMessageId?: string;
 };
 
 export const index = async (req: Request, res: Response): Promise<Response> => {
@@ -63,7 +66,7 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
 
 export const store = async (req: Request, res: Response): Promise<Response> => {
   const { ticketId } = req.params;
-  const { body, quotedMsg }: MessageData = req.body;
+  const { body, quotedMsg, clientMessageId }: MessageData = req.body;
   const medias = req.files as Express.Multer.File[];
   const { companyId } = req.user;
 
@@ -81,9 +84,68 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
         });
       })
     );
-  } else {
-    const send = await SendWhatsAppMessage({ body, ticket, quotedMsg });
+    return res.send();
   }
+
+  // Idempotency: a retry after an ambiguous failure (proxy/browser cutting
+  // the request while the backend still waits for the wbot to reconnect)
+  // must never deliver the same message twice to the contact.
+  if (clientMessageId && typeof clientMessageId === "string") {
+    if (clientMessageId.length > 191) {
+      throw new AppError("clientMessageId inválido", 400);
+    }
+
+    const existing = await V1MessageIdempotency.findOne({
+      where: { companyId, ticketId: ticket.id, clientMessageId }
+    });
+    if (existing) {
+      if (!existing.messageId) {
+        // Original request is still in flight; retrying now could duplicate.
+        throw new AppError("ERR_SEND_IN_PROGRESS", 409);
+      }
+      const message = await Message.findByPk(existing.messageId);
+      return res.status(200).json(message);
+    }
+
+    let record: V1MessageIdempotency;
+    try {
+      record = await V1MessageIdempotency.create({
+        companyId,
+        ticketId: ticket.id,
+        clientMessageId
+      } as any);
+    } catch (err) {
+      if (err instanceof UniqueConstraintError) {
+        const concurrent = await V1MessageIdempotency.findOne({
+          where: { companyId, ticketId: ticket.id, clientMessageId }
+        });
+        if (concurrent && concurrent.messageId) {
+          const message = await Message.findByPk(concurrent.messageId);
+          return res.status(200).json(message);
+        }
+        throw new AppError("ERR_SEND_IN_PROGRESS", 409);
+      }
+      throw err;
+    }
+
+    try {
+      const sent = await SendWhatsAppMessage({ body, ticket, quotedMsg });
+      const messageId = sent?.key?.id;
+      if (messageId) {
+        await record.update({ messageId });
+      } else {
+        await record.destroy().catch(() => undefined);
+      }
+    } catch (err) {
+      // Send failed for sure: free the key so a retry can go through.
+      await record.destroy().catch(() => undefined);
+      throw err;
+    }
+
+    return res.send();
+  }
+
+  await SendWhatsAppMessage({ body, ticket, quotedMsg });
 
   return res.send();
 };

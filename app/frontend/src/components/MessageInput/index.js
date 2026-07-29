@@ -180,6 +180,26 @@ const MessageInput = ({ ticketStatus }) => {
 
 	const [signMessage, setSignMessage] = useLocalStorage("signOption", true);
 
+	// Idempotency key for the current send attempt. It is kept across
+	// retries of the same text (so a resend after an ambiguous error can
+	// never deliver twice) and reset when the text changes or is sent.
+	const sendAttemptRef = useRef(null);
+
+	const getClientMessageId = messageBody => {
+		if (
+			sendAttemptRef.current &&
+			sendAttemptRef.current.body === messageBody
+		) {
+			return sendAttemptRef.current.id;
+		}
+		const id =
+			window.crypto && window.crypto.randomUUID
+				? window.crypto.randomUUID()
+				: `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+		sendAttemptRef.current = { id, body: messageBody };
+		return id;
+	};
+
 	useEffect(() => {
 		inputRef.current.focus();
 	}, [replyingMessage]);
@@ -243,17 +263,20 @@ const MessageInput = ({ ticketStatus }) => {
 		if (inputMessage.trim() === "") return;
 		setLoading(true);
 
+		const messageBody = signMessage
+			? `*${user?.name}:*\n${inputMessage.trim()}`
+			: inputMessage.trim();
 		const message = {
 			read: 1,
 			fromMe: true,
 			mediaUrl: "",
-			body: signMessage
-				? `*${user?.name}:*\n${inputMessage.trim()}`
-				: inputMessage.trim(),
+			body: messageBody,
 			quotedMsg: replyingMessage,
+			clientMessageId: getClientMessageId(messageBody),
 		};
 		try {
 			await api.post(`/messages/${ticketId}`, message);
+			sendAttemptRef.current = null;
 			setInputMessage("");
 			setShowEmoji(false);
 			setReplyingMessage(null);
