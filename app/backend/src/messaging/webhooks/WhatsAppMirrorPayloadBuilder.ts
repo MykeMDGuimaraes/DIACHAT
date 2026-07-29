@@ -1,6 +1,6 @@
 import { v5 as uuidv5 } from "uuid";
 
-import { canonicalJsonBytes } from "./WhatsAppMirrorCanonical";
+import { canonicalJsonBytes, sha256Hex } from "./WhatsAppMirrorCanonical";
 import { WhatsAppMirrorUnsafePayloadError } from "./WhatsAppMirrorErrors";
 
 export { WhatsAppMirrorUnsafePayloadError } from "./WhatsAppMirrorErrors";
@@ -32,6 +32,36 @@ const forbiddenKeys = new Set([
   "token",
   "verifytoken"
 ]);
+
+const forbiddenKeyWords = new Set([
+  "authorization",
+  "cookie",
+  "credential",
+  "credentials",
+  "passwd",
+  "password",
+  "secret",
+  "token"
+]);
+
+const isForbiddenKey = (key: string): boolean => {
+  const normalizedKey = key.replace(/[^a-z0-9]/gi, "").toLowerCase();
+  if (normalizedKey === "keyversion") return false;
+  if (forbiddenKeys.has(normalizedKey)) return true;
+
+  const words = key
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+  if (words.some(word => forbiddenKeyWords.has(word))) return true;
+
+  return (
+    /(?:auth|access|refresh|session|verify)?token(?:value)?$/.test(
+      normalizedKey
+    ) || /(?:app|client|api|webhook)?secret(?:value)?$/.test(normalizedKey)
+  );
+};
 
 const forbiddenValuePatterns = [
   /\b(?:bearer|basic)\s+[A-Za-z0-9._~+/=-]{8,}/i,
@@ -67,9 +97,8 @@ const validateSafePayload = (
     );
   } else {
     Object.entries(value).forEach(([key, child]) => {
-      const normalizedKey = key.replace(/[^a-z0-9]/gi, "").toLowerCase();
       const childPath = `${path}.${key}`;
-      if (forbiddenKeys.has(normalizedKey)) {
+      if (isForbiddenKey(key)) {
         throw new WhatsAppMirrorUnsafePayloadError(
           `Forbidden key at ${childPath}`
         );
@@ -275,6 +304,12 @@ export interface WhatsAppMirrorEnvelope {
     message: WhatsAppMirrorMessage;
     truncated: boolean;
   };
+}
+
+export interface WhatsAppMirrorSerializedSnapshot {
+  envelope: WhatsAppMirrorEnvelope;
+  rawBody: string;
+  bodySha256: string;
 }
 
 const valueOrNull = <T>(value: T | null | undefined): T | null =>
@@ -523,49 +558,6 @@ const deterministicEventId = (input: WhatsAppMirrorPayloadInput): string =>
     WHATSAPP_MIRROR_EVENT_NAMESPACE
   );
 
-interface StringLeaf {
-  path: string;
-  bytes: number;
-  clear(): void;
-}
-
-const collectStringLeaves = (
-  value: unknown,
-  path: string,
-  leaves: StringLeaf[]
-): void => {
-  if (value === null || typeof value !== "object") return;
-  if (Array.isArray(value)) {
-    value.forEach((item, index) => {
-      if (typeof item === "string") {
-        leaves.push({
-          path: `${path}[${index}]`,
-          bytes: Buffer.byteLength(item, "utf8"),
-          clear: () => {
-            value[index] = null;
-          }
-        });
-      } else {
-        collectStringLeaves(item, `${path}[${index}]`, leaves);
-      }
-    });
-    return;
-  }
-  Object.entries(value).forEach(([key, child]) => {
-    if (typeof child === "string") {
-      leaves.push({
-        path: `${path}.${key}`,
-        bytes: Buffer.byteLength(child, "utf8"),
-        clear: () => {
-          (value as Record<string, unknown>)[key] = null;
-        }
-      });
-    } else {
-      collectStringLeaves(child, `${path}.${key}`, leaves);
-    }
-  });
-};
-
 const enforceEnvelopeCap = (
   payload: WhatsAppMirrorEnvelope
 ): WhatsAppMirrorEnvelope => {
@@ -577,67 +569,76 @@ const enforceEnvelopeCap = (
 
   payload.data.truncated = true;
   const message = payload.data.message;
-  const richBlocks: Array<
-    keyof Pick<
-      WhatsAppMirrorMessage,
-      | "contacts"
-      | "poll"
-      | "location"
-      | "media"
-      | "interactive"
-      | "reaction"
-      | "quoted"
-      | "edit"
-      | "delete"
-    >
-  > = [
-    "contacts",
-    "poll",
-    "location",
-    "media",
-    "interactive",
-    "reaction",
-    "quoted",
-    "edit",
-    "delete"
+  const pruneOptionalContent = [
+    () => {
+      message.contacts = null;
+    },
+    () => {
+      message.poll = null;
+    },
+    () => {
+      message.location = null;
+    },
+    () => {
+      message.text = null;
+    },
+    () => {
+      if (message.quoted) {
+        message.quoted.text = null;
+      }
+    },
+    () => {
+      if (message.interactive) {
+        message.interactive.title = null;
+        message.interactive.description = null;
+      }
+    },
+    () => {
+      if (message.media) {
+        message.media.caption = null;
+        message.media.fileName = null;
+      }
+    },
+    () => {
+      if (message.reaction) message.reaction.emoji = null;
+    },
+    () => {
+      if (message.edit) message.edit.text = null;
+    },
+    () => {
+      payload.data.contact.name = null;
+      payload.data.contact.pushName = null;
+    },
+    () => {
+      payload.data.chat.name = null;
+    }
   ];
-  const fitsAfterRichBlockPruning = richBlocks.some(key => {
-    if (message[key] !== null) message[key] = null;
+  const fitsAfterOptionalPruning = pruneOptionalContent.some(prune => {
+    prune();
     return (
       canonicalJsonBytes(payload).byteLength <= WHATSAPP_MIRROR_ENVELOPE_BYTES
     );
   });
-  if (fitsAfterRichBlockPruning) return payload;
+  if (fitsAfterOptionalPruning) return payload;
 
-  while (
-    canonicalJsonBytes(payload).byteLength > WHATSAPP_MIRROR_ENVELOPE_BYTES
-  ) {
-    const leaves: StringLeaf[] = [];
-    collectStringLeaves(payload.data, "$.data", leaves);
-    const largest = leaves.sort(
-      (left, right) =>
-        right.bytes - left.bytes || left.path.localeCompare(right.path)
-    )[0];
-    if (!largest) break;
-    largest.clear();
-  }
-
-  if (canonicalJsonBytes(payload).byteLength > WHATSAPP_MIRROR_ENVELOPE_BYTES) {
-    const overflow =
-      canonicalJsonBytes(payload).byteLength - WHATSAPP_MIRROR_ENVELOPE_BYTES;
-    const maximumTypeBytes = Math.max(
-      0,
-      Buffer.byteLength(payload.type, "utf8") - overflow - 16
-    );
-    payload.type = truncateUtf8(payload.type, maximumTypeBytes).value || "";
-  }
-  if (canonicalJsonBytes(payload).byteLength > WHATSAPP_MIRROR_ENVELOPE_BYTES) {
-    throw new RangeError("WhatsApp mirror envelope exceeds 262144 bytes");
-  }
-  return payload;
+  throw new RangeError(
+    "Mandatory WhatsApp mirror envelope exceeds 262144 bytes"
+  );
 };
 
 class WhatsAppMirrorPayloadBuilder {
+  buildSnapshot(
+    input: WhatsAppMirrorPayloadInput
+  ): WhatsAppMirrorSerializedSnapshot {
+    const envelope = this.build(input);
+    const canonicalBytes = canonicalJsonBytes(envelope);
+    return {
+      envelope,
+      rawBody: canonicalBytes.toString("utf8"),
+      bodySha256: sha256Hex(canonicalBytes)
+    };
+  }
+
   // The builder is intentionally stateless so adapters can share one pure contract.
   // eslint-disable-next-line class-methods-use-this
   build(input: WhatsAppMirrorPayloadInput): WhatsAppMirrorEnvelope {

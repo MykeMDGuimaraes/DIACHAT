@@ -504,6 +504,30 @@ export const messagingOpenApi = {
           }
         }
       },
+      WhatsAppMirrorSerializedSnapshot: {
+        type: "object",
+        additionalProperties: false,
+        description:
+          "Resultado interno da projeção para persistência/entrega. rawBody é o envelope canônico serializado; bodySha256 não integra o rawBody nem o corpo enviado ao consumidor.",
+        required: ["envelope", "rawBody", "bodySha256"],
+        properties: {
+          envelope: {
+            $ref: "#/components/schemas/WhatsAppMirrorEnvelope"
+          },
+          rawBody: {
+            type: "string",
+            contentMediaType: "application/json",
+            description:
+              "JSON canônico do envelope em UTF-8, exatamente como assinado e entregue."
+          },
+          bodySha256: {
+            type: "string",
+            pattern: "^[0-9a-f]{64}$",
+            description:
+              "SHA-256 hexadecimal minúsculo dos bytes UTF-8 exatos de rawBody."
+          }
+        }
+      },
       Error: {
         type: "object",
         required: ["error"],
@@ -692,6 +716,9 @@ export const messagingOpenApi = {
     "transcript:read"
   ],
   "x-webhook-events": {
+    payloadSchema: {
+      $ref: "#/components/schemas/WhatsAppMirrorEnvelope"
+    },
     events: [
       "button.clicked",
       "message.received",
@@ -703,6 +730,12 @@ export const messagingOpenApi = {
       "conversation.created",
       "conversation.updated"
     ]
+  },
+  "x-whatsapp-mirror-projection": {
+    envelopeSchema: "#/components/schemas/WhatsAppMirrorEnvelope",
+    serializedSnapshotSchema:
+      "#/components/schemas/WhatsAppMirrorSerializedSnapshot",
+    digestScope: "SHA-256 dos bytes UTF-8 exatos de rawBody"
   },
   "x-webhook-signature": {
     algorithm: "HMAC-SHA256",

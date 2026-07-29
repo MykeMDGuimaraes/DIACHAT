@@ -145,4 +145,25 @@ describe("MessagingOpenApi 1.2", () => {
       })
     );
   });
+
+  it("links webhook payloads to the envelope and documents the non-recursive serialized snapshot", () => {
+    const schemas = messagingOpenApi.components.schemas;
+    const snapshot = schemas.WhatsAppMirrorSerializedSnapshot;
+
+    expect(snapshot.required).toEqual(["envelope", "rawBody", "bodySha256"]);
+    expect(snapshot.properties.envelope).toEqual({
+      $ref: "#/components/schemas/WhatsAppMirrorEnvelope"
+    });
+    expect(snapshot.properties.bodySha256.pattern).toBe("^[0-9a-f]{64}$");
+    expect(snapshot.description).toContain("bodySha256 não integra o rawBody");
+    expect(messagingOpenApi["x-webhook-events"].payloadSchema).toEqual({
+      $ref: "#/components/schemas/WhatsAppMirrorEnvelope"
+    });
+    expect(messagingOpenApi["x-whatsapp-mirror-projection"]).toEqual({
+      envelopeSchema: "#/components/schemas/WhatsAppMirrorEnvelope",
+      serializedSnapshotSchema:
+        "#/components/schemas/WhatsAppMirrorSerializedSnapshot",
+      digestScope: "SHA-256 dos bytes UTF-8 exatos de rawBody"
+    });
+  });
 });

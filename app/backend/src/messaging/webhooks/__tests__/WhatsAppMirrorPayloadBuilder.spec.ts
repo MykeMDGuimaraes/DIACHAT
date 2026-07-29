@@ -1,3 +1,5 @@
+import { createHash } from "crypto";
+
 import WhatsAppMirrorPayloadBuilder, {
   WHATSAPP_MIRROR_ENVELOPE_BYTES,
   WhatsAppMirrorPayloadInput,
@@ -74,6 +76,24 @@ const baseInput = (): WhatsAppMirrorPayloadInput => ({
 });
 
 describe("WhatsAppMirrorPayloadBuilder", () => {
+  it("builds a serialized snapshot with canonical rawBody and its SHA-256", () => {
+    const snapshot = new WhatsAppMirrorPayloadBuilder().buildSnapshot(
+      baseInput()
+    );
+
+    expect(snapshot.rawBody).toBe(
+      canonicalJsonBytes(snapshot.envelope).toString("utf8")
+    );
+    expect(snapshot.rawBody.startsWith('{"createdAt":')).toBe(true);
+    expect(snapshot.bodySha256).toBe(
+      createHash("sha256")
+        .update(Buffer.from(snapshot.rawBody, "utf8"))
+        .digest("hex")
+    );
+    expect(snapshot.bodySha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(JSON.parse(snapshot.rawBody)).not.toHaveProperty("bodySha256");
+  });
+
   it("builds the whatsapp-mirror/1 structure while retaining every v1.1 correlation field", () => {
     const payload = new WhatsAppMirrorPayloadBuilder().build(baseInput());
 
@@ -276,6 +296,36 @@ describe("WhatsAppMirrorPayloadBuilder", () => {
     );
   });
 
+  it.each(["authToken", "sessionToken", "appSecret", "clientSecretValue"])(
+    "rejects compound secret-bearing key %s inside nested arrays",
+    key => {
+      const input = baseInput();
+      const unsafeContact = {
+        displayName: null,
+        vcard: null,
+        phoneNumbers: null,
+        metadata: { [key]: "secret-material-that-must-not-project" }
+      };
+      input.message.contacts = [unsafeContact];
+
+      expect(() => new WhatsAppMirrorPayloadBuilder().build(input)).toThrow(
+        new WhatsAppMirrorUnsafePayloadError(
+          `Forbidden key at $.message.contacts[0].metadata.${key}`
+        )
+      );
+    }
+  );
+
+  it("allows non-secret keyVersion metadata but does not project it publicly", () => {
+    const input = baseInput();
+    const providerWithKeyVersion = { ...input.provider, keyVersion: "v2" };
+    input.provider = providerWithKeyVersion;
+
+    const payload = new WhatsAppMirrorPayloadBuilder().build(input);
+
+    expect(payload.data.provider).not.toHaveProperty("keyVersion");
+  });
+
   it("rejects secret-shaped values even when stored under an allowed key", () => {
     const input = baseInput();
     input.message.text = "Bearer abcdefghijklmnopqrstuvwxyz";
@@ -336,5 +386,97 @@ describe("WhatsAppMirrorPayloadBuilder", () => {
       kind: "text",
       origin: "provider"
     });
+  });
+
+  it("prunes oversized optional content without clearing long correlations or media integrity fields", () => {
+    const input = baseInput();
+    const longCorrelation = "correlation-".repeat(1600);
+    input.correlation = {
+      messageId: `${longCorrelation}message`,
+      whatsappId: 42,
+      conversationId: `${longCorrelation}conversation`,
+      contactId: `${longCorrelation}contact`,
+      externalTicketId: `${longCorrelation}ticket`,
+      automationEpoch: 8,
+      actorType: `${longCorrelation}actor`,
+      kind: `${longCorrelation}kind`,
+      origin: `${longCorrelation}origin`
+    };
+    input.message.media = {
+      type: "image",
+      mimeType: "image/jpeg",
+      fileName: "proof.jpg",
+      sizeBytes: 300000,
+      sha256: "a".repeat(64),
+      url: "/api/v1/webhook-media/message-1",
+      available: true,
+      caption: "caption-".repeat(30000)
+    };
+    input.message.quoted = {
+      id: "quoted-1",
+      providerMessageId: "provider-quoted-1",
+      participant: "5511988887777@s.whatsapp.net",
+      type: "text",
+      text: "q".repeat(4096)
+    };
+    input.contact.name = "name-".repeat(26000);
+    input.message.contacts = [
+      {
+        displayName: "Oversized",
+        vcard: "v".repeat(300000),
+        phoneNumbers: ["5511977776666"]
+      }
+    ];
+
+    const payload = new WhatsAppMirrorPayloadBuilder().build(input);
+
+    expect(canonicalJsonBytes(payload).byteLength).toBeLessThanOrEqual(
+      WHATSAPP_MIRROR_ENVELOPE_BYTES
+    );
+    expect(payload.data.truncated).toBe(true);
+    expect(payload.data).toMatchObject(input.correlation);
+    expect(payload.data.message.media).toMatchObject({
+      type: "image",
+      mimeType: "image/jpeg",
+      sha256: "a".repeat(64),
+      url: "/api/v1/webhook-media/message-1",
+      available: true,
+      caption: null
+    });
+    expect(payload.data.message.quoted).toMatchObject({
+      id: "quoted-1",
+      providerMessageId: "provider-quoted-1",
+      participant: "5511988887777@s.whatsapp.net",
+      type: "text",
+      text: null
+    });
+    expect(payload.data.contact.phoneNumber).toBe("5511988887777");
+  });
+
+  it("fails explicitly when the protected mandatory skeleton exceeds the envelope cap", () => {
+    const input = baseInput();
+    const mandatoryValue = "m".repeat(40000);
+    input.correlation = {
+      messageId: mandatoryValue,
+      whatsappId: 42,
+      conversationId: mandatoryValue,
+      contactId: mandatoryValue,
+      externalTicketId: mandatoryValue,
+      automationEpoch: 8,
+      actorType: mandatoryValue,
+      kind: mandatoryValue,
+      origin: mandatoryValue
+    };
+    input.message.contacts = [
+      {
+        displayName: "Optional",
+        vcard: "v".repeat(300000),
+        phoneNumbers: null
+      }
+    ];
+
+    expect(() => new WhatsAppMirrorPayloadBuilder().build(input)).toThrow(
+      "Mandatory WhatsApp mirror envelope exceeds 262144 bytes"
+    );
   });
 });
