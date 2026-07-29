@@ -67,6 +67,11 @@ describe("MessagingOpenApi 1.2", () => {
     expect(messagingOpenApi["x-webhook-events"].events).toEqual(
       expect.arrayContaining([
         "button.clicked",
+        "message.reaction",
+        "message.edited",
+        "message.deleted",
+        "chat.updated",
+        "connection.updated",
         "handoff.paused",
         "handoff.released",
         "conversation.created",

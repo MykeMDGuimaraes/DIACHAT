@@ -13,6 +13,11 @@ interface WebhookRecoveryDependencies {
 
 export const WEBHOOK_RECOVERABLE_EVENT_TYPES = [
   "message.received",
+  "message.reaction",
+  "message.edited",
+  "message.deleted",
+  "chat.updated",
+  "connection.updated",
   "message.sent",
   "message.failed",
   "message.status.updated",
@@ -32,6 +37,7 @@ const defaults: WebhookRecoveryDependencies = {
       {
         status: WEBHOOK_DELIVERY_STATUS.READY,
         leaseExpiresAt: null,
+        leaseToken: null,
         availableAt: now
       },
       {
@@ -46,6 +52,7 @@ const defaults: WebhookRecoveryDependencies = {
       {
         status: OUTBOX_EVENT_STATUS.READY,
         leaseExpiresAt: null,
+        leaseToken: null,
         availableAt: now
       },
       {

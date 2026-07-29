@@ -11,6 +11,11 @@ import { validateWebhookUrl } from "./WebhookUrlPolicy";
 
 const supportedEvents = new Set([
   "message.received",
+  "message.reaction",
+  "message.edited",
+  "message.deleted",
+  "chat.updated",
+  "connection.updated",
   "message.sent",
   "message.failed",
   "message.status.updated",
@@ -23,6 +28,20 @@ const supportedEvents = new Set([
   "ticket.updated",
   "contact.updated"
 ]);
+
+const receivedMirrorEvents = [
+  "message.received",
+  "message.reaction",
+  "message.edited",
+  "message.deleted",
+  "chat.updated",
+  "connection.updated"
+];
+
+const expandMirrorEvents = (events: string[]): string[] =>
+  events.includes("message.received")
+    ? [...new Set([...events, ...receivedMirrorEvents])]
+    : [...new Set(events)];
 
 const supportedMethods = new Set(["POST", "PUT", "PATCH"]);
 
@@ -89,7 +108,7 @@ export const createWebhookSubscription = async (
     url: input.url,
     method,
     enabled: true,
-    events: [...new Set(input.events)],
+    events: expandMirrorEvents(input.events),
     connectionIds: sanitizeConnectionIds(input.connectionIds),
     messageKinds: [...new Set(input.messageKinds || [])],
     includeApiOrigin: input.includeApiOrigin === true,
@@ -150,7 +169,7 @@ export const updateWebhookSubscription = async (
   }
   if (input.method !== undefined)
     changes.method = normalizeWebhookMethod(input.method);
-  if (input.events) changes.events = [...new Set(input.events)];
+  if (input.events) changes.events = expandMirrorEvents(input.events);
   if (input.connectionIds)
     changes.connectionIds = sanitizeConnectionIds(input.connectionIds);
   if (input.messageKinds)

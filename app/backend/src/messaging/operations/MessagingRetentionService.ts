@@ -27,8 +27,11 @@ const repositories: RetentionRepositories = {
   capacity: MessagingCapacitySample
 };
 
+// eslint-disable-next-line import/no-mutable-exports
 export let lastRetentionResult: RetentionResult | null = null;
-export let lastRetentionError: { message: string; failedAt: string } | null = null;
+// eslint-disable-next-line import/no-mutable-exports
+export let lastRetentionError: { message: string; failedAt: string } | null =
+  null;
 
 export const recordRetentionFailure = (error: unknown): void => {
   lastRetentionError = {
@@ -38,6 +41,7 @@ export const recordRetentionFailure = (error: unknown): void => {
 };
 
 class MessagingRetentionService {
+  // eslint-disable-next-line no-useless-constructor
   constructor(
     private readonly models: RetentionRepositories = repositories,
     private readonly clock: () => Date = () => new Date()
@@ -47,6 +51,22 @@ class MessagingRetentionService {
     const now = this.clock();
     const redactBefore = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
     const deleteBefore = new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000);
+
+    await this.models.deliveries.update(
+      {
+        bodyCiphertext: null,
+        bodyKeyVersion: null,
+        bodyExpiresAt: null,
+        bodyPurgedAt: now
+      },
+      {
+        where: {
+          bodyCiphertext: { [Op.ne]: null },
+          bodyExpiresAt: { [Op.lte]: now }
+        },
+        silent: true
+      }
+    );
 
     const deletedCounts = await Promise.all([
       this.models.commands.destroy({

@@ -10,6 +10,7 @@ import MessagingCapacityObserver from "../operations/MessagingCapacityObserver";
 import MetaInboxRecoveryService from "../channels/meta-cloud/MetaInboxRecoveryService";
 import ConversationCommandDispatcher from "./ConversationCommandDispatcher";
 import ConversationCommandRecoveryService from "./ConversationCommandRecoveryService";
+import WebhookDeliveryBackfillService from "../webhooks/WebhookDeliveryBackfillService";
 
 interface RecoveryRunner {
   recover: () => Promise<{ recovered: number }>;
@@ -39,6 +40,13 @@ interface CapacityObserverRunner {
   observeOne: () => Promise<{ status: "idle" | "observed" }>;
 }
 
+interface WebhookBackfillRunner {
+  runBatch: () => Promise<{
+    processed: number;
+    safeToDispatch: boolean;
+  }>;
+}
+
 class MessagingRuntime {
   // Parameter properties keep each worker replaceable in tests.
   // eslint-disable-next-line no-useless-constructor
@@ -60,6 +68,9 @@ class MessagingRuntime {
     },
     private readonly conversationDispatcher: DispatchRunner = {
       dispatchOne: async () => ({ status: "idle" })
+    },
+    private readonly webhookBackfill: WebhookBackfillRunner = {
+      runBatch: async () => ({ processed: 0, safeToDispatch: true })
     }
   ) {}
 
@@ -71,6 +82,17 @@ class MessagingRuntime {
     webhooksDispatched: number;
     capacitySamplesObserved: number;
   }> {
+    const startup = await this.webhookBackfill.runBatch();
+    if (!startup.safeToDispatch) {
+      return {
+        recovered: 0,
+        dispatched: 0,
+        processedInbox: 0,
+        webhookDeliveriesCreated: 0,
+        webhooksDispatched: 0,
+        capacitySamplesObserved: 0
+      };
+    }
     const { recovered } = await this.recovery.recover();
     let dispatched = 0;
     let processedInbox = 0;
@@ -155,7 +177,8 @@ export const createMessagingRuntime = (): MessagingRuntime =>
     new WebhookFanoutService(),
     new WebhookDeliveryDispatcher(),
     new MessagingCapacityObserver(),
-    new ConversationCommandDispatcher()
+    new ConversationCommandDispatcher(),
+    new WebhookDeliveryBackfillService()
   );
 
 export default MessagingRuntime;

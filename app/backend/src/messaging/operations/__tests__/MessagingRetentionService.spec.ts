@@ -25,5 +25,14 @@ describe("MessagingRetentionService", () => {
       expect.objectContaining({ silent: true })
     );
     expect(deliveries.destroy).toHaveBeenCalled();
+    expect(deliveries.update).toHaveBeenCalledWith(
+      {
+        bodyCiphertext: null,
+        bodyKeyVersion: null,
+        bodyExpiresAt: null,
+        bodyPurgedAt: new Date("2026-07-24T12:00:00.000Z")
+      },
+      expect.objectContaining({ silent: true })
+    );
   });
 });

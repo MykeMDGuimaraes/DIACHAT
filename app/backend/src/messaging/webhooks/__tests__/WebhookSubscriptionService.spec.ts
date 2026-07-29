@@ -86,4 +86,60 @@ describe("createWebhookSubscription", () => {
       expect.objectContaining({ includeApiOrigin: true })
     );
   });
+
+  it("expands message.received subscriptions to every WhatsApp mirror event", async () => {
+    const create = jest.fn().mockResolvedValue({ id: "mirror-sub" });
+    await createWebhookSubscription(
+      {
+        companyId: 7,
+        name: "Mirror",
+        url: "https://hooks.example.com/mirror",
+        events: ["message.received"]
+      },
+      {
+        create,
+        generateSecret: jest.fn().mockReturnValue("secret-once"),
+        encryptSecret: jest.fn().mockReturnValue("ciphertext"),
+        keyring: { activeKeyId: "v1", keys: { v1: "unused" } }
+      }
+    );
+
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        events: [
+          "message.received",
+          "message.reaction",
+          "message.edited",
+          "message.deleted",
+          "chat.updated",
+          "connection.updated"
+        ]
+      })
+    );
+
+    const subscription = { update: jest.fn() };
+    await updateWebhookSubscription(
+      {
+        companyId: 7,
+        id: "mirror-sub",
+        events: ["message.received"]
+      },
+      {
+        find: jest.fn().mockResolvedValue(subscription),
+        generateSecret: jest.fn(),
+        encryptSecret: jest.fn(),
+        keyring: { activeKeyId: "v1", keys: { v1: "unused" } }
+      }
+    );
+    expect(subscription.update).toHaveBeenCalledWith({
+      events: [
+        "message.received",
+        "message.reaction",
+        "message.edited",
+        "message.deleted",
+        "chat.updated",
+        "connection.updated"
+      ]
+    });
+  });
 });

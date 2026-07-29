@@ -55,6 +55,21 @@ class MessagingOutboxEvent extends Model<MessagingOutboxEvent> {
   leaseToken: string;
 
   @Column(DataType.TEXT)
+  bodyCiphertext: string;
+
+  @Column(DataType.STRING)
+  bodyKeyVersion: string;
+
+  @Column(DataType.STRING(64))
+  bodySha256: string;
+
+  @Column(DataType.DATE)
+  bodyExpiresAt: Date;
+
+  @Column(DataType.DATE)
+  bodyPurgedAt: Date;
+
+  @Column(DataType.TEXT)
   lastError: string;
 
   @CreatedAt

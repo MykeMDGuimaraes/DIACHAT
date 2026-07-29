@@ -95,4 +95,41 @@ describe("MessagingRuntime", () => {
     );
     expect(conversationDispatch).toHaveBeenCalledTimes(2);
   });
+
+  it("blocks all dispatch while active legacy plaintext remains", async () => {
+    const recover = jest.fn().mockResolvedValue({ recovered: 0 });
+    const webhookFanout = {
+      fanoutOne: jest.fn().mockResolvedValue({ status: "idle", deliveries: 0 })
+    };
+    const webhookDispatcher = {
+      dispatchOne: jest.fn().mockResolvedValue({ status: "idle" })
+    };
+    const runtime = new MessagingRuntime(
+      { recover },
+      { dispatchOne: jest.fn().mockResolvedValue({ status: "idle" }) },
+      5,
+      undefined,
+      webhookFanout,
+      webhookDispatcher,
+      undefined,
+      undefined,
+      {
+        runBatch: jest
+          .fn()
+          .mockResolvedValue({ processed: 100, safeToDispatch: false })
+      }
+    );
+
+    await expect(runtime.runOnce()).resolves.toEqual({
+      recovered: 0,
+      dispatched: 0,
+      processedInbox: 0,
+      webhookDeliveriesCreated: 0,
+      webhooksDispatched: 0,
+      capacitySamplesObserved: 0
+    });
+    expect(recover).not.toHaveBeenCalled();
+    expect(webhookFanout.fanoutOne).not.toHaveBeenCalled();
+    expect(webhookDispatcher.dispatchOne).not.toHaveBeenCalled();
+  });
 });

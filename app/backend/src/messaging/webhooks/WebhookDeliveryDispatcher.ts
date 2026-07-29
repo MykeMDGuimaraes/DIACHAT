@@ -1,12 +1,12 @@
 import { promises as dns } from "dns";
 import https from "https";
+import { randomUUID } from "crypto";
 import { Op } from "sequelize";
 
 import sequelize from "../../database";
 import { WEBHOOK_DELIVERY_STATUS } from "../domain/MessagingStates";
 import WebhookDelivery from "../persistence/models/WebhookDelivery";
 import WebhookSubscription from "../persistence/models/WebhookSubscription";
-import Message from "../../models/Message";
 import {
   decryptMessagingSecret,
   loadMessagingKeyring,
@@ -17,16 +17,29 @@ import {
   validateResolvedAddress,
   validateWebhookUrl
 } from "./WebhookUrlPolicy";
+import {
+  decryptWebhookBody,
+  EncryptedWebhookBody,
+  WebhookBodyBinding
+} from "./WebhookBodyCipher";
+
+export const WEBHOOK_DEAD_LETTER_RETENTION_MS = 168 * 60 * 60 * 1000;
 
 interface ClaimedDelivery {
   id: string;
   companyId: number;
   subscriptionId: string;
+  eventId: string;
+  eventType: string;
   urlSnapshot: string;
   methodSnapshot?: string;
   secretCiphertextSnapshot: string;
   payload: Record<string, any>;
   attemptCount: number;
+  leaseToken: string;
+  bodyCiphertext: string;
+  bodyKeyVersion: string;
+  bodySha256: string;
 }
 
 interface PostResult {
@@ -43,23 +56,34 @@ interface PostInput {
 
 interface DispatcherDependencies {
   claimNext(): Promise<ClaimedDelivery | null>;
+  decryptBody(
+    encrypted: EncryptedWebhookBody,
+    binding: WebhookBodyBinding,
+    keyring: MessagingKeyring
+  ): Buffer;
   decryptSecret(value: string, keyring: MessagingKeyring): string;
   getKeyring(): MessagingKeyring;
   post(input: PostInput): Promise<PostResult>;
-  complete(id: string, status: number): Promise<unknown>;
+  complete(id: string, leaseToken: string, status: number): Promise<unknown>;
   retry(
     id: string,
+    leaseToken: string,
     availableAt: Date,
     status?: number,
     error?: string
   ): Promise<unknown>;
-  deadLetter(id: string, status?: number, error?: string): Promise<unknown>;
+  deadLetter(
+    id: string,
+    leaseToken: string,
+    bodyExpiresAt: Date,
+    status?: number,
+    error?: string
+  ): Promise<unknown>;
   recordSuccess(subscriptionId: string): Promise<unknown>;
   recordFailure(subscriptionId: string): Promise<unknown>;
   pauseSubscription(subscriptionId: string): Promise<unknown>;
   now(): Date;
   jitter(maximumMs: number): number;
-  hydratePayload?(delivery: ClaimedDelivery): Promise<Record<string, any>>;
 }
 
 export const nextSubscriptionFailureState = (
@@ -160,10 +184,18 @@ const securePost = async ({
 const defaultDependencies: DispatcherDependencies = {
   claimNext: () =>
     sequelize.transaction(async transaction => {
+      const leaseToken = randomUUID();
+      const now = new Date();
       const delivery = await WebhookDelivery.findOne({
         where: {
           status: WEBHOOK_DELIVERY_STATUS.READY,
-          availableAt: { [Op.lte]: new Date() }
+          availableAt: { [Op.lte]: now },
+          bodyCiphertext: { [Op.ne]: null },
+          bodyPurgedAt: null,
+          [Op.or]: [
+            { bodyExpiresAt: null },
+            { bodyExpiresAt: { [Op.gt]: now } }
+          ]
         },
         order: [["createdAt", "ASC"]],
         transaction,
@@ -175,16 +207,18 @@ const defaultDependencies: DispatcherDependencies = {
         {
           status: WEBHOOK_DELIVERY_STATUS.PROCESSING,
           attemptCount: delivery.attemptCount + 1,
-          leaseExpiresAt: new Date(Date.now() + 120000)
+          leaseExpiresAt: new Date(now.getTime() + 120000),
+          leaseToken
         },
         { transaction }
       );
       return delivery.toJSON() as ClaimedDelivery;
     }),
+  decryptBody: decryptWebhookBody,
   decryptSecret: decryptMessagingSecret,
   getKeyring: loadMessagingKeyring,
   post: securePost,
-  complete: (id, status) =>
+  complete: (id, leaseToken, status) =>
     WebhookDelivery.update(
       {
         status: WEBHOOK_DELIVERY_STATUS.DELIVERED,
@@ -192,30 +226,56 @@ const defaultDependencies: DispatcherDependencies = {
         responseBody: null,
         deliveredAt: new Date(),
         leaseExpiresAt: null,
+        leaseToken: null,
+        bodyCiphertext: null,
+        bodyKeyVersion: null,
+        bodyExpiresAt: null,
+        bodyPurgedAt: new Date(),
         lastError: null
       },
-      { where: { id, status: WEBHOOK_DELIVERY_STATUS.PROCESSING } }
+      {
+        where: {
+          id,
+          status: WEBHOOK_DELIVERY_STATUS.PROCESSING,
+          leaseToken
+        }
+      }
     ),
-  retry: (id, availableAt, status, error) =>
+  retry: (id, leaseToken, availableAt, status, error) =>
     WebhookDelivery.update(
       {
         status: WEBHOOK_DELIVERY_STATUS.READY,
         availableAt,
         responseStatus: status || null,
         lastError: error || null,
-        leaseExpiresAt: null
+        leaseExpiresAt: null,
+        leaseToken: null
       },
-      { where: { id, status: WEBHOOK_DELIVERY_STATUS.PROCESSING } }
+      {
+        where: {
+          id,
+          status: WEBHOOK_DELIVERY_STATUS.PROCESSING,
+          leaseToken
+        }
+      }
     ),
-  deadLetter: (id, status, error) =>
+  deadLetter: (id, leaseToken, bodyExpiresAt, status, error) =>
     WebhookDelivery.update(
       {
         status: WEBHOOK_DELIVERY_STATUS.DEAD_LETTER,
         responseStatus: status || null,
         lastError: error || null,
-        leaseExpiresAt: null
+        leaseExpiresAt: null,
+        leaseToken: null,
+        bodyExpiresAt
       },
-      { where: { id, status: WEBHOOK_DELIVERY_STATUS.PROCESSING } }
+      {
+        where: {
+          id,
+          status: WEBHOOK_DELIVERY_STATUS.PROCESSING,
+          leaseToken
+        }
+      }
     ),
   recordSuccess: subscriptionId =>
     WebhookSubscription.update(
@@ -243,38 +303,30 @@ const defaultDependencies: DispatcherDependencies = {
     WebhookSubscription.update(
       { pausedAt: new Date(), lastFailureAt: new Date() },
       { where: { id: subscriptionId } }
-  ),
+    ),
   now: () => new Date(),
-  jitter: maximumMs => Math.floor(Math.random() * Math.max(1, maximumMs)),
-  hydratePayload: async delivery => {
-    if (
-      delivery.payload?.type !== "message.received" ||
-      delivery.payload?.data?.actorType !== "contact" ||
-      !delivery.payload?.data?.messageId
-    ) {
-      return delivery.payload;
-    }
-    const message = await Message.findOne({
-      where: {
-        id: String(delivery.payload.data.messageId),
-        companyId: delivery.companyId
-      },
-      attributes: ["id", "body"]
-    });
-    if (!message?.body) return delivery.payload;
-    return {
-      ...delivery.payload,
-      data: { ...delivery.payload.data, text: message.body }
-    };
-  }
+  jitter: maximumMs => Math.floor(Math.random() * Math.max(1, maximumMs))
 };
 
+const wasFenced = (result: unknown): boolean =>
+  !(
+    result === 0 ||
+    result === false ||
+    (Array.isArray(result) && result[0] === 0)
+  );
+
 class WebhookDeliveryDispatcher {
-  // Parameter property keeps transport and persistence ports replaceable.
-  // eslint-disable-next-line no-useless-constructor
-  constructor(
-    private readonly dependencies: DispatcherDependencies = defaultDependencies
-  ) {}
+  private readonly dependencies: DispatcherDependencies;
+
+  constructor(dependencies: Partial<DispatcherDependencies> = {}) {
+    this.dependencies = { ...defaultDependencies, ...dependencies };
+  }
+
+  private bodyExpiresAt(): Date {
+    return new Date(
+      this.dependencies.now().getTime() + WEBHOOK_DEAD_LETTER_RETENTION_MS
+    );
+  }
 
   private nextAttempt(delivery: ClaimedDelivery, result?: PostResult): Date {
     const correlationSchedule = [2, 5, 10, 20, 40];
@@ -300,16 +352,29 @@ class WebhookDeliveryDispatcher {
     const delivery = await this.dependencies.claimNext();
     if (!delivery) return { status: "idle" };
     try {
-      const outboundPayload = this.dependencies.hydratePayload
-        ? await this.dependencies.hydratePayload(delivery)
-        : delivery.payload;
-      const rawBody = JSON.stringify(outboundPayload);
+      const keyring = this.dependencies.getKeyring();
+      const rawBody = this.dependencies
+        .decryptBody(
+          {
+            bodyCiphertext: delivery.bodyCiphertext,
+            bodyKeyVersion: delivery.bodyKeyVersion,
+            bodySha256: delivery.bodySha256
+          },
+          {
+            companyId: delivery.companyId,
+            subscriptionId: delivery.subscriptionId,
+            deliveryId: delivery.id,
+            eventId: delivery.eventId
+          },
+          keyring
+        )
+        .toString("utf8");
       const timestamp = Math.floor(
         this.dependencies.now().getTime() / 1000
       ).toString();
       const secret = this.dependencies.decryptSecret(
         delivery.secretCiphertextSnapshot,
-        this.dependencies.getKeyring()
+        keyring
       );
       const response = await this.dependencies.post({
         url: delivery.urlSnapshot,
@@ -319,20 +384,28 @@ class WebhookDeliveryDispatcher {
           "X-DiaChat-Timestamp": timestamp,
           "X-DiaChat-Signature": signWebhookPayload(secret, timestamp, rawBody),
           "X-DiaChat-Delivery": delivery.id,
-          "X-DiaChat-Event": String(delivery.payload.id)
+          "X-DiaChat-Event": delivery.eventId
         }
       });
       if (response.status >= 200 && response.status < 300) {
-        await this.dependencies.complete(delivery.id, response.status);
+        const completed = await this.dependencies.complete(
+          delivery.id,
+          delivery.leaseToken,
+          response.status
+        );
+        if (!wasFenced(completed)) return { status: "idle" };
         await this.dependencies.recordSuccess(delivery.subscriptionId);
         return { status: "delivered" };
       }
       if (response.status === 401) {
-        await this.dependencies.deadLetter(
+        const deadLettered = await this.dependencies.deadLetter(
           delivery.id,
+          delivery.leaseToken,
+          this.bodyExpiresAt(),
           response.status,
           `HTTP_${response.status}`
         );
+        if (!wasFenced(deadLettered)) return { status: "idle" };
         await this.dependencies.pauseSubscription(delivery.subscriptionId);
         return { status: "dead_letter" };
       }
@@ -340,19 +413,24 @@ class WebhookDeliveryDispatcher {
         delivery.attemptCount < 6 &&
         (response.status === 429 || response.status >= 500)
       ) {
-        await this.dependencies.retry(
+        const retried = await this.dependencies.retry(
           delivery.id,
+          delivery.leaseToken,
           this.nextAttempt(delivery, response),
           response.status,
           `HTTP_${response.status}`
         );
+        if (!wasFenced(retried)) return { status: "idle" };
         return { status: "retry" };
       }
-      await this.dependencies.deadLetter(
+      const deadLettered = await this.dependencies.deadLetter(
         delivery.id,
+        delivery.leaseToken,
+        this.bodyExpiresAt(),
         response.status,
         `HTTP_${response.status}`
       );
+      if (!wasFenced(deadLettered)) return { status: "idle" };
       await this.dependencies.recordFailure(delivery.subscriptionId);
       return { status: "dead_letter" };
     } catch (error) {
@@ -361,15 +439,24 @@ class WebhookDeliveryDispatcher {
           ? "WEBHOOK_TIMEOUT"
           : "WEBHOOK_DELIVERY_ERROR";
       if (delivery.attemptCount < 6) {
-        await this.dependencies.retry(
+        const retried = await this.dependencies.retry(
           delivery.id,
+          delivery.leaseToken,
           this.nextAttempt(delivery),
           undefined,
           reason
         );
+        if (!wasFenced(retried)) return { status: "idle" };
         return { status: "retry" };
       }
-      await this.dependencies.deadLetter(delivery.id, undefined, reason);
+      const deadLettered = await this.dependencies.deadLetter(
+        delivery.id,
+        delivery.leaseToken,
+        this.bodyExpiresAt(),
+        undefined,
+        reason
+      );
+      if (!wasFenced(deadLettered)) return { status: "idle" };
       await this.dependencies.recordFailure(delivery.subscriptionId);
       return { status: "dead_letter" };
     }

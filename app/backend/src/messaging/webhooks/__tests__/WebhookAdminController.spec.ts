@@ -1,7 +1,13 @@
 import { Request, Response } from "express";
-import { createWebhookAdminHandlers } from "../WebhookAdminController";
+import WebhookDelivery from "../../persistence/models/WebhookDelivery";
+import {
+  createWebhookAdminHandlers,
+  retryWebhookDelivery
+} from "../WebhookAdminController";
 
 describe("WebhookAdminController", () => {
+  afterEach(() => jest.restoreAllMocks());
+
   const response = () => {
     const json = jest.fn();
     const sendStatus = jest.fn();
@@ -99,7 +105,15 @@ describe("WebhookAdminController", () => {
         eventId: "evt_1",
         eventType: "message.received",
         urlSnapshot: "https://n8n.example.test/webhook",
-        payload: { messageId: "msg_1" },
+        payload: {
+          messageId: "msg_1",
+          whatsappId: 42,
+          text: "must-not-leak",
+          data: {
+            messageId: "legacy-msg",
+            text: "legacy-body-must-not-leak"
+          }
+        },
         status: "dead_letter",
         attemptCount: 6,
         responseStatus: 401,
@@ -132,7 +146,7 @@ describe("WebhookAdminController", () => {
         eventId: "evt_1",
         eventType: "message.received",
         urlSnapshot: "https://n8n.example.test/webhook",
-        payload: { messageId: "msg_1" },
+        payload: { messageId: "msg_1", whatsappId: 42 },
         status: "dead_letter",
         attemptCount: 6,
         responseStatus: 401,
@@ -161,5 +175,30 @@ describe("WebhookAdminController", () => {
     );
     expect(retryDelivery).toHaveBeenCalledWith(7, "del_1");
     expect(res.sendStatus).toHaveBeenCalledWith(202);
+  });
+
+  it.each([
+    {
+      name: "purged",
+      bodyCiphertext: null,
+      bodyPurgedAt: new Date("2026-07-29T11:00:00.000Z"),
+      bodyExpiresAt: null
+    },
+    {
+      name: "expired",
+      bodyCiphertext: "encrypted-body",
+      bodyPurgedAt: null,
+      bodyExpiresAt: new Date("2020-01-01T00:00:00.000Z")
+    }
+  ])("returns 410 when retrying a $name delivery body", async bodyState => {
+    jest.spyOn(WebhookDelivery, "findOne").mockResolvedValue({
+      status: "dead_letter",
+      update: jest.fn(),
+      ...bodyState
+    } as any);
+
+    await expect(retryWebhookDelivery(7, "del_1")).rejects.toMatchObject({
+      statusCode: 410
+    });
   });
 });
