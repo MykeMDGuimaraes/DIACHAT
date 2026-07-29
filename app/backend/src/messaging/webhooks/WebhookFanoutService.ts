@@ -34,6 +34,11 @@ interface WebhookFanoutDependencies {
     leaseToken: string,
     transaction: any
   ): Promise<unknown>;
+  releaseEvent(
+    id: string,
+    leaseToken: string,
+    failureCode: string
+  ): Promise<unknown>;
   buildSnapshot(
     event: DomainEvent
   ): Promise<Pick<WhatsAppMirrorSerializedSnapshot, "rawBody" | "bodySha256">>;
@@ -111,6 +116,17 @@ const defaultDependencies: WebhookFanoutDependencies = {
     MessagingOutboxEvent.update(
       { status: "completed", leaseExpiresAt: null, leaseToken: null },
       { where: { id, status: "processing", leaseToken }, transaction }
+    ),
+  releaseEvent: (id, leaseToken, failureCode) =>
+    MessagingOutboxEvent.update(
+      {
+        status: "ready",
+        leaseExpiresAt: null,
+        leaseToken: null,
+        lastError: failureCode,
+        availableAt: new Date(Date.now() + 1000)
+      },
+      { where: { id, status: "processing", leaseToken } }
     ),
   buildSnapshot: event =>
     new WhatsAppMirrorProjectionService().buildSnapshot(event),
@@ -194,6 +210,11 @@ class WebhookFanoutService {
           : await this.dependencies.buildLegacySnapshot(event);
       } catch (error) {
         recordWhatsAppMirrorMetric("projectionFailure");
+        await this.dependencies.releaseEvent(
+          event.id,
+          event.leaseToken,
+          "WHATSAPP_MIRROR_PROJECTION_FAILED"
+        );
         throw error;
       }
       const keyring = this.dependencies.getKeyring();
@@ -213,6 +234,11 @@ class WebhookFanoutService {
           );
         } catch (error) {
           recordWhatsAppMirrorMetric("cryptoFailure");
+          await this.dependencies.releaseEvent(
+            event.id,
+            event.leaseToken,
+            "WHATSAPP_MIRROR_CRYPTO_FAILED"
+          );
           throw error;
         }
         if (encrypted.bodySha256 !== snapshot.bodySha256) {

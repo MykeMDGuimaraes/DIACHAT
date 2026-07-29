@@ -85,6 +85,88 @@ const selectedButton = (
   return null;
 };
 
+const baileysRichContent = (raw: any) => {
+  const message = raw?.message || {};
+  const extended = message.extendedTextMessage;
+  const mediaEntry = [
+    ["image", message.imageMessage],
+    ["audio", message.audioMessage],
+    ["video", message.videoMessage],
+    ["document", message.documentMessage]
+  ].find(([, value]) => value);
+  const media = mediaEntry
+    ? {
+        type: mediaEntry[0],
+        mimeType: mediaEntry[1]?.mimetype ?? null,
+        fileName: mediaEntry[1]?.fileName ?? null,
+        sizeBytes: Number(mediaEntry[1]?.fileLength ?? 0) || null,
+        sha256: null,
+        url: null,
+        available: true,
+        caption: mediaEntry[1]?.caption ?? null
+      }
+    : null;
+  const context =
+    extended?.contextInfo ||
+    mediaEntry?.[1]?.contextInfo ||
+    message.buttonsResponseMessage?.contextInfo;
+  const contactMessages =
+    message.contactsArrayMessage?.contacts ||
+    (message.contactMessage ? [message.contactMessage] : null);
+  const pollMessage =
+    message.pollCreationMessage ||
+    message.pollCreationMessageV2 ||
+    message.pollCreationMessageV3;
+  return {
+    text:
+      message.conversation ??
+      extended?.text ??
+      message.imageMessage?.caption ??
+      message.videoMessage?.caption ??
+      message.documentMessage?.caption ??
+      null,
+    quoted: context?.stanzaId
+      ? {
+          id: context.stanzaId,
+          providerMessageId: context.stanzaId,
+          participant: context.participant ?? null,
+          type: Object.keys(context.quotedMessage || {})[0] ?? null,
+          text:
+            context.quotedMessage?.conversation ??
+            context.quotedMessage?.extendedTextMessage?.text ??
+            null
+        }
+      : null,
+    media,
+    location: message.locationMessage
+      ? {
+          latitude: message.locationMessage.degreesLatitude ?? null,
+          longitude: message.locationMessage.degreesLongitude ?? null,
+          name: message.locationMessage.name ?? null,
+          address: message.locationMessage.address ?? null,
+          url: null
+        }
+      : null,
+    contacts: contactMessages
+      ? contactMessages.map((contact: any) => ({
+          displayName: contact.displayName ?? null,
+          vcard: contact.vcard ?? null,
+          phoneNumbers: null
+        }))
+      : null,
+    poll: pollMessage
+      ? {
+          name: pollMessage.name ?? null,
+          options: (pollMessage.options || []).map(
+            (option: any) => option.optionName ?? null
+          ),
+          selectedOptionIds: null,
+          multipleAnswers: Number(pollMessage.selectableOptionsCount || 1) > 1
+        }
+      : null
+  };
+};
+
 export const adaptBaileysMessageEvents = (
   input: BaileysMessageAdapterInput
 ): WhatsAppProviderEvent[] => {
@@ -92,6 +174,7 @@ export const adaptBaileysMessageEvents = (
   const messageId = raw.key?.id ? String(raw.key.id) : null;
   const occurredAt = timestamp(raw.messageTimestamp);
   const interactive = selectedButton(raw);
+  const rich = baileysRichContent(raw);
   const kind = interactive?.type || Object.keys(raw.message || {})[0] || null;
   const shared = {
     context: input,
@@ -100,9 +183,18 @@ export const adaptBaileysMessageEvents = (
     messageId,
     occurredAt,
     jid: raw.key?.remoteJid ?? null,
+    lid: String(raw.key?.remoteJidAlt || "").endsWith("@lid")
+      ? raw.key.remoteJidAlt
+      : null,
     actorType: raw.key?.fromMe ? "human" : "contact",
     kind,
     fromMe: Boolean(raw.key?.fromMe),
+    text: rich.text,
+    quoted: rich.quoted,
+    media: rich.media,
+    location: rich.location,
+    contacts: rich.contacts,
+    poll: rich.poll,
     interactive: interactive
       ? {
           type: interactive.type,
@@ -174,7 +266,9 @@ export const adaptBaileysMessageEvents = (
     createProviderEvent({ ...shared, eventType: "message.received" })
   ];
   if (interactive) {
-    events.push(createProviderEvent({ ...shared, eventType: "button.clicked" }));
+    events.push(
+      createProviderEvent({ ...shared, eventType: "button.clicked" })
+    );
   }
   return events;
 };
@@ -198,9 +292,7 @@ export const adaptBaileysChatUpdate = (
     lastMessage?.message?.conversation ??
     lastMessage?.message?.extendedTextMessage?.text ??
     null;
-  const archived = hasOwn(raw, "archived")
-    ? booleanOrNull(raw.archived)
-    : null;
+  const archived = hasOwn(raw, "archived") ? booleanOrNull(raw.archived) : null;
   const pinned = hasOwn(raw, "pin") ? booleanOrNull(raw.pin) : null;
   const mutedUntil = hasOwn(raw, "muteEndTime")
     ? raw.muteEndTime === null || raw.muteEndTime === undefined
@@ -304,8 +396,7 @@ export const adaptBaileysConnectionUpdate = (
     content: {
       state,
       isNewLogin: raw.isNewLogin ?? null,
-      receivedPendingNotifications:
-        raw.receivedPendingNotifications ?? null
+      receivedPendingNotifications: raw.receivedPendingNotifications ?? null
     }
   });
   const occurredAt = timestamp(
@@ -347,8 +438,7 @@ export const registerBaileysMirrorLifecycleListeners = (
         })
       )
       .filter(
-        (event: WhatsAppProviderEvent) =>
-          event.eventType === "message.deleted"
+        (event: WhatsAppProviderEvent) => event.eventType === "message.deleted"
       );
     if (deleted.length) await publish(deleted);
   };

@@ -75,7 +75,9 @@ class MessagingMetricsService {
       oldestCapacity,
       mirrorEventsCompletedLastMinute,
       mirrorDeliveriesLastMinute,
-      mirrorBodiesPurgedLastMinute
+      mirrorBodiesPurgedLastMinute,
+      durableProjectionFailures,
+      durableCryptoFailures
     ] = await Promise.all([
       MessageCommand.count({
         where: { ...companyWhere, status: MESSAGE_COMMAND_STATUS.QUEUED }
@@ -255,6 +257,18 @@ class MessagingMetricsService {
           ...companyWhere,
           bodyPurgedAt: { [Op.gte]: new Date(Date.now() - 60_000) }
         }
+      }),
+      MessagingOutboxEvent.count({
+        where: {
+          ...companyWhere,
+          lastError: "WHATSAPP_MIRROR_PROJECTION_FAILED"
+        }
+      }),
+      MessagingOutboxEvent.count({
+        where: {
+          ...companyWhere,
+          lastError: "WHATSAPP_MIRROR_CRYPTO_FAILED"
+        }
       })
     ]);
 
@@ -328,6 +342,10 @@ class MessagingMetricsService {
       },
       mirror: {
         ...mirrorRuntime,
+        durableFailures: {
+          projection: durableProjectionFailures,
+          crypto: durableCryptoFailures
+        },
         purge: {
           ...(mirrorRuntime.purge as Record<string, unknown>),
           bodiesLastMinute: mirrorBodiesPurgedLastMinute

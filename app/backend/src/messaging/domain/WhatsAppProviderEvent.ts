@@ -129,6 +129,11 @@ export interface CreateProviderEventInput {
   text?: string | null;
   interactive?: Record<string, unknown> | null;
   reaction?: Record<string, unknown> | null;
+  quoted?: Record<string, unknown> | null;
+  media?: Record<string, unknown> | null;
+  location?: Record<string, unknown> | null;
+  contacts?: Array<Record<string, unknown>> | null;
+  poll?: Record<string, unknown> | null;
   edit?: Record<string, unknown> | null;
   delete?: Record<string, unknown> | null;
   connection?: Partial<WhatsAppProviderEventPayload["connection"]>;
@@ -215,13 +220,13 @@ export const createProviderEvent = (
       text: input.text ?? null,
       timestamp: input.occurredAt.toISOString(),
       status: null,
-      quoted: null,
+      quoted: input.quoted ?? null,
       reaction: input.reaction ?? null,
       interactive: input.interactive ?? null,
-      media: null,
-      location: null,
-      contacts: null,
-      poll: null,
+      media: input.media ?? null,
+      location: input.location ?? null,
+      contacts: input.contacts ?? null,
+      poll: input.poll ?? null,
       edit: input.edit ?? null,
       delete: input.delete ?? null
     }

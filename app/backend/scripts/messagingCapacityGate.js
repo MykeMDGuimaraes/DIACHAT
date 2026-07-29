@@ -1,20 +1,22 @@
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const { spawnSync } = require("child_process");
 
 const REPLAY_RATE = 150;
 const REPLAY_DURATION_SECONDS = 1800;
 const REPLAY_DRAIN_DEADLINE_SECONDS = 900;
 const REPLAY_EXPECTED_EVENTS = REPLAY_RATE * REPLAY_DURATION_SECONDS;
+const REQUEST_TIMEOUT_MS = 10_000;
 const REPLAY_FIXTURE_DIRECTORY = path.resolve(
   __dirname,
   "../fixtures/whatsapp-mirror"
 );
 const REPLAY_FIXTURE_FILES = ["baileys-rich.json", "meta-rich.json"];
 const FORBIDDEN_FIXTURE_KEYS =
-  /(?:authorization|cookie|password|secret|token|phone(?:Number)?|jid|lid|url)/i;
-const FORBIDDEN_FIXTURE_VALUE =
-  /(?:@[cs]\.whatsapp\.net|@c\.us|\b55\d{10,13}\b|bearer\s+)/i;
+  /(?:authorization|cookie|password|secret|token|phoneNumber|url)/i;
+const WHATSAPP_FIXTURE_ID =
+  /^(?:0{12,18}(?:-0{10})?)@(?:s\.whatsapp\.net|g\.us|lid|c\.us)$/i;
 
 const percentile = (values, quantile) => {
   if (!values.length) return 0;
@@ -66,8 +68,16 @@ const loadConfig = environment => {
 
 const validateReplayFixture = fixture => {
   const visit = (value, location) => {
-    if (typeof value === "string" && FORBIDDEN_FIXTURE_VALUE.test(value)) {
-      throw new Error(`Fixture insegura em ${location}`);
+    if (typeof value === "string") {
+      if (/bearer\s+/i.test(value)) {
+        throw new Error(`Fixture insegura em ${location}`);
+      }
+      if (
+        /@(?:s\.whatsapp\.net|g\.us|lid|c\.us)$/i.test(value) &&
+        !WHATSAPP_FIXTURE_ID.test(value)
+      ) {
+        throw new Error(`Fixture exige JID/LID sintetico em ${location}`);
+      }
     }
     if (Array.isArray(value)) {
       value.forEach((item, index) => visit(item, `${location}[${index}]`));
@@ -201,9 +211,12 @@ const buildReplayReport = (config, measurements) => {
     hmacVerified: signatureFailures === 0 && received > 0,
     drainedWithinDeadline:
       Number(measurements.drainSeconds) <= config.drainDeadlineSeconds,
+    sustainedInjectionRate:
+      Number(measurements.injectionElapsedSeconds) >= config.durationSeconds &&
+      Number(measurements.achievedRps) >= config.requestsPerSecond,
     pipelineHealthy:
-      Number(pipeline.projectionFailures || 0) === 0 &&
-      Number(pipeline.cryptoFailures || 0) === 0 &&
+      Number(pipeline.durableProjectionFailures || 0) === 0 &&
+      Number(pipeline.durableCryptoFailures || 0) === 0 &&
       Number(pipeline.deadLettersDelta || 0) === 0
   };
   return {
@@ -231,14 +244,18 @@ const buildReplayReport = (config, measurements) => {
         plaintextViolations
       },
       pipeline: {
-        projectionFailures: Number(pipeline.projectionFailures || 0),
-        cryptoFailures: Number(pipeline.cryptoFailures || 0),
+        durableProjectionFailures: Number(
+          pipeline.durableProjectionFailures || 0
+        ),
+        durableCryptoFailures: Number(pipeline.durableCryptoFailures || 0),
         deadLettersDelta: Number(pipeline.deadLettersDelta || 0),
         backlog: pipeline.backlog || null,
         throughput: pipeline.throughput || null,
         purge: pipeline.purge || null,
         media: pipeline.media || null
       },
+      injectionElapsedSeconds: Number(measurements.injectionElapsedSeconds),
+      achievedRps: Number(measurements.achievedRps),
       drainSeconds: Number(measurements.drainSeconds)
     },
     gates,
@@ -254,12 +271,43 @@ const writeReport = (prefix, report) => {
   return outputPath;
 };
 
-const requestJson = async (url, options) => {
-  const response = await fetch(url, options);
+const fetchJsonWithTimeout = async (
+  url,
+  options = {},
+  timeoutMs = REQUEST_TIMEOUT_MS,
+  fetchImplementation = fetch
+) => {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  let response;
+  try {
+    response = await fetchImplementation(url, {
+      ...options,
+      signal: controller.signal
+    });
+  } catch (error) {
+    if (controller.signal.aborted || error?.name === "AbortError") {
+      throw new Error(`request timeout after ${timeoutMs}ms`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
   if (!response.ok) {
     throw new Error(`HTTP_${response.status}`);
   }
   return response.json();
+};
+const requestJson = (url, options) =>
+  fetchJsonWithTimeout(url, options, REQUEST_TIMEOUT_MS);
+
+const buildInjectionMeasurements = (accepted, startedAt, finishedAt) => {
+  const injectionElapsedSeconds = Math.max(0, (finishedAt - startedAt) / 1000);
+  return {
+    injectionElapsedSeconds,
+    achievedRps:
+      injectionElapsedSeconds > 0 ? accepted / injectionElapsedSeconds : 0
+  };
 };
 
 const replayOne = (config, runId, sequence, fixture, event) =>
@@ -310,25 +358,46 @@ const replayFixtures = async config => {
       fixtures: fixtures.map(fixture => ({
         name: fixture.name,
         provider: fixture.provider,
-        events: fixture.events.length,
-        roteadorEnvelopes: fixture.roteadorEnvelopes.length
+        adapterInputs: fixture.events.length
       })),
+      externalContractGate: {
+        status: "blocked",
+        reason:
+          "Current Roteador parser rejects real whatsapp-mirror/1 envelopes; run verify:roteador-contract."
+      },
       target: {
         requestsPerSecond: REPLAY_RATE,
         durationSeconds: REPLAY_DURATION_SECONDS,
         expectedEvents: REPLAY_EXPECTED_EVENTS,
         drainDeadlineSeconds: REPLAY_DRAIN_DEADLINE_SECONDS
       },
-      validationPassed: true
+      fixtureValidationPassed: true,
+      activationBlocked: true
     };
     const outputPath = writeReport("whatsapp-mirror-dry-validation", report);
     console.log(JSON.stringify({ outputPath, ...report }, null, 2));
     return report;
   }
 
+  const contractVerification = spawnSync(
+    process.execPath,
+    [path.resolve(__dirname, "verifyRoteadorContractFixtures.js")],
+    { encoding: "utf8" }
+  );
+  if (contractVerification.status !== 0) {
+    throw new Error(
+      `Replay live bloqueado pelo contrato externo do Roteador: ${
+        contractVerification.stdout ||
+        contractVerification.stderr ||
+        "incompatível"
+      }`
+    );
+  }
+
   const runId = crypto.randomUUID();
   const initialMetrics = await readDiaChatMetrics(config);
   let accepted = 0;
+  const injectionStartedAt = performance.now();
   for (let second = 0; second < config.durationSeconds; second += 1) {
     const tickStartedAt = performance.now();
     const results = await Promise.allSettled(
@@ -345,11 +414,19 @@ const replayFixtures = async config => {
       await new Promise(resolve => setTimeout(resolve, remaining));
     }
   }
+  const injection = buildInjectionMeasurements(
+    accepted,
+    injectionStartedAt,
+    performance.now()
+  );
 
-  const drainStartedAt = Date.now();
+  const drainStartedAt = performance.now();
   let diaChatMetrics;
   let receiver;
-  while ((Date.now() - drainStartedAt) / 1000 <= config.drainDeadlineSeconds) {
+  while (
+    (performance.now() - drainStartedAt) / 1000 <=
+    config.drainDeadlineSeconds
+  ) {
     [diaChatMetrics, receiver] = await Promise.all([
       readDiaChatMetrics(config),
       readReceiverMetrics(config, runId)
@@ -366,12 +443,12 @@ const replayFixtures = async config => {
     accepted,
     receiver,
     pipeline: {
-      projectionFailures:
-        Number(diaChatMetrics?.mirror?.projectionFailures || 0) -
-        Number(initialMetrics.mirror?.projectionFailures || 0),
-      cryptoFailures:
-        Number(diaChatMetrics?.mirror?.cryptoFailures || 0) -
-        Number(initialMetrics.mirror?.cryptoFailures || 0),
+      durableProjectionFailures:
+        Number(diaChatMetrics?.mirror?.durableFailures?.projection || 0) -
+        Number(initialMetrics.mirror?.durableFailures?.projection || 0),
+      durableCryptoFailures:
+        Number(diaChatMetrics?.mirror?.durableFailures?.crypto || 0) -
+        Number(initialMetrics.mirror?.durableFailures?.crypto || 0),
       deadLettersDelta:
         Number(diaChatMetrics?.commands?.deadLetter || 0) +
         Number(diaChatMetrics?.outbox?.deadLetter || 0) +
@@ -401,7 +478,8 @@ const replayFixtures = async config => {
       purge: diaChatMetrics?.mirror?.purge || null,
       media: diaChatMetrics?.mirror?.media || null
     },
-    drainSeconds: Math.ceil((Date.now() - drainStartedAt) / 1000)
+    ...injection,
+    drainSeconds: Math.ceil((performance.now() - drainStartedAt) / 1000)
   });
   const outputPath = writeReport("whatsapp-mirror-capacity", report);
   console.log(JSON.stringify({ outputPath, ...report }, null, 2));
@@ -417,16 +495,10 @@ const requestProbe = async (config, runId) => {
   url.searchParams.set("connectionIds", config.connectionIds.join(","));
   url.searchParams.set("runId", runId);
   const startedAt = performance.now();
-  const response = await fetch(url, {
+  const payload = await requestJson(url, {
     method: "POST",
     headers: { Authorization: `Bearer ${config.serviceToken}` }
   });
-  const payload = await response.json();
-  if (!response.ok) {
-    throw new Error(
-      `Probe HTTP ${response.status}: ${JSON.stringify(payload)}`
-    );
-  }
   return { latencyMs: performance.now() - startedAt, payload };
 };
 
@@ -535,7 +607,9 @@ if (require.main === module) {
 }
 
 module.exports = {
+  buildInjectionMeasurements,
   buildReplayReport,
+  fetchJsonWithTimeout,
   loadConfig,
   loadReplayConfig,
   loadReplayFixtures,

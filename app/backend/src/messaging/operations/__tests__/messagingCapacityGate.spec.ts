@@ -1,7 +1,9 @@
 // The capacity runner is JavaScript so it can execute before the TypeScript app.
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const {
+  buildInjectionMeasurements,
   buildReplayReport,
+  fetchJsonWithTimeout,
   loadConfig,
   loadReplayConfig,
   percentile,
@@ -93,10 +95,12 @@ describe("messagingCapacityGate", () => {
           plaintextViolations: 1
         },
         pipeline: {
-          projectionFailures: 1,
-          cryptoFailures: 0,
+          durableProjectionFailures: 1,
+          durableCryptoFailures: 0,
           deadLettersDelta: 1
         },
+        injectionElapsedSeconds: 1801,
+        achievedRps: 149.92,
         drainSeconds: 901
       }
     );
@@ -107,9 +111,40 @@ describe("messagingCapacityGate", () => {
       zeroPlaintext: false,
       hmacVerified: true,
       drainedWithinDeadline: false,
+      sustainedInjectionRate: false,
       pipelineHealthy: false
     });
     expect(report.passed).toBe(false);
     expect(JSON.stringify(report)).not.toContain("secret");
+  });
+
+  it("measures the sustained injection rate with a monotonic clock", () => {
+    expect(buildInjectionMeasurements(270000, 10_000, 1_810_000)).toEqual({
+      injectionElapsedSeconds: 1800,
+      achievedRps: 150
+    });
+    expect(
+      buildInjectionMeasurements(270000, 10_000, 1_811_000).achievedRps
+    ).toBeLessThan(150);
+  });
+
+  it("aborts a hung request at the configured timeout", async () => {
+    const hangingFetch = jest.fn((_url: string, options: any) => {
+      expect(options.signal).toBeInstanceOf(AbortSignal);
+      return new Promise((_resolve, reject) => {
+        options.signal.addEventListener("abort", () =>
+          reject(Object.assign(new Error("aborted"), { name: "AbortError" }))
+        );
+      });
+    });
+
+    await expect(
+      fetchJsonWithTimeout(
+        "https://staging.example/metrics",
+        {},
+        5,
+        hangingFetch
+      )
+    ).rejects.toThrow("timeout");
   });
 });

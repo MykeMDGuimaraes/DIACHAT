@@ -3,7 +3,7 @@ import WhatsAppMirrorReplayService from "../WhatsAppMirrorReplayService";
 describe("WhatsAppMirrorReplayService", () => {
   const runId = "11111111-1111-4111-8111-111111111111";
 
-  it("publishes a unique synthetic provider event without invoking a send provider", async () => {
+  it("routes a synthetic Baileys raw fixture through the real adapter", async () => {
     const published: any[] = [];
     const service = new WhatsAppMirrorReplayService({
       publish: async events => {
@@ -21,26 +21,31 @@ describe("WhatsAppMirrorReplayService", () => {
           name: "baileys-rich-v1",
           provider: "baileys",
           event: {
-            eventType: "button.clicked",
-            kind: "interactive",
-            text: "Synthetic choice",
-            actorType: "contact",
-            fromMe: false,
-            interactive: {
-              type: "button",
-              id: "fixture-choice-1",
-              title: "Synthetic option"
+            adapter: "message",
+            raw: {
+              key: {
+                id: "fixture-message-12",
+                remoteJid: "000000000000@s.whatsapp.net",
+                fromMe: false
+              },
+              messageTimestamp: 1767225600,
+              message: {
+                buttonsResponseMessage: {
+                  selectedButtonId: "fixture-choice-1",
+                  selectedDisplayText: "Synthetic option"
+                }
+              }
             }
           }
         }
       })
     ).resolves.toEqual({ accepted: true, sequence: 12 });
 
-    expect(published).toHaveLength(1);
+    expect(published).toHaveLength(2);
     expect(published[0]).toEqual(
       expect.objectContaining({
         companyId: 7,
-        eventType: "button.clicked",
+        eventType: "message.received",
         occurredAt: new Date("2026-01-01T00:00:00.000Z")
       })
     );
@@ -52,17 +57,23 @@ describe("WhatsAppMirrorReplayService", () => {
         contactId: `fixture-${runId}`,
         externalTicketId: `fixture-${runId}`,
         automationEpoch: 1,
-        actorType: "contact"
+        actorType: "contact",
+        kind: "button"
       })
     );
     expect(published[0].payload.connection.phoneNumber).toBeNull();
     expect(published[0].payload.contact).toMatchObject({
-      jid: null,
+      jid: "000000000000@s.whatsapp.net",
       lid: null,
-      phoneNumber: null
+      phoneNumber: "000000000000"
     });
-    expect(JSON.stringify(published[0])).not.toMatch(
-      /@s\.whatsapp\.net|authorization|secret|5511\d+/i
+    expect(published.map(event => event.eventType)).toEqual([
+      "message.received",
+      "button.clicked"
+    ]);
+    expect(published[0].payload.provider.name).toBe("baileys");
+    expect(JSON.stringify(published)).not.toMatch(
+      /authorization|secret|(?:[1-9]\d{10,})@s\.whatsapp\.net/i
     );
   });
 
@@ -80,8 +91,14 @@ describe("WhatsAppMirrorReplayService", () => {
           name: "meta-rich-v1",
           provider: "meta_cloud",
           event: {
-            eventType: "message.received",
-            kind: "text",
+            adapter: "message",
+            raw: {
+              id: "fixture-meta-message",
+              type: "text",
+              text: { body: "Synthetic" },
+              from: "000000000000",
+              timestamp: "1767225600"
+            },
             phoneNumber: "synthetic-phone"
           }
         }

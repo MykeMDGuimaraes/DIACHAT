@@ -52,6 +52,74 @@ const selectedButton = (
   return null;
 };
 
+const metaRichContent = (raw: Record<string, any>) => {
+  const mediaValue = ["image", "audio", "video", "document"].includes(raw.type)
+    ? raw[raw.type]
+    : null;
+  return {
+    text:
+      raw.text?.body ??
+      raw.image?.caption ??
+      raw.video?.caption ??
+      raw.document?.caption ??
+      null,
+    quoted: raw.context?.id
+      ? {
+          id: raw.context.id,
+          providerMessageId: raw.context.id,
+          participant: raw.context.from
+            ? `${raw.context.from}@s.whatsapp.net`
+            : null,
+          type: null,
+          text: null
+        }
+      : null,
+    media: mediaValue
+      ? {
+          type: raw.type,
+          mimeType: mediaValue.mime_type ?? null,
+          fileName: mediaValue.filename ?? null,
+          sizeBytes: null,
+          sha256: mediaValue.sha256 ?? null,
+          url: null,
+          available: true,
+          caption: mediaValue.caption ?? null
+        }
+      : null,
+    location:
+      raw.type === "location"
+        ? {
+            latitude: raw.location?.latitude ?? null,
+            longitude: raw.location?.longitude ?? null,
+            name: raw.location?.name ?? null,
+            address: raw.location?.address ?? null,
+            url: null
+          }
+        : null,
+    contacts:
+      raw.type === "contacts"
+        ? (raw.contacts || []).map((contact: any) => ({
+            displayName: contact.name?.formatted_name ?? null,
+            vcard: null,
+            phoneNumbers: (contact.phones || []).map(
+              (phone: any) => phone.phone ?? null
+            )
+          }))
+        : null,
+    poll:
+      raw.type === "poll"
+        ? {
+            name: raw.poll?.name ?? null,
+            options: (raw.poll?.options || []).map(
+              (option: any) => option.title ?? null
+            ),
+            selectedOptionIds: raw.poll?.selected_option_ids ?? null,
+            multipleAnswers: raw.poll?.multiple_answers ?? null
+          }
+        : null
+  };
+};
+
 export const adaptMetaMessageEvents = (
   input: MetaMessageAdapterInput
 ): WhatsAppProviderEvent[] => {
@@ -64,6 +132,7 @@ export const adaptMetaMessageEvents = (
       : `${raw.from}@s.whatsapp.net`
     : null;
   const interactive = selectedButton(raw);
+  const rich = metaRichContent(raw);
   const kind = interactive?.type || raw.type || null;
   const shared = {
     context: input,
@@ -72,9 +141,16 @@ export const adaptMetaMessageEvents = (
     messageId,
     occurredAt,
     jid,
+    lid: raw.lid ?? null,
     actorType: "contact",
     kind,
     fromMe: false,
+    text: rich.text,
+    quoted: rich.quoted,
+    media: rich.media,
+    location: rich.location,
+    contacts: rich.contacts,
+    poll: rich.poll,
     interactive: interactive
       ? {
           type: interactive.type,
@@ -133,7 +209,9 @@ export const adaptMetaMessageEvents = (
     createProviderEvent({ ...shared, eventType: "message.received" })
   ];
   if (interactive) {
-    events.push(createProviderEvent({ ...shared, eventType: "button.clicked" }));
+    events.push(
+      createProviderEvent({ ...shared, eventType: "button.clicked" })
+    );
   }
   return events;
 };
@@ -144,12 +222,8 @@ export const adaptMetaChatUpdate = (
   const raw = input.raw || {};
   const jid = raw.jid ? String(raw.jid) : null;
   const occurredAt = timestamp(raw.timestamp, input.observedAt);
-  const archived = hasOwn(raw, "archived")
-    ? booleanOrNull(raw.archived)
-    : null;
-  const pinned = hasOwn(raw, "pinned")
-    ? booleanOrNull(raw.pinned)
-    : null;
+  const archived = hasOwn(raw, "archived") ? booleanOrNull(raw.archived) : null;
+  const pinned = hasOwn(raw, "pinned") ? booleanOrNull(raw.pinned) : null;
   const mutedUntil = hasOwn(raw, "muted_until")
     ? raw.muted_until === null || raw.muted_until === undefined
       ? null
@@ -318,7 +392,9 @@ export const adaptMetaLifecycleEvents = (
             raw: {
               state: value.state ?? value.event ?? change.field,
               phone_number_id:
-                value.phone_number_id ?? value.metadata?.phone_number_id ?? null,
+                value.phone_number_id ??
+                value.metadata?.phone_number_id ??
+                null,
               timestamp: value.timestamp,
               source_id: `${sourcePrefix}:${change.field}`
             }

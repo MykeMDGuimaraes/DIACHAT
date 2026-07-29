@@ -49,6 +49,20 @@ npm.cmd run capacity:whatsapp-mirror
 npm.cmd run verify:roteador-contract
 ```
 
+### Gate externo atualmente bloqueado
+
+O verificador gera os envelopes em runtime pelos adapters Baileys/Meta e pelo
+`WhatsAppMirrorProjectionService`; ele não usa envelopes manuais. No parser
+atual do Roteador, o resultado deste checkout é falha: o campo top-level
+`schema` é rejeitado por `extra=forbid` e os tipos especializados
+`message.reaction`, `message.edited`, `message.deleted`, `chat.updated` e
+`connection.updated` não pertencem ao literal aceito.
+
+Logo, `verify:roteador-contract` termina com exit code diferente de zero e a
+ativação live permanece bloqueada. O runner live executa esse preflight antes
+de injetar qualquer evento. Não habilite o espelho até que o contrato externo
+seja coordenado e o mesmo verificador termine com exit code zero.
+
 O primeiro comando apenas valida fixtures/configuração e grava
 `artifacts/capacity/whatsapp-mirror-dry-validation-*.json`. O segundo importa o
 parser atual do checkout Roteador indicado por `ROTEADOR_ROOT` ou usa o
@@ -78,10 +92,17 @@ deadline de drain de 900 s. Ele falha se houver perda, duplicata inesperada,
 falha HMAC, plaintext at rest/logado ou drain acima de 15 minutos. Tokens,
 URLs internas, bodies e PII não entram no relatório.
 
+O relatório mede `injectionElapsedSeconds` e `achievedRps` por relógio
+monotônico e falha abaixo de 150 eventos/s sustentados pelos 1.800 s
+aprovados. Requests de injeção e polls usam `AbortController` com timeout para
+que um endpoint travado não suspenda o gate indefinidamente.
+
 ## Monitoramento e promoção
 
 Monitore `GET /internal/v1/messaging/metrics` com credencial de serviço:
 
+- `mirror.durableFailures.projection` e
+  `mirror.durableFailures.crypto`, derivados do PostgreSQL;
 - `mirror.projectionFailures`, `mirror.cryptoFailures`;
 - `outbox.ready`, `outbox.inFlight`, `outbox.oldestPendingSeconds`;
 - `webhooks.ready`, `webhooks.inFlight`, `webhooks.oldestPendingSeconds`;
@@ -104,6 +125,10 @@ drena, assinatura inválida, perda, duplicata inesperada ou plaintext.
    por flags; preserve dados para recovery e auditoria.
 
 ## Estado deste checkout
+
+A ativação está bloqueada pela incompatibilidade confirmada do parser externo.
+Os contadores locais de projection/crypto são apenas telemetria auxiliar; o
+release gate usa os agregados duráveis do PostgreSQL.
 
 A validação local/dry e o contrato das fixtures são executáveis. O gate real
 permanece externo: não há PostgreSQL local nem target/receiver n8n de staging

@@ -1,76 +1,22 @@
 {
-  "name": "baileys-rich-v1",
+  "name": "baileys-rich-v2",
   "provider": "baileys",
   "events": [
-    {
-      "eventType": "message.received",
-      "kind": "text",
-      "text": "Synthetic Baileys capacity event",
-      "actorType": "contact",
-      "fromMe": false
-    },
-    {
-      "eventType": "button.clicked",
-      "kind": "interactive",
-      "text": "Synthetic choice",
-      "actorType": "contact",
-      "fromMe": false,
-      "interactive": {
-        "type": "button",
-        "id": "fixture-choice-1",
-        "title": "Synthetic option"
-      }
-    },
-    {
-      "eventType": "message.reaction",
-      "kind": "reaction",
-      "actorType": "contact",
-      "fromMe": false,
-      "reaction": {
-        "emoji": "OK",
-        "targetMessageId": "fixture-message-target"
-      }
-    },
-    {
-      "eventType": "message.edited",
-      "kind": "text",
-      "text": "Synthetic edited event",
-      "actorType": "contact",
-      "fromMe": false,
-      "edit": {
-        "targetMessageId": "fixture-message-target",
-        "text": "Synthetic edited event"
-      }
-    }
-  ],
-  "roteadorEnvelopes": [
-    {
-      "id": "fixture-baileys-message",
-      "type": "message.received",
-      "createdAt": "2026-01-01T00:00:00.000Z",
-      "data": {
-        "messageId": "fixture-baileys-message",
-        "conversationId": "fixture-conversation",
-        "contactId": "fixture-contact",
-        "externalTicketId": "fixture-ticket",
-        "automationEpoch": 3,
-        "actorType": "contact",
-        "text": "Synthetic Baileys capacity event"
-      }
-    },
-    {
-      "id": "fixture-baileys-button",
-      "type": "button.clicked",
-      "createdAt": "2026-01-01T00:00:01.000Z",
-      "data": {
-        "messageId": "fixture-baileys-button",
-        "conversationId": "fixture-conversation",
-        "contactId": "fixture-contact",
-        "externalTicketId": "fixture-ticket",
-        "automationEpoch": 3,
-        "actorType": "contact",
-        "buttonId": "fixture-choice-1"
-      }
-    }
+    {"adapter":"message","raw":{"key":{"id":"b-text","remoteJid":"000000000000@s.whatsapp.net","remoteJidAlt":"000000000000000@lid","fromMe":false},"messageTimestamp":1767225600,"message":{"conversation":"Synthetic text"}}},
+    {"adapter":"message","raw":{"key":{"id":"b-image","remoteJid":"000000000000@s.whatsapp.net","fromMe":false},"messageTimestamp":1767225601,"message":{"imageMessage":{"mimetype":"image/png","fileLength":128,"caption":"Synthetic image"}}}},
+    {"adapter":"message","raw":{"key":{"id":"b-audio","remoteJid":"000000000000@s.whatsapp.net","fromMe":false},"messageTimestamp":1767225602,"message":{"audioMessage":{"mimetype":"audio/ogg","fileLength":64}}}},
+    {"adapter":"message","raw":{"key":{"id":"b-video","remoteJid":"000000000000@s.whatsapp.net","fromMe":false},"messageTimestamp":1767225603,"message":{"videoMessage":{"mimetype":"video/mp4","fileLength":256,"caption":"Synthetic video"}}}},
+    {"adapter":"message","raw":{"key":{"id":"b-doc","remoteJid":"000000000000@s.whatsapp.net","fromMe":false},"messageTimestamp":1767225604,"message":{"documentMessage":{"mimetype":"application/pdf","fileName":"synthetic.pdf","fileLength":512}}}},
+    {"adapter":"message","raw":{"key":{"id":"b-location","remoteJid":"000000000000@s.whatsapp.net","fromMe":false},"messageTimestamp":1767225605,"message":{"locationMessage":{"degreesLatitude":0,"degreesLongitude":0,"name":"Synthetic place","address":"Synthetic address"}}}},
+    {"adapter":"message","raw":{"key":{"id":"b-contact","remoteJid":"000000000000@s.whatsapp.net","fromMe":false},"messageTimestamp":1767225606,"message":{"contactMessage":{"displayName":"Synthetic contact","vcard":"BEGIN:VCARD\nFN:Synthetic\nEND:VCARD"}}}},
+    {"adapter":"message","raw":{"key":{"id":"b-poll","remoteJid":"000000000000@s.whatsapp.net","fromMe":false},"messageTimestamp":1767225607,"message":{"pollCreationMessage":{"name":"Synthetic poll","options":[{"optionName":"A"},{"optionName":"B"}],"selectableOptionsCount":1}}}},
+    {"adapter":"message","raw":{"key":{"id":"b-button","remoteJid":"000000000000@s.whatsapp.net","fromMe":false},"messageTimestamp":1767225608,"message":{"buttonsResponseMessage":{"selectedButtonId":"synthetic-button","selectedDisplayText":"Synthetic option"}}}},
+    {"adapter":"message","raw":{"key":{"id":"b-list","remoteJid":"000000000000@s.whatsapp.net","fromMe":false},"messageTimestamp":1767225609,"message":{"listResponseMessage":{"title":"Synthetic list","singleSelectReply":{"selectedRowId":"synthetic-row"}}}}},
+    {"adapter":"message","raw":{"key":{"id":"b-reaction","remoteJid":"000000000000@s.whatsapp.net","fromMe":false},"messageTimestamp":1767225610,"message":{"reactionMessage":{"text":"OK","key":{"id":"b-target"}}}}},
+    {"adapter":"message","raw":{"key":{"id":"b-quote","remoteJid":"000000000000@s.whatsapp.net","fromMe":false},"messageTimestamp":1767225611,"message":{"extendedTextMessage":{"text":"Synthetic reply","contextInfo":{"stanzaId":"b-target","participant":"000000000000@s.whatsapp.net","quotedMessage":{"conversation":"Synthetic quoted"}}}}}},
+    {"adapter":"message","raw":{"key":{"id":"b-edit","remoteJid":"000000000000@s.whatsapp.net","fromMe":false},"messageTimestamp":1767225612,"message":{"editedMessage":{"message":{"protocolMessage":{"key":{"id":"b-target"},"editedMessage":{"conversation":"Synthetic edited"}}}}}}},
+    {"adapter":"message","raw":{"key":{"id":"b-delete","remoteJid":"000000000000@s.whatsapp.net","fromMe":false},"messageTimestamp":1767225613,"message":{"protocolMessage":{"type":0,"key":{"id":"b-target"}}}}},
+    {"adapter":"chat","raw":{"id":"000000000000-0000000000@g.us","lid":"000000000000000@lid","eventId":"b-chat","conversationTimestamp":1767225614,"name":"Synthetic group","archived":false,"pin":true,"unreadCount":2}},
+    {"adapter":"connection","raw":{"eventId":"b-connection","connection":"open","timestamp":1767225615}}
   ]
 }

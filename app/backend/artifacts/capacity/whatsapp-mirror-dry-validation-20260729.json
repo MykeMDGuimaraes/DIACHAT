@@ -4,23 +4,33 @@
   "liveGate": "not-run",
   "fixtures": [
     {
-      "name": "baileys-rich-v1",
+      "name": "baileys-rich-v2",
       "provider": "baileys",
-      "events": 4,
-      "roteadorEnvelopes": 2
+      "adapterInputs": 16
     },
     {
-      "name": "meta-rich-v1",
+      "name": "meta-rich-v2",
       "provider": "meta_cloud",
-      "events": 4,
-      "roteadorEnvelopes": 2
+      "adapterInputs": 16
     }
   ],
+  "externalContractGate": {
+    "status": "blocked",
+    "compatible": false,
+    "activationBlocked": true,
+    "generatedEnvelopes": 36,
+    "generatedBy": "real-adapter-plus-WhatsAppMirrorProjectionService",
+    "reasons": [
+      "schema extra_forbidden",
+      "specialized event types literal_error"
+    ]
+  },
   "target": {
     "requestsPerSecond": 150,
     "durationSeconds": 1800,
     "expectedEvents": 270000,
     "drainDeadlineSeconds": 900
   },
-  "validationPassed": true
+  "fixtureValidationPassed": true,
+  "activationBlocked": true
 }

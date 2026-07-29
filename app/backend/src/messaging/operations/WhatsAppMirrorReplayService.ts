@@ -1,27 +1,25 @@
 import WhatsAppProviderEventPublisher from "../application/WhatsAppProviderEventPublisher";
+import { WhatsAppProviderEvent } from "../domain/WhatsAppProviderEvent";
 import {
-  createProviderEvent,
-  WhatsAppProviderEvent,
-  WhatsAppProviderEventType
-} from "../domain/WhatsAppProviderEvent";
+  adaptBaileysChatUpdate,
+  adaptBaileysConnectionUpdate,
+  adaptBaileysMessageEvents
+} from "../adapters/baileys/BaileysProviderEventAdapter";
+import {
+  adaptMetaChatUpdate,
+  adaptMetaConnectionUpdate,
+  adaptMetaMessageEvents
+} from "../adapters/meta-cloud/MetaProviderEventAdapter";
 
 const RUN_ID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const FIXTURE_NAME = /^[a-z0-9-]+$/;
 const FORBIDDEN_KEY =
-  /(?:authorization|cookie|password|secret|token|phone(?:Number)?|jid|lid|url)/i;
-const FORBIDDEN_VALUE =
-  /(?:@[cs]\.whatsapp\.net|@c\.us|\b55\d{10,13}\b|bearer\s+)/i;
-const EVENT_TYPES: readonly WhatsAppProviderEventType[] = [
-  "message.received",
-  "button.clicked",
-  "message.reaction",
-  "message.edited",
-  "message.deleted",
-  "message.status.updated",
-  "chat.updated",
-  "connection.updated"
-];
+  /(?:authorization|cookie|password|secret|token|phoneNumber|url)/i;
+const WHATSAPP_ID = /(?:@s\.whatsapp\.net|@g\.us|@lid|@c\.us)$/i;
+const SYNTHETIC_WHATSAPP_ID =
+  /^(?:0{12,18}(?:-0{10})?)@(?:s\.whatsapp\.net|g\.us|lid|c\.us)$/i;
+const ADAPTERS = ["message", "chat", "connection"] as const;
 
 interface ReplayDependencies {
   publish(events: readonly WhatsAppProviderEvent[]): Promise<void>;
@@ -46,8 +44,13 @@ const defaults: ReplayDependencies = {
 };
 
 const validateSyntheticValue = (value: unknown, location: string): void => {
-  if (typeof value === "string" && FORBIDDEN_VALUE.test(value)) {
-    throw new Error(`Replay fixture insegura em ${location}`);
+  if (typeof value === "string") {
+    if (/bearer\s+/i.test(value)) {
+      throw new Error(`Replay fixture insegura em ${location}`);
+    }
+    if (WHATSAPP_ID.test(value) && !SYNTHETIC_WHATSAPP_ID.test(value)) {
+      throw new Error(`Replay fixture exige JID/LID sintetico em ${location}`);
+    }
   }
   if (Array.isArray(value)) {
     value.forEach((item, index) =>
@@ -94,60 +97,48 @@ class WhatsAppMirrorReplayService {
       throw new Error("Replay provider invalido");
     }
     validateSyntheticValue(request.fixture.event, "$.fixture.event");
-    const eventType = request.fixture.event
-      .eventType as WhatsAppProviderEventType;
-    if (!EVENT_TYPES.includes(eventType)) {
-      throw new Error("Replay eventType invalido");
+    const adapter = request.fixture.event.adapter as
+      | (typeof ADAPTERS)[number]
+      | undefined;
+    if (!adapter || !ADAPTERS.includes(adapter)) {
+      throw new Error("Replay adapter invalido");
     }
 
     const syntheticId = `fixture-${request.runId}`;
-    const messageId = `${syntheticId}-${request.sequence}`;
-    const occurredAt = this.dependencies.now();
-    const event = createProviderEvent({
-      context: {
-        companyId,
-        whatsappId: request.whatsappId,
-        conversationId: syntheticId,
-        contactId: syntheticId,
-        externalTicketId: syntheticId,
-        automationEpoch: 1
-      },
-      eventType,
-      providerName: request.fixture.provider,
-      providerEventId: `capacity-${request.runId}-${request.sequence}`,
-      messageId,
-      occurredAt,
-      revision: String(request.sequence),
-      actorType:
-        typeof request.fixture.event.actorType === "string"
-          ? request.fixture.event.actorType
-          : "system",
-      kind:
-        typeof request.fixture.event.kind === "string"
-          ? request.fixture.event.kind
-          : null,
-      fromMe:
-        typeof request.fixture.event.fromMe === "boolean"
-          ? request.fixture.event.fromMe
-          : null,
-      text:
-        typeof request.fixture.event.text === "string"
-          ? request.fixture.event.text
-          : null,
-      interactive:
-        (request.fixture.event.interactive as Record<string, unknown>) || null,
-      reaction:
-        (request.fixture.event.reaction as Record<string, unknown>) || null,
-      edit: (request.fixture.event.edit as Record<string, unknown>) || null,
-      delete: (request.fixture.event.delete as Record<string, unknown>) || null
-    });
-    if (typeof request.fixture.event.status === "string") {
-      event.payload.message.status = request.fixture.event.status;
+    const context = {
+      companyId,
+      whatsappId: request.whatsappId,
+      conversationId: syntheticId,
+      contactId: syntheticId,
+      externalTicketId: syntheticId,
+      automationEpoch: 1
+    };
+    const raw = request.fixture.event.raw as Record<string, unknown>;
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+      throw new Error("Replay raw sintetico invalido");
     }
-    if (typeof request.fixture.event.state === "string") {
-      event.payload.connection.state = request.fixture.event.state;
+    const observedAt = this.dependencies.now();
+    let events: WhatsAppProviderEvent[];
+    if (request.fixture.provider === "baileys") {
+      events =
+        adapter === "message"
+          ? adaptBaileysMessageEvents({ ...context, raw })
+          : [
+              adapter === "chat"
+                ? adaptBaileysChatUpdate({ ...context, raw, observedAt })
+                : adaptBaileysConnectionUpdate({ ...context, raw, observedAt })
+            ];
+    } else {
+      events =
+        adapter === "message"
+          ? adaptMetaMessageEvents({ ...context, raw })
+          : [
+              adapter === "chat"
+                ? adaptMetaChatUpdate({ ...context, raw, observedAt })
+                : adaptMetaConnectionUpdate({ ...context, raw, observedAt })
+            ];
     }
-    await this.dependencies.publish([event]);
+    await this.dependencies.publish(events);
     return { accepted: true, sequence: request.sequence };
   }
 }

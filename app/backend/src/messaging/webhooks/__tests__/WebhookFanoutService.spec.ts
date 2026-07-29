@@ -216,6 +216,7 @@ describe("WebhookFanoutService", () => {
     "does not complete the claimed event after %s failure",
     async failure => {
       const completeEvent = jest.fn();
+      const releaseEvent = jest.fn().mockResolvedValue([1]);
       const transaction = jest.fn(async callback => callback({}));
       const service = new WebhookFanoutService({
         transaction,
@@ -239,6 +240,7 @@ describe("WebhookFanoutService", () => {
         ]),
         createDelivery: jest.fn(),
         completeEvent,
+        releaseEvent,
         buildSnapshot:
           failure === "projection"
             ? jest.fn().mockRejectedValue(new Error("projection failed"))
@@ -259,6 +261,13 @@ describe("WebhookFanoutService", () => {
 
       await expect(service.fanoutOne()).rejects.toThrow(`${failure} failed`);
       expect(completeEvent).not.toHaveBeenCalled();
+      expect(releaseEvent).toHaveBeenCalledWith(
+        "evt_1",
+        "event-lease-1",
+        failure === "projection"
+          ? "WHATSAPP_MIRROR_PROJECTION_FAILED"
+          : "WHATSAPP_MIRROR_CRYPTO_FAILED"
+      );
       expect(snapshotWhatsAppMirrorMetrics()).toMatchObject({
         projectionFailures: failure === "projection" ? 1 : 0,
         cryptoFailures: failure === "encryption" ? 1 : 0

@@ -44,6 +44,7 @@ describe("MessagingMetricsService", () => {
     expect(result.mirror).toEqual({
       projectionFailures: 1,
       cryptoFailures: 1,
+      durableFailures: { projection: 0, crypto: 0 },
       media: { available: 0, unavailable: 1, failures: 0 },
       purge: { encryptedBodies: 2, bodiesLastMinute: 0 },
       throughput: {
@@ -56,6 +57,7 @@ describe("MessagingMetricsService", () => {
       "cryptoFailures",
       "media",
       "purge",
+      "durableFailures",
       "throughput"
     ]);
   });
