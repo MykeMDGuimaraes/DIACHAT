@@ -68,13 +68,13 @@ class OutboundPairRecoveryService {
     now: Date
   ): Promise<number> {
     return sequelize.transaction(async transaction => {
+      const event = await this.lockEvent(eventId, commandId, transaction);
+
       const command = await MessageCommand.findOne({
         where: { id: commandId },
         transaction,
         lock: transaction.LOCK.UPDATE
       });
-
-      const event = await this.lockEvent(eventId, commandId, transaction);
 
       if (!command) {
         if (event) {

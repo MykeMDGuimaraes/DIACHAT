@@ -207,20 +207,6 @@ const finalizePair = async (
 ): Promise<boolean> => {
   try {
     return await sequelize.transaction(async transaction => {
-      const [commandUpdated] = await MessageCommand.update(
-        { ...commandValues, leaseToken: null },
-        {
-          where: {
-            id: claim.command.id,
-            status: MESSAGE_COMMAND_STATUS.SENDING,
-            leaseToken: claim.leaseToken
-          },
-          transaction
-        }
-      );
-      if (commandUpdated !== 1) {
-        throw new OutboundPairFencedError();
-      }
       const [eventUpdated] = await MessagingOutboxEvent.update(
         { ...eventValues, leaseToken: null },
         {
@@ -233,7 +219,21 @@ const finalizePair = async (
         }
       );
       if (eventUpdated !== 1) {
-        // Lançar dentro da transação reverte também a atualização do comando.
+        throw new OutboundPairFencedError();
+      }
+      const [commandUpdated] = await MessageCommand.update(
+        { ...commandValues, leaseToken: null },
+        {
+          where: {
+            id: claim.command.id,
+            status: MESSAGE_COMMAND_STATUS.SENDING,
+            leaseToken: claim.leaseToken
+          },
+          transaction
+        }
+      );
+      if (commandUpdated !== 1) {
+        // Lançar dentro da transação reverte também a atualização do evento.
         throw new OutboundPairFencedError();
       }
       if (followUpEvent) {
@@ -247,6 +247,44 @@ const finalizePair = async (
     if (error instanceof OutboundPairFencedError) {
       return false;
     }
+    throw error;
+  }
+};
+
+const refreshLeasePair = async (
+  claim: ClaimedDispatch,
+  leaseExpiresAt: Date
+): Promise<boolean> => {
+  try {
+    return await sequelize.transaction(async transaction => {
+      const [eventUpdated] = await MessagingOutboxEvent.update(
+        { leaseExpiresAt },
+        {
+          where: {
+            id: claim.eventId,
+            status: OUTBOX_EVENT_STATUS.PROCESSING,
+            leaseToken: claim.leaseToken
+          },
+          transaction
+        }
+      );
+      if (eventUpdated !== 1) throw new OutboundPairFencedError();
+      const [commandUpdated] = await MessageCommand.update(
+        { leaseExpiresAt },
+        {
+          where: {
+            id: claim.command.id,
+            status: MESSAGE_COMMAND_STATUS.SENDING,
+            leaseToken: claim.leaseToken
+          },
+          transaction
+        }
+      );
+      if (commandUpdated !== 1) throw new OutboundPairFencedError();
+      return true;
+    });
+  } catch (error) {
+    if (error instanceof OutboundPairFencedError) return false;
     throw error;
   }
 };
@@ -265,66 +303,33 @@ const createDefaultDependencies = (
     return provider.send(command);
   };
   return {
-  claimNext: now =>
-    sequelize.transaction(async transaction => {
-      const event = await MessagingOutboxEvent.findOne({
-        where: {
-          eventType: OUTBOX_EVENT_TYPE.MESSAGE_DISPATCH_REQUESTED,
-          status: OUTBOX_EVENT_STATUS.READY,
-          availableAt: { [Op.lte]: now }
-        },
-        order: [["createdAt", "ASC"]],
-        transaction,
-        lock: transaction.LOCK.UPDATE,
-        skipLocked: true
-      });
-
-      if (!event) {
-        return null;
-      }
-
-      const command = await MessageCommand.findOne({
-        where: { id: event.aggregateId, status: MESSAGE_COMMAND_STATUS.QUEUED },
-        transaction,
-        lock: transaction.LOCK.UPDATE
-      });
-
-      if (!command) {
-        await event.update(
-          {
-            status: OUTBOX_EVENT_STATUS.COMPLETED,
-            leaseExpiresAt: null,
-            leaseToken: null
-          },
-          { transaction }
-        );
-        return null;
-      }
-
-      if (command.externalTicketId) {
-        const state = await ConversationAutomationState.findOne({
+    claimNext: now =>
+      sequelize.transaction(async transaction => {
+        const event = await MessagingOutboxEvent.findOne({
           where: {
-            companyId: command.companyId,
-            externalTicketId: command.externalTicketId
+            eventType: OUTBOX_EVENT_TYPE.MESSAGE_DISPATCH_REQUESTED,
+            status: OUTBOX_EVENT_STATUS.READY,
+            availableAt: { [Op.lte]: now }
           },
+          order: [["createdAt", "ASC"]],
           transaction,
-          lock: transaction.LOCK.UPDATE
+          lock: transaction.LOCK.UPDATE,
+          skipLocked: true
         });
-        if (
-          !automationCommandIsCurrent(
-            command.toJSON() as unknown as MessageCommandEventSource,
-            state?.toJSON() as any
-          )
-        ) {
-          await command.update(
-            {
-              status: MESSAGE_COMMAND_STATUS.CANCELLED,
-              errorCode: "STALE_AUTOMATION_EPOCH",
-              cancelledAt: now,
-              completedAt: now
-            },
-            { transaction }
-          );
+
+        if (!event) {
+          return null;
+        }
+
+        const commandCandidate = await MessageCommand.findOne({
+          where: {
+            id: event.aggregateId,
+            status: MESSAGE_COMMAND_STATUS.QUEUED
+          },
+          transaction
+        });
+
+        if (!commandCandidate) {
           await event.update(
             {
               status: OUTBOX_EVENT_STATUS.COMPLETED,
@@ -333,229 +338,306 @@ const createDefaultDependencies = (
             },
             { transaction }
           );
-          await MessagingOutboxEvent.create(
-            buildMessageFailedEvent(
-              command.toJSON() as unknown as MessageCommandEventSource,
-              "STALE_AUTOMATION_EPOCH",
-              "Comando cancelado antes do envio"
-            ) as any,
+          return null;
+        }
+
+        // Global order: event -> automation state -> command. Handoff locks
+        // state before cancelling queued commands, so claim must never hold the
+        // command row while waiting for that state.
+        const state = commandCandidate.externalTicketId
+          ? await ConversationAutomationState.findOne({
+              where: {
+                companyId: commandCandidate.companyId,
+                externalTicketId: commandCandidate.externalTicketId
+              },
+              transaction,
+              lock: transaction.LOCK.UPDATE
+            })
+          : null;
+        const command = await MessageCommand.findOne({
+          where: {
+            id: event.aggregateId,
+            status: MESSAGE_COMMAND_STATUS.QUEUED
+          },
+          transaction,
+          lock: transaction.LOCK.UPDATE
+        });
+        if (!command) {
+          await event.update(
+            {
+              status: OUTBOX_EVENT_STATUS.COMPLETED,
+              leaseExpiresAt: null,
+              leaseToken: null
+            },
             { transaction }
           );
           return null;
         }
-      }
 
-      const leaseToken = randomUUID();
-      const leaseExpiresAt = new Date(now.getTime() + SEND_LEASE_MS);
-      const attemptCount = command.attemptCount + 1;
-      await command.update(
-        {
-          status: MESSAGE_COMMAND_STATUS.SENDING,
+        if (command.externalTicketId) {
+          if (
+            !automationCommandIsCurrent(
+              command.toJSON() as unknown as MessageCommandEventSource,
+              state?.toJSON() as any
+            )
+          ) {
+            await command.update(
+              {
+                status: MESSAGE_COMMAND_STATUS.CANCELLED,
+                errorCode: "STALE_AUTOMATION_EPOCH",
+                cancelledAt: now,
+                completedAt: now
+              },
+              { transaction }
+            );
+            await event.update(
+              {
+                status: OUTBOX_EVENT_STATUS.COMPLETED,
+                leaseExpiresAt: null,
+                leaseToken: null
+              },
+              { transaction }
+            );
+            await MessagingOutboxEvent.create(
+              buildMessageFailedEvent(
+                command.toJSON() as unknown as MessageCommandEventSource,
+                "STALE_AUTOMATION_EPOCH",
+                "Comando cancelado antes do envio"
+              ) as any,
+              { transaction }
+            );
+            return null;
+          }
+        }
+
+        const leaseToken = randomUUID();
+        const leaseExpiresAt = new Date(now.getTime() + SEND_LEASE_MS);
+        const attemptCount = command.attemptCount + 1;
+        await command.update(
+          {
+            status: MESSAGE_COMMAND_STATUS.SENDING,
+            attemptCount,
+            leaseExpiresAt,
+            leaseToken
+          },
+          { transaction }
+        );
+        await event.update(
+          {
+            status: OUTBOX_EVENT_STATUS.PROCESSING,
+            attemptCount: event.attemptCount + 1,
+            leaseExpiresAt,
+            leaseToken
+          },
+          { transaction }
+        );
+
+        return {
+          eventId: event.id,
+          leaseToken,
           attemptCount,
-          leaseExpiresAt,
-          leaseToken
-        },
-        { transaction }
-      );
-      await event.update(
-        {
-          status: OUTBOX_EVENT_STATUS.PROCESSING,
-          attemptCount: event.attemptCount + 1,
-          leaseExpiresAt,
-          leaseToken
-        },
-        { transaction }
-      );
-
-      return {
-        eventId: event.id,
-        leaseToken,
-        attemptCount,
-        command: command.toJSON() as DispatchableMessageCommand &
-          MessageCommandEventSource
-      };
-    }),
-  send,
-  withSendPermit: (claim, sendOperation) =>
-    sequelize.transaction(async transaction => {
-      const state = claim.command.externalTicketId
-        ? await ConversationAutomationState.findOne({
+          command: command.toJSON() as DispatchableMessageCommand &
+            MessageCommandEventSource
+        };
+      }),
+    send,
+    withSendPermit: async (claim, sendOperation) => {
+      const refreshedLeaseExpiresAt = new Date(Date.now() + SEND_LEASE_MS);
+      if (!(await refreshLeasePair(claim, refreshedLeaseExpiresAt))) {
+        return { status: "fenced" as const };
+      }
+      if (!claim.command.externalTicketId) {
+        return {
+          status: "permitted" as const,
+          delivery: await sendOperation()
+        };
+      }
+      try {
+        return await sequelize.transaction(async transaction => {
+          const state = await ConversationAutomationState.findOne({
             where: {
               companyId: claim.command.companyId,
               externalTicketId: claim.command.externalTicketId
             },
             transaction,
             lock: transaction.LOCK.UPDATE
-          })
-        : null;
-      const command = await MessageCommand.findOne({
-        where: { id: claim.command.id },
-        transaction,
-        lock: transaction.LOCK.UPDATE
-      });
-      const event = await MessagingOutboxEvent.findOne({
-        where: { id: claim.eventId },
-        transaction,
-        lock: transaction.LOCK.UPDATE
-      });
-      const leaseValid =
-        command?.status === MESSAGE_COMMAND_STATUS.SENDING &&
-        command.leaseToken === claim.leaseToken &&
-        command.leaseExpiresAt?.getTime() > Date.now() &&
-        event?.status === OUTBOX_EVENT_STATUS.PROCESSING &&
-        event.leaseToken === claim.leaseToken;
-      if (!leaseValid) return { status: "fenced" as const };
-      if (
-        claim.command.externalTicketId &&
-        !automationCommandIsCurrent(
+          });
+          const command = await MessageCommand.findOne({
+            where: { id: claim.command.id },
+            transaction
+          });
+          const event = await MessagingOutboxEvent.findOne({
+            where: { id: claim.eventId },
+            transaction
+          });
+          const leaseValid =
+            command?.status === MESSAGE_COMMAND_STATUS.SENDING &&
+            command.leaseToken === claim.leaseToken &&
+            command.leaseExpiresAt?.getTime() > Date.now() &&
+            event?.status === OUTBOX_EVENT_STATUS.PROCESSING &&
+            event.leaseToken === claim.leaseToken;
+          if (!leaseValid) return { status: "fenced" as const };
+          if (
+            !automationCommandIsCurrent(claim.command, state?.toJSON() as any)
+          ) {
+            const now = new Date();
+            const [eventUpdated] = await MessagingOutboxEvent.update(
+              {
+                status: OUTBOX_EVENT_STATUS.COMPLETED,
+                leaseToken: null,
+                leaseExpiresAt: null
+              },
+              {
+                where: {
+                  id: claim.eventId,
+                  status: OUTBOX_EVENT_STATUS.PROCESSING,
+                  leaseToken: claim.leaseToken
+                },
+                transaction
+              }
+            );
+            if (eventUpdated !== 1) throw new OutboundPairFencedError();
+            const [commandUpdated] = await MessageCommand.update(
+              {
+                status: MESSAGE_COMMAND_STATUS.CANCELLED,
+                errorCode: "STALE_AUTOMATION_EPOCH",
+                cancelledAt: now,
+                completedAt: now,
+                leaseToken: null,
+                leaseExpiresAt: null
+              },
+              {
+                where: {
+                  id: claim.command.id,
+                  status: MESSAGE_COMMAND_STATUS.SENDING,
+                  leaseToken: claim.leaseToken
+                },
+                transaction
+              }
+            );
+            if (commandUpdated !== 1) throw new OutboundPairFencedError();
+            await MessagingOutboxEvent.create(
+              buildMessageFailedEvent(
+                claim.command,
+                "STALE_AUTOMATION_EPOCH",
+                "Comando cancelado imediatamente antes do envio"
+              ) as any,
+              { transaction }
+            );
+            return { status: "cancelled" as const };
+          }
+          const delivery = await sendOperation();
+          return { status: "permitted" as const, delivery };
+        });
+      } catch (error) {
+        if (error instanceof OutboundPairFencedError) {
+          return { status: "fenced" as const };
+        }
+        throw error;
+      }
+    },
+    markSent: (claim, providerMessageId) =>
+      finalizePair(
+        claim,
+        {
+          status: MESSAGE_COMMAND_STATUS.SENT,
+          providerMessageId: providerMessageId || null,
+          completedAt: new Date(),
+          leaseExpiresAt: null
+        },
+        { status: OUTBOX_EVENT_STATUS.COMPLETED, leaseExpiresAt: null },
+        buildMessageSentEvent(claim.command, providerMessageId)
+      ),
+    scheduleRetry: (claim, error, availableAt) =>
+      finalizePair(
+        claim,
+        {
+          status: MESSAGE_COMMAND_STATUS.QUEUED,
+          ...(error.code === "BAILEYS_SOCKET_UNAVAILABLE"
+            ? { attemptCount: Math.max(0, claim.attemptCount - 1) }
+            : {}),
+          errorCode: error.code,
+          errorDetails: {
+            classification: error.classification,
+            providerStatus: error.providerStatus ?? null,
+            message: error.message.slice(0, 500),
+            ...(error.details || {})
+          },
+          leaseExpiresAt: null
+        },
+        {
+          status: OUTBOX_EVENT_STATUS.READY,
+          availableAt,
+          lastError: error.message.slice(0, 500),
+          leaseExpiresAt: null
+        }
+      ),
+    markFailed: (claim, error) =>
+      finalizePair(
+        claim,
+        {
+          status: MESSAGE_COMMAND_STATUS.FAILED,
+          errorCode: error.code,
+          errorDetails: {
+            classification: error.classification,
+            providerStatus: error.providerStatus ?? null,
+            message: error.message.slice(0, 500),
+            ...(error.details || {})
+          },
+          completedAt: new Date(),
+          leaseExpiresAt: null
+        },
+        {
+          status: OUTBOX_EVENT_STATUS.COMPLETED,
+          lastError: error.message.slice(0, 500),
+          leaseExpiresAt: null
+        },
+        buildMessageFailedEvent(claim.command, error.code, error.message)
+      ),
+    markDeadLetter: (claim, error) =>
+      finalizePair(
+        claim,
+        {
+          status: MESSAGE_COMMAND_STATUS.FAILED,
+          errorCode: MESSAGE_COMMAND_ERROR_CODE.SEND_RETRY_EXHAUSTED,
+          errorDetails: {
+            classification: error.classification,
+            providerStatus: error.providerStatus ?? null,
+            message: error.message.slice(0, 500),
+            attempts: claim.attemptCount,
+            ...(error.details || {})
+          },
+          completedAt: new Date(),
+          leaseExpiresAt: null
+        },
+        {
+          status: OUTBOX_EVENT_STATUS.DEAD_LETTER,
+          lastError: error.message.slice(0, 500),
+          leaseExpiresAt: null
+        },
+        buildMessageFailedEvent(
           claim.command,
-          state?.toJSON() as any
+          MESSAGE_COMMAND_ERROR_CODE.SEND_RETRY_EXHAUSTED,
+          error.message
         )
-      ) {
-        const now = new Date();
-        await command.update(
-          {
-            status: MESSAGE_COMMAND_STATUS.CANCELLED,
-            errorCode: "STALE_AUTOMATION_EPOCH",
-            cancelledAt: now,
-            completedAt: now,
-            leaseToken: null,
-            leaseExpiresAt: null
-          },
-          { transaction }
-        );
-        await event.update(
-          {
-            status: OUTBOX_EVENT_STATUS.COMPLETED,
-            leaseToken: null,
-            leaseExpiresAt: null
-          },
-          { transaction }
-        );
-        await MessagingOutboxEvent.create(
-          buildMessageFailedEvent(
-            claim.command,
-            "STALE_AUTOMATION_EPOCH",
-            "Comando cancelado imediatamente antes do envio"
-          ) as any,
-          { transaction }
-        );
-        return { status: "cancelled" as const };
-      }
-      const refreshedLeaseExpiresAt = new Date(Date.now() + SEND_LEASE_MS);
-      await command.update(
-        { leaseExpiresAt: refreshedLeaseExpiresAt },
-        { transaction }
-      );
-      await event.update(
-        { leaseExpiresAt: refreshedLeaseExpiresAt },
-        { transaction }
-      );
-      const delivery = await sendOperation();
-      return { status: "permitted" as const, delivery };
-    }),
-  markSent: (claim, providerMessageId) =>
-    finalizePair(
-      claim,
-      {
-        status: MESSAGE_COMMAND_STATUS.SENT,
-        providerMessageId: providerMessageId || null,
-        completedAt: new Date(),
-        leaseExpiresAt: null
-      },
-      { status: OUTBOX_EVENT_STATUS.COMPLETED, leaseExpiresAt: null },
-      buildMessageSentEvent(claim.command, providerMessageId)
-    ),
-  scheduleRetry: (claim, error, availableAt) =>
-    finalizePair(
-      claim,
-      {
-        status: MESSAGE_COMMAND_STATUS.QUEUED,
-        ...(error.code === "BAILEYS_SOCKET_UNAVAILABLE"
-          ? { attemptCount: Math.max(0, claim.attemptCount - 1) }
-          : {}),
-        errorCode: error.code,
-        errorDetails: {
-          classification: error.classification,
-          providerStatus: error.providerStatus ?? null,
-          message: error.message.slice(0, 500),
-          ...(error.details || {})
+      ),
+    markUnknown: (claim, reason) =>
+      finalizePair(
+        claim,
+        {
+          status: MESSAGE_COMMAND_STATUS.UNKNOWN,
+          errorCode: MESSAGE_COMMAND_ERROR_CODE.SEND_OUTCOME_UNKNOWN,
+          errorDetails: { reason: reason.slice(0, 500) },
+          completedAt: new Date(),
+          leaseExpiresAt: null
         },
-        leaseExpiresAt: null
-      },
-      {
-        status: OUTBOX_EVENT_STATUS.READY,
-        availableAt,
-        lastError: error.message.slice(0, 500),
-        leaseExpiresAt: null
-      }
-    ),
-  markFailed: (claim, error) =>
-    finalizePair(
-      claim,
-      {
-        status: MESSAGE_COMMAND_STATUS.FAILED,
-        errorCode: error.code,
-        errorDetails: {
-          classification: error.classification,
-          providerStatus: error.providerStatus ?? null,
-          message: error.message.slice(0, 500),
-          ...(error.details || {})
+        {
+          status: OUTBOX_EVENT_STATUS.COMPLETED,
+          lastError: reason.slice(0, 500),
+          leaseExpiresAt: null
         },
-        completedAt: new Date(),
-        leaseExpiresAt: null
-      },
-      {
-        status: OUTBOX_EVENT_STATUS.COMPLETED,
-        lastError: error.message.slice(0, 500),
-        leaseExpiresAt: null
-      },
-      buildMessageFailedEvent(claim.command, error.code, error.message)
-    ),
-  markDeadLetter: (claim, error) =>
-    finalizePair(
-      claim,
-      {
-        status: MESSAGE_COMMAND_STATUS.FAILED,
-        errorCode: MESSAGE_COMMAND_ERROR_CODE.SEND_RETRY_EXHAUSTED,
-        errorDetails: {
-          classification: error.classification,
-          providerStatus: error.providerStatus ?? null,
-          message: error.message.slice(0, 500),
-          attempts: claim.attemptCount,
-          ...(error.details || {})
-        },
-        completedAt: new Date(),
-        leaseExpiresAt: null
-      },
-      {
-        status: OUTBOX_EVENT_STATUS.DEAD_LETTER,
-        lastError: error.message.slice(0, 500),
-        leaseExpiresAt: null
-      },
-      buildMessageFailedEvent(
-        claim.command,
-        MESSAGE_COMMAND_ERROR_CODE.SEND_RETRY_EXHAUSTED,
-        error.message
+        buildMessageUnknownEvent(claim.command, reason)
       )
-    ),
-  markUnknown: (claim, reason) =>
-    finalizePair(
-      claim,
-      {
-        status: MESSAGE_COMMAND_STATUS.UNKNOWN,
-        errorCode: MESSAGE_COMMAND_ERROR_CODE.SEND_OUTCOME_UNKNOWN,
-        errorDetails: { reason: reason.slice(0, 500) },
-        completedAt: new Date(),
-        leaseExpiresAt: null
-      },
-      {
-        status: OUTBOX_EVENT_STATUS.COMPLETED,
-        lastError: reason.slice(0, 500),
-        leaseExpiresAt: null
-      },
-      buildMessageUnknownEvent(claim.command, reason)
-    )
   };
 };
 
