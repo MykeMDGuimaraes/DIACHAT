@@ -25,6 +25,11 @@ export const ROUTER_SCOPES = [
 export const ROUTER_EVENTS = [
   "button.clicked",
   "message.received",
+  "message.reaction",
+  "message.edited",
+  "message.deleted",
+  "chat.updated",
+  "connection.updated",
   "message.sent",
   "message.failed",
   "message.status.updated",

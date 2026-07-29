@@ -36,6 +36,7 @@ jest.mock("../../messaging/public/http", () => {
     createIntegrationReadinessHandler: () => mockOk,
     createTranscriptHandler: () => mockOk,
     transcriptMediaHandler: mockOk,
+    webhookMediaHandler: mockOk,
     createMetaCloudChannelHandler: () => mockOk,
     listMetaCloudChannelsHandler: mockMetaList,
     revokeMetaCloudChannelHandler: mockOk,
@@ -58,6 +59,8 @@ jest.mock("../../messaging/public/http", () => {
   };
 });
 
+// The mocked route dependencies must be initialized before this import.
+// eslint-disable-next-line import/first
 import messagingApiRoutes from "../messagingApiRoutes";
 
 const buildApp = () => {
@@ -131,6 +134,14 @@ describe("messaging admin routes", () => {
         "/api/v1/integration/ready?connectionId=2&automationQueueId=11&humanQueueId=12"
       )
       .set("Authorization", "Bearer dch_live_test.secret");
+
+    expect(response.status).toBe(200);
+  });
+
+  it("registers the signed webhook media route without session or API-key middleware", async () => {
+    const response = await request(buildApp()).get(
+      "/api/v1/webhook-media/message-1?companyId=7&expires=1&keyVersion=v1&token=x"
+    );
 
     expect(response.status).toBe(200);
   });

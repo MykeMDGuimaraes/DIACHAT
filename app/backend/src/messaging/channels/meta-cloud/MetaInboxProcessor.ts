@@ -15,6 +15,12 @@ import {
   parseMetaCallback
 } from "./MetaCallbackParser";
 import MetaMediaService from "./MetaMediaService";
+import {
+  adaptMetaLifecycleEvents,
+  adaptMetaMessageEvents
+} from "../../adapters/meta-cloud/MetaProviderEventAdapter";
+import { WhatsAppProviderEvent } from "../../domain/WhatsAppProviderEvent";
+import WhatsAppProviderEventPublisher from "../../application/WhatsAppProviderEventPublisher";
 
 interface ClaimedInbox {
   id: string;
@@ -41,6 +47,11 @@ interface MetaInboxProcessorDependencies {
     whatsappId: number,
     message: NormalizedMetaMessage
   ): Promise<{ fileName: string; mimeType?: string } | undefined>;
+  publishLifecycle(
+    companyId: number,
+    whatsappId: number,
+    payload: Record<string, any>
+  ): Promise<void>;
   complete(id: string): Promise<unknown>;
   release(
     id: string,
@@ -92,7 +103,14 @@ export interface MetaMessagePersistenceDependencies {
   ): Promise<any>;
   loadMessage(id: string): Promise<any>;
   notifyMessage(message: Message, companyId: number): Promise<void> | void;
+  mirrorEnabled?: () => boolean;
+  persistProviderEvents?: (
+    events: readonly WhatsAppProviderEvent[],
+    transaction: any
+  ) => Promise<void>;
 }
+
+const providerEventPublisher = new WhatsAppProviderEventPublisher();
 
 const metaMessagePersistenceDependencies: MetaMessagePersistenceDependencies = {
   transaction: callback => sequelize.transaction(callback),
@@ -156,7 +174,11 @@ const metaMessagePersistenceDependencies: MetaMessagePersistenceDependencies = {
     const { notifyCreatedMessage } =
       await import("../../../services/MessageServices/CreateMessageService");
     notifyCreatedMessage(message, companyId);
-  }
+  },
+  mirrorEnabled: () =>
+    process.env.MESSAGING_WEBHOOK_MIRROR_V1_ENABLED === "true",
+  persistProviderEvents: (events, transaction) =>
+    providerEventPublisher.persist(events, transaction)
 };
 
 export const persistMetaMessage = async (
@@ -268,27 +290,42 @@ export const persistMetaMessage = async (
         transaction
       );
     }
-    await dependencies.createOutbox(
-      {
-        companyId,
-        eventType: "message.received",
-        aggregateId: incoming.providerMessageId,
-        payload: {
-          messageId: incoming.providerMessageId,
+    if (dependencies.mirrorEnabled?.() && dependencies.persistProviderEvents) {
+      await dependencies.persistProviderEvents(
+        adaptMetaMessageEvents({
+          companyId,
           whatsappId,
-          kind: incoming.kind,
           conversationId: ticket.uuid,
           contactId: String(contact.id),
           externalTicketId: automationState?.externalTicketId || null,
           automationEpoch: automationState?.automationEpoch ?? null,
-          actorType: "contact",
-          origin: "provider"
+          raw: incoming.raw
+        }),
+        transaction
+      );
+    } else {
+      await dependencies.createOutbox(
+        {
+          companyId,
+          eventType: "message.received",
+          aggregateId: incoming.providerMessageId,
+          payload: {
+            messageId: incoming.providerMessageId,
+            whatsappId,
+            kind: incoming.kind,
+            conversationId: ticket.uuid,
+            contactId: String(contact.id),
+            externalTicketId: automationState?.externalTicketId || null,
+            automationEpoch: automationState?.automationEpoch ?? null,
+            actorType: "contact",
+            origin: "provider"
+          },
+          status: "ready",
+          attemptCount: 0
         },
-        status: "ready",
-        attemptCount: 0
-      },
-      transaction
-    );
+        transaction
+      );
+    }
   });
 
   const persisted = await dependencies.loadMessage(incoming.providerMessageId);
@@ -422,6 +459,15 @@ const defaultDependencies: MetaInboxProcessorDependencies = {
     }),
   resolveMedia: (companyId, whatsappId, message) =>
     new MetaMediaService().download(companyId, whatsappId, message),
+  publishLifecycle: async (companyId, whatsappId, payload) => {
+    const events = adaptMetaLifecycleEvents({
+      companyId,
+      whatsappId,
+      payload,
+      observedAt: new Date()
+    });
+    if (events.length) await providerEventPublisher.publish(events);
+  },
   release: (id, reason, availableAt, deadLetter) =>
     sequelize.transaction(async transaction => {
       const lastError = reason.slice(0, 2000);
@@ -455,11 +501,11 @@ const defaultDependencies: MetaInboxProcessorDependencies = {
 };
 
 class MetaInboxProcessor {
-  // Parameter property keeps the durable inbox ports replaceable in tests.
-  // eslint-disable-next-line no-useless-constructor
-  constructor(
-    private readonly dependencies: MetaInboxProcessorDependencies = defaultDependencies
-  ) {}
+  private readonly dependencies: MetaInboxProcessorDependencies;
+
+  constructor(dependencies: Partial<MetaInboxProcessorDependencies> = {}) {
+    this.dependencies = { ...defaultDependencies, ...dependencies };
+  }
 
   // eslint-disable-next-line class-methods-use-this
   parse(payload: Record<string, any>) {
@@ -496,6 +542,11 @@ class MetaInboxProcessor {
           status
         );
       }
+      await this.dependencies.publishLifecycle(
+        inbox.companyId,
+        inbox.whatsappId,
+        inbox.payload
+      );
       await this.dependencies.complete(inbox.id);
       return { status: "processed" };
     } catch (error) {

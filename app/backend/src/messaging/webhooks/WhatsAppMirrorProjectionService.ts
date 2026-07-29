@@ -1,9 +1,11 @@
 import { createHash } from "crypto";
 import Message from "../../models/Message";
 import WhatsAppMirrorPayloadBuilder, {
+  WhatsAppMirrorMedia,
   WhatsAppMirrorPayloadInput,
   WhatsAppMirrorSerializedSnapshot
 } from "./WhatsAppMirrorPayloadBuilder";
+import WebhookMediaService from "./WebhookMediaService";
 
 export interface WhatsAppMirrorSourceEvent {
   id: string;
@@ -18,7 +20,15 @@ export interface WhatsAppMirrorSourceEvent {
 interface ProjectionDependencies {
   loadMessage(companyId: number, messageId: string): Promise<any | null>;
   builder: Pick<WhatsAppMirrorPayloadBuilder, "buildSnapshot">;
+  projectMedia(
+    companyId: number,
+    messageId: string,
+    now: Date
+  ): Promise<WhatsAppMirrorMedia | null>;
+  now(): Date;
 }
+
+const webhookMediaService = new WebhookMediaService();
 
 const defaultDependencies: ProjectionDependencies = {
   loadMessage: (companyId, messageId) =>
@@ -26,7 +36,10 @@ const defaultDependencies: ProjectionDependencies = {
       where: { id: messageId, companyId },
       attributes: ["id", "body", "fromMe", "mediaType", "createdAt"]
     }),
-  builder: new WhatsAppMirrorPayloadBuilder()
+  builder: new WhatsAppMirrorPayloadBuilder(),
+  projectMedia: (companyId, messageId, now) =>
+    webhookMediaService.project(companyId, messageId, now),
+  now: () => new Date()
 };
 
 const dateOrNull = (value: unknown): string | null => {
@@ -34,6 +47,22 @@ const dateOrNull = (value: unknown): string | null => {
   const date = value instanceof Date ? value : new Date(String(value));
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 };
+
+const hasPersistedMedia = (mediaType: unknown): boolean =>
+  typeof mediaType === "string" &&
+  ![
+    "",
+    "text",
+    "conversation",
+    "extendedTextMessage",
+    "buttonsResponseMessage",
+    "templateButtonReplyMessage",
+    "interactiveResponseMessage",
+    "listResponseMessage",
+    "reactionMessage",
+    "editedMessage",
+    "protocolMessage"
+  ].includes(mediaType);
 
 class WhatsAppMirrorProjectionService {
   private readonly dependencies: ProjectionDependencies;
@@ -94,6 +123,15 @@ class WhatsAppMirrorProjectionService {
       ? await this.dependencies.loadMessage(event.companyId, messageId)
       : null;
     const nestedMessage = source.message || {};
+    const protectedMedia =
+      messageId &&
+      (nestedMessage.media || hasPersistedMedia(persistedMessage?.mediaType))
+      ? await this.dependencies.projectMedia(
+          event.companyId,
+          messageId,
+          this.dependencies.now()
+        )
+      : null;
     const fromMe =
       nestedMessage.fromMe ??
       source.fromMe ??
@@ -174,7 +212,10 @@ class WhatsAppMirrorProjectionService {
           nestedMessage.timestamp ??
           dateOrNull(source.timestamp) ??
           dateOrNull(persistedMessage?.createdAt),
-        status: nestedMessage.status ?? source.status ?? null
+        status: nestedMessage.status ?? source.status ?? null,
+        media: protectedMedia
+          ? { ...(nestedMessage.media || {}), ...protectedMedia }
+          : nestedMessage.media ?? null
       }
     };
     return this.dependencies.builder.buildSnapshot(input);

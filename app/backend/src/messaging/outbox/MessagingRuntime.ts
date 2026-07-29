@@ -47,6 +47,36 @@ interface WebhookBackfillRunner {
   }>;
 }
 
+export interface WebhookRuntimeConcurrency {
+  fanout: number;
+  delivery: number;
+}
+
+const MAX_WEBHOOK_RUNTIME_CONCURRENCY = 128;
+
+const boundedConcurrency = (
+  value: string | undefined,
+  fallback: number
+): number => {
+  if (!value || !/^\d+$/.test(value)) return fallback;
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 1) return fallback;
+  return Math.min(MAX_WEBHOOK_RUNTIME_CONCURRENCY, parsed);
+};
+
+export const resolveWebhookRuntimeConcurrency = (
+  environment: Record<string, string | undefined> = process.env
+): WebhookRuntimeConcurrency => ({
+  fanout: boundedConcurrency(
+    environment.MESSAGING_WEBHOOK_FANOUT_CONCURRENCY,
+    8
+  ),
+  delivery: boundedConcurrency(
+    environment.MESSAGING_WEBHOOK_DELIVERY_CONCURRENCY,
+    environment.NODE_ENV === "staging" ? 64 : 32
+  )
+});
+
 class MessagingRuntime {
   // Parameter properties keep each worker replaceable in tests.
   // eslint-disable-next-line no-useless-constructor
@@ -71,8 +101,47 @@ class MessagingRuntime {
     },
     private readonly webhookBackfill: WebhookBackfillRunner = {
       runBatch: async () => ({ processed: 0, safeToDispatch: true })
-    }
+    },
+    private readonly webhookConcurrency: WebhookRuntimeConcurrency = resolveWebhookRuntimeConcurrency()
   ) {}
+
+  private async drainWebhookFanout(): Promise<number> {
+    const lanes = Array.from(
+      { length: this.webhookConcurrency.fanout },
+      async () => {
+        let deliveries = 0;
+        for (let index = 0; index < this.batchSize; index += 1) {
+          const result = await this.webhookFanout.fanoutOne();
+          if (result.status === "idle") break;
+          deliveries += result.deliveries;
+        }
+        return deliveries;
+      }
+    );
+    return (await Promise.all(lanes)).reduce(
+      (total, deliveries) => total + deliveries,
+      0
+    );
+  }
+
+  private async drainWebhookDelivery(): Promise<number> {
+    const lanes = Array.from(
+      { length: this.webhookConcurrency.delivery },
+      async () => {
+        let dispatched = 0;
+        for (let index = 0; index < this.batchSize; index += 1) {
+          const result = await this.webhookDispatcher.dispatchOne();
+          if (result.status === "idle") break;
+          dispatched += 1;
+        }
+        return dispatched;
+      }
+    );
+    return (await Promise.all(lanes)).reduce(
+      (total, dispatched) => total + dispatched,
+      0
+    );
+  }
 
   async runOnce(): Promise<{
     recovered: number;
@@ -126,17 +195,8 @@ class MessagingRuntime {
       dispatched += 1;
     }
 
-    for (let index = 0; index < this.batchSize; index += 1) {
-      const result = await this.webhookFanout.fanoutOne();
-      if (result.status === "idle") break;
-      webhookDeliveriesCreated += result.deliveries;
-    }
-
-    for (let index = 0; index < this.batchSize; index += 1) {
-      const result = await this.webhookDispatcher.dispatchOne();
-      if (result.status === "idle") break;
-      webhooksDispatched += 1;
-    }
+    webhookDeliveriesCreated = await this.drainWebhookFanout();
+    webhooksDispatched = await this.drainWebhookDelivery();
 
     return {
       recovered,
@@ -178,7 +238,8 @@ export const createMessagingRuntime = (): MessagingRuntime =>
     new WebhookDeliveryDispatcher(),
     new MessagingCapacityObserver(),
     new ConversationCommandDispatcher(),
-    new WebhookDeliveryBackfillService()
+    new WebhookDeliveryBackfillService(),
+    resolveWebhookRuntimeConcurrency()
   );
 
 export default MessagingRuntime;

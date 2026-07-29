@@ -4,6 +4,9 @@ import Ticket from "../../models/Ticket";
 import ConversationAutomationState from "../persistence/models/ConversationAutomationState";
 import MessagingOutboxEvent from "../persistence/models/MessagingOutboxEvent";
 import MessageCommand from "../persistence/models/MessageCommand";
+import { adaptBaileysMessageEvents } from "../adapters/baileys/BaileysProviderEventAdapter";
+import { WhatsAppProviderEvent } from "../domain/WhatsAppProviderEvent";
+import WhatsAppProviderEventPublisher from "./WhatsAppProviderEventPublisher";
 
 const validOpaqueButtonId = (value: unknown): value is string =>
   typeof value === "string" &&
@@ -63,7 +66,14 @@ interface Dependencies {
     event: Record<string, unknown>,
     transaction: any
   ): Promise<unknown>;
+  mirrorEnabled(): boolean;
+  persistProviderEvents(
+    events: readonly WhatsAppProviderEvent[],
+    transaction: any
+  ): Promise<void>;
 }
+
+const providerEventPublisher = new WhatsAppProviderEventPublisher();
 
 const defaultDependencies: Dependencies = {
   transaction: callback => sequelize.transaction(callback),
@@ -106,7 +116,11 @@ const defaultDependencies: Dependencies = {
       },
       defaults: event as any,
       transaction
-    })
+    }),
+  mirrorEnabled: () =>
+    process.env.MESSAGING_WEBHOOK_MIRROR_V1_ENABLED === "true",
+  persistProviderEvents: (events, transaction) =>
+    providerEventPublisher.persist(events, transaction)
 };
 
 const parseData = (dataJson: unknown): any => {
@@ -119,9 +133,11 @@ const parseData = (dataJson: unknown): any => {
 };
 
 class BaileysDomainEventService {
-  // Parameter property keeps the injectable test seam explicit.
-  // eslint-disable-next-line no-useless-constructor
-  constructor(private readonly dependencies = defaultDependencies) {}
+  private readonly dependencies: Dependencies;
+
+  constructor(dependencies: Partial<Dependencies> = {}) {
+    this.dependencies = { ...defaultDependencies, ...dependencies };
+  }
 
   async publish(input: {
     companyId: number;
@@ -154,6 +170,20 @@ class BaileysDomainEventService {
             ? null
             : Number(state.automationEpoch)
       };
+
+      if (this.dependencies.mirrorEnabled()) {
+        const events = adaptBaileysMessageEvents({
+          companyId: input.companyId,
+          whatsappId: Number(input.ticket.whatsappId),
+          conversationId: input.ticket.uuid,
+          contactId: correlation.contactId,
+          externalTicketId: correlation.externalTicketId,
+          automationEpoch: correlation.automationEpoch,
+          raw
+        });
+        await this.dependencies.persistProviderEvents(events, transaction);
+        return;
+      }
 
       await this.dependencies.findOrCreateEvent(
         {

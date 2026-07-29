@@ -19,9 +19,14 @@ import { DeleteOutline, Replay } from "@material-ui/icons";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 
-const supportedEvents = [
+export const WEBHOOK_EVENTS = [
   "button.clicked",
   "message.received",
+  "message.reaction",
+  "message.edited",
+  "message.deleted",
+  "chat.updated",
+  "connection.updated",
   "message.sent",
   "message.failed",
   "message.status.updated",
@@ -33,7 +38,14 @@ const supportedEvents = [
   "ticket.updated",
   "contact.updated"
 ];
-const supportedKinds = ["text", "image", "audio", "video", "document", "template"];
+export const WEBHOOK_MESSAGE_KINDS = [
+  "text",
+  "image",
+  "audio",
+  "video",
+  "document",
+  "template"
+];
 
 const WebhookSubscriptionsModal = ({ open, onClose, connections = [] }) => {
   const [items, setItems] = useState([]);
@@ -43,7 +55,7 @@ const WebhookSubscriptionsModal = ({ open, onClose, connections = [] }) => {
   const [method, setMethod] = useState("POST");
   const [includeApiOrigin, setIncludeApiOrigin] = useState(false);
   const [createdSecret, setCreatedSecret] = useState("");
-  const [selectedEvents, setSelectedEvents] = useState(supportedEvents);
+  const [selectedEvents, setSelectedEvents] = useState(WEBHOOK_EVENTS);
   const [selectedKinds, setSelectedKinds] = useState([]);
   const [connectionIds, setConnectionIds] = useState("");
 
@@ -154,7 +166,7 @@ const WebhookSubscriptionsModal = ({ open, onClose, connections = [] }) => {
         </TextField>
         <Typography color="textSecondary">Eventos</Typography>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
-          {supportedEvents.map(event => (
+          {WEBHOOK_EVENTS.map(event => (
             <Chip
               key={event}
               label={event}
@@ -165,7 +177,7 @@ const WebhookSubscriptionsModal = ({ open, onClose, connections = [] }) => {
         </div>
         <Typography color="textSecondary">Tipos de mensagem (vazio recebe todos)</Typography>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
-          {supportedKinds.map(kind => (
+          {WEBHOOK_MESSAGE_KINDS.map(kind => (
             <Chip
               key={kind}
               label={kind}

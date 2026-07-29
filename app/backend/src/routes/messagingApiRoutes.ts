@@ -10,6 +10,7 @@ import {
   createIntegrationReadinessHandler,
   createTranscriptHandler,
   transcriptMediaHandler,
+  webhookMediaHandler,
   requireApiScope,
   createMetaCloudChannelHandler,
   listMetaCloudChannelsHandler,
@@ -42,6 +43,7 @@ messagingApiRoutes.get(
   "/transcript/media/:messageId",
   transcriptMediaHandler
 );
+messagingApiRoutes.get("/webhook-media/:messageId", webhookMediaHandler);
 messagingApiRoutes.post(
   "/credentials",
   isAuth,

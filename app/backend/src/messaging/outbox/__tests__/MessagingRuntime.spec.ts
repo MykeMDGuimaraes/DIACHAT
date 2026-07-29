@@ -1,6 +1,87 @@
-import MessagingRuntime from "../MessagingRuntime";
+import MessagingRuntime, {
+  resolveWebhookRuntimeConcurrency
+} from "../MessagingRuntime";
 
 describe("MessagingRuntime", () => {
+  it("uses bounded webhook pool defaults for production, staging, and explicit configuration", () => {
+    expect(resolveWebhookRuntimeConcurrency({})).toEqual({
+      fanout: 8,
+      delivery: 32
+    });
+    expect(resolveWebhookRuntimeConcurrency({ NODE_ENV: "staging" })).toEqual({
+      fanout: 8,
+      delivery: 64
+    });
+    expect(
+      resolveWebhookRuntimeConcurrency({
+        MESSAGING_WEBHOOK_FANOUT_CONCURRENCY: "999",
+        MESSAGING_WEBHOOK_DELIVERY_CONCURRENCY: "128"
+      })
+    ).toEqual({ fanout: 128, delivery: 128 });
+    expect(
+      resolveWebhookRuntimeConcurrency({
+        MESSAGING_WEBHOOK_FANOUT_CONCURRENCY: "0",
+        MESSAGING_WEBHOOK_DELIVERY_CONCURRENCY: "invalid"
+      })
+    ).toEqual({ fanout: 8, delivery: 32 });
+  });
+
+  it("drains webhook fanout and delivery through their configured concurrent pools", async () => {
+    const concurrentRunner = (
+      concurrency: number,
+      activeState: { active: number; maximum: number },
+      result: Record<string, unknown>
+    ) => {
+      let started = 0;
+      let release: (() => void) | undefined;
+      const barrier = new Promise<void>(resolve => {
+        release = resolve;
+      });
+      return jest.fn(async () => {
+        started += 1;
+        activeState.active += 1;
+        activeState.maximum = Math.max(
+          activeState.maximum,
+          activeState.active
+        );
+        if (started === concurrency) release?.();
+        await barrier;
+        activeState.active -= 1;
+        return result;
+      });
+    };
+    const fanoutState = { active: 0, maximum: 0 };
+    const deliveryState = { active: 0, maximum: 0 };
+    const fanoutOne = concurrentRunner(2, fanoutState, {
+      status: "created",
+      deliveries: 1
+    });
+    const dispatchWebhook = concurrentRunner(3, deliveryState, {
+      status: "delivered"
+    });
+    const runtime = new MessagingRuntime(
+      { recover: jest.fn().mockResolvedValue({ recovered: 0 }) },
+      { dispatchOne: jest.fn().mockResolvedValue({ status: "idle" }) },
+      1,
+      undefined,
+      { fanoutOne: fanoutOne as any },
+      { dispatchOne: dispatchWebhook as any },
+      undefined,
+      undefined,
+      undefined,
+      { fanout: 2, delivery: 3 }
+    );
+
+    await expect(runtime.runOnce()).resolves.toEqual(
+      expect.objectContaining({
+        webhookDeliveriesCreated: 2,
+        webhooksDispatched: 3
+      })
+    );
+    expect(fanoutState.maximum).toBe(2);
+    expect(deliveryState.maximum).toBe(3);
+  });
+
   it("recovers expired sends before draining ready outbox events", async () => {
     const events: string[] = [];
     const runtime = new MessagingRuntime(

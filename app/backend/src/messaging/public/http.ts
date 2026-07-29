@@ -24,6 +24,7 @@ export {
   createTranscriptHandler,
   transcriptMediaHandler
 } from "../api/TranscriptController";
+export { webhookMediaHandler } from "../webhooks/WebhookMediaController";
 export {
   createMetaCloudChannelHandler,
   listMetaCloudChannelsHandler,

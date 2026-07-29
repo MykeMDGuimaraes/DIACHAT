@@ -133,6 +133,68 @@ describe("BaileysDomainEventService", () => {
     );
   });
 
+  it("publishes a Baileys reaction through the provider-neutral specialized path only when mirror mode is enabled", async () => {
+    const persistProviderEvents = jest.fn().mockResolvedValue(undefined);
+    const dependencies = {
+      transaction: jest.fn((callback: any) => callback("tx")),
+      findAutomationState: jest.fn().mockResolvedValue(null),
+      findOrCreateEvent: jest.fn(),
+      mirrorEnabled: () => true,
+      persistProviderEvents
+    };
+    const service = new BaileysDomainEventService(dependencies as any);
+
+    await service.publish({
+      companyId: 7,
+      message: {
+        id: "reaction-1",
+        fromMe: false,
+        mediaType: "reactionMessage",
+        dataJson: JSON.stringify({
+          key: {
+            id: "reaction-1",
+            remoteJid: "5511999999999@s.whatsapp.net",
+            fromMe: false
+          },
+          messageTimestamp: 1_722_000_001,
+          message: {
+            reactionMessage: {
+              key: { id: "target-message-1" },
+              text: "👍"
+            }
+          }
+        })
+      } as any,
+      ticket: {
+        uuid: "conversation-uuid",
+        whatsappId: 2,
+        contactId: 22,
+        userId: 9
+      } as any
+    });
+
+    expect(dependencies.findOrCreateEvent).not.toHaveBeenCalled();
+    expect(persistProviderEvents).toHaveBeenCalledWith(
+      [
+        expect.objectContaining({
+          eventType: "message.reaction",
+          payload: expect.objectContaining({
+            conversationId: "conversation-uuid",
+            contactId: "22",
+            message: expect.objectContaining({
+              reaction: {
+                emoji: "👍",
+                targetMessageId: "target-message-1",
+                removed: false
+              }
+            })
+          })
+        })
+      ],
+      "tx"
+    );
+  });
+
   it("classifies a non-API outbound persisted message as human", async () => {
     const dependencies = {
       transaction: jest.fn((callback: any) => callback("tx")),

@@ -1,4 +1,7 @@
-import { sendBaileysSocketMessage } from "../../messaging/public/baileys";
+import {
+  registerBaileysMirrorLifecycleListeners,
+  sendBaileysSocketMessage
+} from "../../messaging/public/baileys";
 import path, { join } from "path";
 import { promisify } from "util";
 import { readFile, writeFile } from "fs";
@@ -26,7 +29,6 @@ import { getIO } from "../../libs/socket";
 import { publishTenantEvent } from "../../libs/tenantEvents";
 import { toConversationMessageDTO } from "../InternalV1Services/Dtos";
 import CreateMessageService from "../MessageServices/CreateMessageService";
-import { emitMessageReceived } from "../../messaging/outbox/EmitMessagingDomainEvent";
 import {
   acknowledgeBaileysProviderMessage,
   extractSelectedButtonId,
@@ -949,17 +951,6 @@ export const verifyMediaMessage = async (
     companyId: ticket.companyId
   });
 
-  if (!msg.key.fromMe) {
-    await emitMessageReceived({
-      companyId: ticket.companyId,
-      messageId: newMessage.id,
-      ticketId: ticket.id,
-      contactId: contact?.id,
-      whatsappId: ticket.whatsappId,
-      mediaType: messageData.mediaType
-    });
-  }
-
   if (!msg.key.fromMe && ticket.status === "closed") {
     await ticket.update({ status: "pending" });
     await ticket.reload({
@@ -1024,17 +1015,6 @@ export const verifyMessage = async (
   });
 
   await CreateMessageService({ messageData, companyId: ticket.companyId });
-
-  if (!msg.key.fromMe && !isEdited) {
-    await emitMessageReceived({
-      companyId: ticket.companyId,
-      messageId: messageData.id,
-      ticketId: ticket.id,
-      contactId: contact?.id,
-      whatsappId: ticket.whatsappId,
-      mediaType: messageData.mediaType
-    });
-  }
 
   if (!msg.key.fromMe && ticket.status === "closed") {
     await ticket.update({ status: "pending" });
@@ -2994,6 +2974,12 @@ const wbotMessageListener = async (
   companyId: number
 ): Promise<void> => {
   try {
+    if (wbot.id) {
+      registerBaileysMirrorLifecycleListeners(wbot, {
+        companyId,
+        whatsappId: wbot.id
+      });
+    }
     wbot.ev.on("messages.upsert", async (messageUpsert: ImessageUpsert) => {
       const messages = messageUpsert.messages
         .filter(filterMessages)

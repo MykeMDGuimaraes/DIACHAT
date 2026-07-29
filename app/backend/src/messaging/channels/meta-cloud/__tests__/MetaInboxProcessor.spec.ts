@@ -65,6 +65,52 @@ describe("MetaInboxProcessor", () => {
     expect(complete).toHaveBeenCalledWith("inbox_1");
   });
 
+  it("publishes Meta chat and connection lifecycle callbacks before completing the inbox item", async () => {
+    const payload = {
+      entry: [
+        {
+          changes: [
+            {
+              field: "account_update",
+              value: { state: "connected", phone_number_id: "phone-number-1" }
+            },
+            {
+              field: "messages",
+              value: {
+                chats: [{ jid: "5511999999999@s.whatsapp.net" }]
+              }
+            }
+          ]
+        }
+      ]
+    };
+    const publishLifecycle = jest.fn().mockResolvedValue(undefined);
+    const complete = jest.fn().mockResolvedValue(undefined);
+    const processor = new MetaInboxProcessor({
+      claimNext: jest.fn().mockResolvedValue({
+        id: "inbox_lifecycle",
+        companyId: 7,
+        whatsappId: 42,
+        attemptCount: 1,
+        payload
+      }),
+      persistMessage: jest.fn(),
+      persistStatus: jest.fn(),
+      resolveMedia: jest.fn(),
+      publishLifecycle,
+      complete,
+      release: jest.fn()
+    });
+
+    await expect(processor.processOne()).resolves.toEqual({
+      status: "processed"
+    });
+    expect(publishLifecycle).toHaveBeenCalledWith(7, 42, payload);
+    expect(publishLifecycle.mock.invocationCallOrder[0]).toBeLessThan(
+      complete.mock.invocationCallOrder[0]
+    );
+  });
+
   it("releases a failed inbox item with backoff before the eighth attempt", async () => {
     const release = jest.fn();
     const processor = new MetaInboxProcessor({

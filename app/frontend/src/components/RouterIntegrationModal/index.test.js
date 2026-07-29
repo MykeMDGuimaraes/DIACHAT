@@ -14,6 +14,11 @@ describe("RouterIntegrationModal contract preset", () => {
     expect(ROUTER_EVENTS).toEqual([
       "button.clicked",
       "message.received",
+      "message.reaction",
+      "message.edited",
+      "message.deleted",
+      "chat.updated",
+      "connection.updated",
       "message.sent",
       "message.failed",
       "message.status.updated",

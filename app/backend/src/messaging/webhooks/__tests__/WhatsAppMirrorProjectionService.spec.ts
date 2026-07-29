@@ -99,4 +99,59 @@ describe("WhatsAppMirrorProjectionService", () => {
       })
     );
   });
+
+  it("projects persisted media through the protected webhook-media service, including unavailable files", async () => {
+    const buildSnapshot = jest.fn().mockReturnValue({
+      envelope: {},
+      rawBody: "{}",
+      bodySha256: "digest"
+    });
+    const unavailableMedia = {
+      type: "image",
+      mimeType: "image/jpeg",
+      fileName: "missing.jpg",
+      sizeBytes: null,
+      sha256: null,
+      url: null,
+      available: false,
+      caption: "legenda"
+    };
+    const projectMedia = jest.fn().mockResolvedValue(unavailableMedia);
+    const now = new Date("2026-07-29T12:05:00.000Z");
+    const service = new WhatsAppMirrorProjectionService({
+      loadMessage: jest.fn().mockResolvedValue({
+        id: "msg_media",
+        body: "legenda",
+        fromMe: false,
+        mediaType: "image",
+        createdAt: new Date("2026-07-29T11:59:59.000Z")
+      }),
+      projectMedia,
+      now: () => now,
+      builder: { buildSnapshot } as any
+    });
+
+    await service.buildSnapshot({
+      id: "evt_media",
+      companyId: 7,
+      eventType: "message.received",
+      aggregateId: "msg_media",
+      payload: {
+        messageId: "msg_media",
+        whatsappId: 42,
+        actorType: "contact",
+        kind: "image",
+        origin: "provider"
+      },
+      createdAt: new Date("2026-07-29T12:00:00.000Z"),
+      leaseToken: "event-lease-1"
+    });
+
+    expect(projectMedia).toHaveBeenCalledWith(7, "msg_media", now);
+    expect(buildSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.objectContaining({ media: unavailableMedia })
+      })
+    );
+  });
 });

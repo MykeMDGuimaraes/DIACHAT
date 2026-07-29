@@ -134,4 +134,61 @@ describe("persistMetaMessage", () => {
       { id: "tx" }
     );
   });
+
+  it("publishes a Meta reaction through the provider-neutral specialized path only", async () => {
+    const ticket = {
+      id: 9,
+      uuid: "conversation-meta-1",
+      unreadMessages: 0,
+      update: jest.fn().mockResolvedValue(undefined)
+    };
+    const persistProviderEvents = jest.fn().mockResolvedValue(undefined);
+    const createOutbox = jest.fn().mockResolvedValue(undefined);
+    const reaction: NormalizedMetaMessage = {
+      providerMessageId: "reaction-1",
+      sender: "5511999999999",
+      timestamp: new Date("2024-07-26T13:20:01.000Z"),
+      kind: "reaction",
+      body: "👍",
+      raw: {
+        id: "reaction-1",
+        from: "5511999999999",
+        timestamp: "1722000001",
+        type: "reaction",
+        reaction: { message_id: "target-message-1", emoji: "👍" }
+      }
+    };
+    const dependencies = {
+      transaction: async <T>(callback: (transaction: any) => Promise<T>) =>
+        callback("tx"),
+      findMessage: jest.fn().mockResolvedValue(null),
+      findContact: jest.fn().mockResolvedValue({ id: 3 }),
+      createContact: jest.fn(),
+      findTicket: jest.fn().mockResolvedValue(ticket),
+      createTicket: jest.fn(),
+      createMessage: jest.fn().mockResolvedValue({ id: "reaction-1" }),
+      createOutbox,
+      findAutomationState: jest.fn().mockResolvedValue(null),
+      loadMessage: jest.fn().mockResolvedValue({ id: "reaction-1", ticket }),
+      notifyMessage: jest.fn(),
+      mirrorEnabled: () => true,
+      persistProviderEvents
+    };
+
+    await persistMetaMessage(7, 42, reaction, dependencies);
+
+    expect(createOutbox).not.toHaveBeenCalled();
+    expect(persistProviderEvents).toHaveBeenCalledWith(
+      [
+        expect.objectContaining({
+          eventType: "message.reaction",
+          payload: expect.objectContaining({
+            conversationId: "conversation-meta-1",
+            contactId: "3"
+          })
+        })
+      ],
+      "tx"
+    );
+  });
 });
