@@ -82,6 +82,42 @@ describe("MessagingRuntime", () => {
     expect(deliveryState.maximum).toBe(3);
   });
 
+  it("continues ready delivery work and reports a PII-free pool failure when a fanout lane rejects", async () => {
+    const fanoutOne = jest
+      .fn()
+      .mockRejectedValueOnce(new Error("payload with private data"))
+      .mockResolvedValue({ status: "created", deliveries: 2 });
+    const dispatchWebhook = jest
+      .fn()
+      .mockResolvedValue({ status: "delivered" });
+    const reportPoolFailure = jest.fn();
+    const runtime = new MessagingRuntime(
+      { recover: jest.fn().mockResolvedValue({ recovered: 0 }) },
+      { dispatchOne: jest.fn().mockResolvedValue({ status: "idle" }) },
+      1,
+      undefined,
+      { fanoutOne },
+      { dispatchOne: dispatchWebhook },
+      undefined,
+      undefined,
+      undefined,
+      { fanout: 2, delivery: 1 },
+      reportPoolFailure
+    );
+
+    await expect(runtime.runOnce()).resolves.toEqual(
+      expect.objectContaining({
+        webhookDeliveriesCreated: 2,
+        webhooksDispatched: 1
+      })
+    );
+    expect(dispatchWebhook).toHaveBeenCalledTimes(1);
+    expect(reportPoolFailure).toHaveBeenCalledWith("fanout", 1);
+    expect(JSON.stringify(reportPoolFailure.mock.calls)).not.toContain(
+      "private data"
+    );
+  });
+
   it("recovers expired sends before draining ready outbox events", async () => {
     const events: string[] = [];
     const runtime = new MessagingRuntime(

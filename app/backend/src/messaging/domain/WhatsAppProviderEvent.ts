@@ -92,15 +92,15 @@ export interface WhatsAppChatStateUpdate {
   companyId: number;
   whatsappId: number;
   jid: string;
-  lid: string | null;
-  isGroup: boolean;
-  archived: boolean;
-  pinned: boolean;
-  mutedUntil: Date | null;
-  unreadCount: number;
-  lastMessageId: string | null;
-  lastMessageAt: Date | null;
-  lastMessagePreview: string | null;
+  lid?: string | null;
+  isGroup?: boolean;
+  archived?: boolean;
+  pinned?: boolean;
+  mutedUntil?: Date | null;
+  unreadCount?: number;
+  lastMessageId?: string | null;
+  lastMessageAt?: Date | null;
+  lastMessagePreview?: string | null;
   revision: string;
 }
 
@@ -138,6 +138,12 @@ export interface CreateProviderEventInput {
 const stringOrNull = (value: string | number | null | undefined) =>
   value === null || value === undefined ? null : String(value);
 
+const phoneNumberFromJid = (jid: string | null): string | null => {
+  if (!jid) return null;
+  const match = /^(\d+)@(?:s\.whatsapp\.net|c\.us)$/.exec(jid);
+  return match?.[1] ?? null;
+};
+
 export const createProviderEvent = (
   input: CreateProviderEventInput
 ): WhatsAppProviderEvent => {
@@ -173,7 +179,7 @@ export const createProviderEvent = (
       id: stringOrNull(input.context.contactId),
       jid,
       lid: input.lid ?? null,
-      phoneNumber: jid?.split("@")[0] || null,
+      phoneNumber: phoneNumberFromJid(jid),
       name: null,
       pushName: null,
       isBusiness: null

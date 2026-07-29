@@ -1,3 +1,9 @@
+import { promises as fs } from "fs";
+import os from "os";
+import path from "path";
+
+import WebhookMediaService from "../WebhookMediaService";
+import { signWebhookMediaUrl } from "../WebhookMediaToken";
 import WhatsAppMirrorProjectionService from "../WhatsAppMirrorProjectionService";
 
 describe("WhatsAppMirrorProjectionService", () => {
@@ -153,5 +159,71 @@ describe("WhatsAppMirrorProjectionService", () => {
         message: expect.objectContaining({ media: unavailableMedia })
       })
     );
+  });
+
+  it("serializes an available file through the real media service and real payload builder", async () => {
+    const root = await fs.mkdtemp(
+      path.join(os.tmpdir(), "diachat-projection-media-")
+    );
+    const storedPath = "company-7/photo.jpg";
+    const absolutePath = path.join(root, storedPath);
+    const now = new Date("2026-07-29T12:05:00.000Z");
+    const keyring = {
+      activeKeyId: "v1",
+      keys: { v1: Buffer.alloc(32, 7).toString("base64") }
+    };
+    await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+    await fs.writeFile(absolutePath, Buffer.from("available-media", "utf8"));
+    const storedMessage = {
+      id: "msg_media",
+      storedPath,
+      mediaType: "image",
+      body: "legenda",
+      fromMe: false,
+      createdAt: new Date("2026-07-29T11:59:59.000Z")
+    };
+    const mediaService = new WebhookMediaService({
+      root,
+      loadMessage: jest.fn().mockResolvedValue(storedMessage),
+      signUrl: (messageId, companyId, issuedAt) =>
+        signWebhookMediaUrl(messageId, companyId, issuedAt, keyring)
+    });
+    const projection = new WhatsAppMirrorProjectionService({
+      loadMessage: jest.fn().mockResolvedValue(storedMessage),
+      projectMedia: (companyId, messageId, issuedAt) =>
+        mediaService.project(companyId, messageId, issuedAt),
+      now: () => now
+    });
+
+    try {
+      const snapshot = await projection.buildSnapshot({
+        id: "evt_media",
+        companyId: 7,
+        eventType: "message.received",
+        aggregateId: "msg_media",
+        payload: {
+          messageId: "msg_media",
+          whatsappId: 42,
+          actorType: "contact",
+          kind: "image",
+          origin: "provider"
+        },
+        createdAt: new Date("2026-07-29T12:00:00.000Z"),
+        leaseToken: "event-lease-1"
+      });
+      const media = JSON.parse(snapshot.rawBody).data.message.media;
+
+      expect(media).toMatchObject({
+        available: true,
+        fileName: "photo.jpg",
+        mimeType: "image/jpeg",
+        sizeBytes: 15
+      });
+      expect(media.url).toContain("/api/v1/webhook-media/msg_media?");
+      expect(media.url).toMatch(/[?&]sig=[a-f0-9]{64}(?:&|$)/);
+      expect(media.url).not.toContain("token=");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
   });
 });

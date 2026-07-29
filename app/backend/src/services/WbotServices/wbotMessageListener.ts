@@ -1,7 +1,3 @@
-import {
-  registerBaileysMirrorLifecycleListeners,
-  sendBaileysSocketMessage
-} from "../../messaging/public/baileys";
 import path, { join } from "path";
 import { promisify } from "util";
 import { readFile, writeFile } from "fs";
@@ -19,7 +15,8 @@ import {
   WAMessage,
   WAMessageStubType,
   WAMessageUpdate,
-  WASocket
+  WASocket,
+  sendBaileysSocketMessage
 } from "../../messaging/public/baileys";
 import Contact from "../../models/Contact";
 import Ticket from "../../models/Ticket";
@@ -2974,12 +2971,6 @@ const wbotMessageListener = async (
   companyId: number
 ): Promise<void> => {
   try {
-    if (wbot.id) {
-      registerBaileysMirrorLifecycleListeners(wbot, {
-        companyId,
-        whatsappId: wbot.id
-      });
-    }
     wbot.ev.on("messages.upsert", async (messageUpsert: ImessageUpsert) => {
       const messages = messageUpsert.messages
         .filter(filterMessages)

@@ -110,6 +110,40 @@ describe("WhatsApp provider event adapters", () => {
     }
   });
 
+  it("keeps the opaque native-flow paramsJson id and emits received plus clicked", () => {
+    const events = adaptBaileysMessageEvents({
+      ...context,
+      raw: {
+        key: {
+          id: "native-flow-1",
+          remoteJid: "5511999999999@s.whatsapp.net",
+          fromMe: false
+        },
+        messageTimestamp: 1_722_000_000,
+        message: {
+          interactiveResponseMessage: {
+            nativeFlowResponseMessage: {
+              paramsJson: JSON.stringify({
+                id: "route:v2/accept?offer=opaque-9"
+              })
+            }
+          }
+        }
+      }
+    });
+
+    expect(events.map(event => event.eventType)).toEqual([
+      "message.received",
+      "button.clicked"
+    ]);
+    expect(events[1].payload.message.interactive).toEqual({
+      type: "button",
+      id: "route:v2/accept?offer=opaque-9",
+      title: null,
+      description: null
+    });
+  });
+
   it.each([
     {
       eventType: "message.reaction",
@@ -292,6 +326,95 @@ describe("WhatsApp provider event adapters", () => {
     });
   });
 
+  it("preserves partial chat update presence without inventing state or phone numbers", () => {
+    const observedAt = new Date("2024-07-26T13:20:04.000Z");
+    const baileys = adaptBaileysChatUpdate({
+      ...context,
+      observedAt,
+      raw: {
+        id: "120363000000000000@g.us",
+        archived: true
+      }
+    });
+    const meta = adaptMetaChatUpdate({
+      ...context,
+      observedAt,
+      raw: {
+        jid: "123456789@lid",
+        pinned: true
+      }
+    });
+
+    expect(baileys.payload.chat).toMatchObject({
+      archived: true,
+      pinned: null,
+      mutedUntil: null,
+      unreadCount: null
+    });
+    expect(baileys.chatState).toMatchObject({ archived: true });
+    expect(baileys.chatState).not.toHaveProperty("pinned");
+    expect(baileys.chatState).not.toHaveProperty("mutedUntil");
+    expect(baileys.chatState).not.toHaveProperty("unreadCount");
+    expect(baileys.chatState).not.toHaveProperty("lastMessageId");
+    expect(baileys.payload.contact.phoneNumber).toBeNull();
+
+    expect(meta.payload.chat).toMatchObject({
+      archived: null,
+      pinned: true,
+      mutedUntil: null,
+      unreadCount: null
+    });
+    expect(meta.chatState).toMatchObject({ pinned: true });
+    expect(meta.chatState).not.toHaveProperty("archived");
+    expect(meta.chatState).not.toHaveProperty("mutedUntil");
+    expect(meta.chatState).not.toHaveProperty("unreadCount");
+    expect(meta.chatState).not.toHaveProperty("lastMessageId");
+    expect(meta.payload.contact.phoneNumber).toBeNull();
+  });
+
+  it.each([
+    {
+      provider: "baileys",
+      repeated: (observedAt: Date) =>
+        adaptBaileysChatUpdate({
+          ...context,
+          observedAt,
+          raw: { id: "5511999999999@s.whatsapp.net", archived: true }
+        }),
+      changed: (observedAt: Date) =>
+        adaptBaileysChatUpdate({
+          ...context,
+          observedAt,
+          raw: { id: "5511999999999@s.whatsapp.net", archived: false }
+        })
+    },
+    {
+      provider: "meta",
+      repeated: (observedAt: Date) =>
+        adaptMetaChatUpdate({
+          ...context,
+          observedAt,
+          raw: { jid: "5511999999999@s.whatsapp.net", archived: true }
+        }),
+      changed: (observedAt: Date) =>
+        adaptMetaChatUpdate({
+          ...context,
+          observedAt,
+          raw: { jid: "5511999999999@s.whatsapp.net", archived: false }
+        })
+    }
+  ])(
+    "deduplicates $provider lifecycle retries across wall-clock time and distinguishes same-timestamp state",
+    ({ repeated, changed }) => {
+      const first = repeated(new Date("2024-07-26T13:20:04.000Z"));
+      const retry = repeated(new Date("2024-07-26T14:20:04.000Z"));
+      const distinct = changed(new Date("2024-07-26T13:20:04.000Z"));
+
+      expect(retry.aggregateId).toBe(first.aggregateId);
+      expect(distinct.aggregateId).not.toBe(first.aggregateId);
+    }
+  );
+
   it("registers Baileys chat/connection listeners that publish through the mirror facade path", async () => {
     const handlers = new Map<string, (value: any) => Promise<void>>();
     const publish = jest.fn().mockResolvedValue(undefined);
@@ -324,6 +447,119 @@ describe("WhatsApp provider event adapters", () => {
     expect(publish).toHaveBeenNthCalledWith(
       2,
       [expect.objectContaining({ eventType: "connection.updated" })]
+    );
+  });
+
+  it("publishes protocol and revoke-stub deletes through the registered listener before legacy filtering", async () => {
+    const handlers = new Map<string, (value: any) => Promise<void>>();
+    const publish = jest.fn().mockResolvedValue(undefined);
+    registerBaileysMirrorLifecycleListeners(
+      {
+        ev: {
+          on: (event: string, handler: (value: any) => Promise<void>) => {
+            handlers.set(event, handler);
+          }
+        }
+      },
+      context,
+      publish,
+      () => new Date("2024-07-26T13:20:04.000Z")
+    );
+
+    await handlers.get("messages.upsert")?.({
+      messages: [
+        {
+          key: {
+            id: "revoke-event-1",
+            remoteJid: "5511999999999@s.whatsapp.net",
+            fromMe: false
+          },
+          messageTimestamp: 1_722_000_003,
+          message: {
+            protocolMessage: {
+              key: { id: "target-message-1" },
+              type: 0
+            }
+          }
+        },
+        {
+          key: {
+            id: "revoke-stub-target-2",
+            remoteJid: "5511999999999@s.whatsapp.net",
+            fromMe: false
+          },
+          messageTimestamp: 1_722_000_004,
+          messageStubType: 1,
+          messageStubParameters: ["target-message-2"]
+        }
+      ]
+    });
+
+    const deleted = publish.mock.calls[0][0];
+    expect(deleted).toHaveLength(2);
+    expect(deleted.map(event => event.eventType)).toEqual([
+      "message.deleted",
+      "message.deleted"
+    ]);
+    expect(deleted.map(event => event.payload.message.delete)).toEqual([
+      expect.objectContaining({ targetMessageId: "target-message-1" }),
+      expect.objectContaining({ targetMessageId: "target-message-2" })
+    ]);
+
+    publish.mockClear();
+    await handlers.get("messages.update")?.([
+      {
+        key: {
+          id: "revoke-update-3",
+          remoteJid: "5511999999999@s.whatsapp.net",
+          fromMe: false
+        },
+        update: {
+          messageTimestamp: 1_722_000_005,
+          message: {
+            protocolMessage: {
+              key: { id: "target-message-3" },
+              type: 0
+            }
+          }
+        }
+      }
+    ]);
+    expect(
+      publish.mock.calls[0][0][0].payload.message.delete
+    ).toEqual(
+      expect.objectContaining({ targetMessageId: "target-message-3" })
+    );
+  });
+
+  it("uses stable Meta callback indices as lifecycle source identities", () => {
+    const payload = {
+      entry: [
+        {
+          id: "business-account-1",
+          changes: [
+            {
+              field: "account_update",
+              value: { state: "connected" }
+            }
+          ]
+        }
+      ]
+    };
+    const first = adaptMetaLifecycleEvents({
+      ...context,
+      observedAt: new Date("2024-07-26T13:20:04.000Z"),
+      payload
+    });
+    const retry = adaptMetaLifecycleEvents({
+      ...context,
+      observedAt: new Date("2024-07-27T13:20:04.000Z"),
+      payload
+    });
+
+    expect(retry[0].aggregateId).toBe(first[0].aggregateId);
+    expect(first[0].payload.provider.eventId).toContain(
+      "source:business-account-1:0:account_update"
     );
   });
 

@@ -30,7 +30,7 @@ describe("WebhookMediaService", () => {
       }),
       signUrl: jest
         .fn()
-        .mockReturnValue("/api/v1/webhook-media/message-1?token=signed")
+        .mockReturnValue("/api/v1/webhook-media/message-1?sig=signed")
     });
 
     await expect(
@@ -42,7 +42,7 @@ describe("WebhookMediaService", () => {
       sizeBytes: 11,
       sha256:
         "bd7aa67d0cee967e6fca8ef4917e3c70445a9cfe0f3d91ddd2eeff1bfe4b2069",
-      url: "/api/v1/webhook-media/message-1?token=signed",
+      url: "/api/v1/webhook-media/message-1?sig=signed",
       available: true,
       caption: "legenda"
     });

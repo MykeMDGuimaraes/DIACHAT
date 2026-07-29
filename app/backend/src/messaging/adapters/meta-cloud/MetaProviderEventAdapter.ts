@@ -1,8 +1,13 @@
 import {
   createProviderEvent,
+  WhatsAppChatStateUpdate,
   WhatsAppProviderEvent,
   WhatsAppProviderEventContext
 } from "../../domain/WhatsAppProviderEvent";
+import {
+  createLifecycleEventIdentity,
+  providerTimestampMillis
+} from "../../domain/LifecycleEventIdentity";
 
 interface MetaMessageAdapterInput extends WhatsAppProviderEventContext {
   raw: Record<string, any>;
@@ -14,11 +19,17 @@ interface MetaUpdateAdapterInput extends WhatsAppProviderEventContext {
 }
 
 const timestamp = (value: unknown, fallback = new Date(0)): Date => {
-  const seconds = Number(value);
-  return Number.isFinite(seconds) && seconds > 0
-    ? new Date(seconds * 1000)
-    : fallback;
+  const millis = providerTimestampMillis(value);
+  return millis === null ? fallback : new Date(millis);
 };
+
+const hasOwn = (value: object, key: string): boolean =>
+  Object.prototype.hasOwnProperty.call(value, key);
+
+const booleanOrNull = (value: unknown): boolean | null =>
+  typeof value === "boolean" || typeof value === "number"
+    ? Boolean(value)
+    : null;
 
 const selectedButton = (
   raw: Record<string, any>
@@ -133,15 +144,69 @@ export const adaptMetaChatUpdate = (
   const raw = input.raw || {};
   const jid = raw.jid ? String(raw.jid) : null;
   const occurredAt = timestamp(raw.timestamp, input.observedAt);
-  const revision = String(occurredAt.getTime());
-  const lastMessageAt = timestamp(raw.last_message_at, occurredAt);
+  const archived = hasOwn(raw, "archived")
+    ? booleanOrNull(raw.archived)
+    : null;
+  const pinned = hasOwn(raw, "pinned")
+    ? booleanOrNull(raw.pinned)
+    : null;
+  const mutedUntil = hasOwn(raw, "muted_until")
+    ? raw.muted_until === null || raw.muted_until === undefined
+      ? null
+      : timestamp(raw.muted_until).toISOString()
+    : null;
+  const unreadCount = hasOwn(raw, "unread_count")
+    ? raw.unread_count === null || raw.unread_count === undefined
+      ? null
+      : Number(raw.unread_count)
+    : null;
+  const lastMessageAt = hasOwn(raw, "last_message_at")
+    ? raw.last_message_at === null || raw.last_message_at === undefined
+      ? null
+      : timestamp(raw.last_message_at)
+    : null;
+  const identity = createLifecycleEventIdentity({
+    provider: "meta_cloud",
+    kind: "chat",
+    sourceId:
+      raw.source_id ??
+      raw.event_id ??
+      raw.update_id ??
+      raw.callback_index ??
+      null,
+    providerTimestamp: raw.timestamp,
+    content: [
+      jid,
+      ["lid", hasOwn(raw, "lid"), raw.lid ?? null],
+      ["name", hasOwn(raw, "name"), raw.name ?? null],
+      ["archived", hasOwn(raw, "archived"), archived],
+      ["pinned", hasOwn(raw, "pinned"), pinned],
+      ["mutedUntil", hasOwn(raw, "muted_until"), mutedUntil],
+      ["unreadCount", hasOwn(raw, "unread_count"), unreadCount],
+      [
+        "lastMessageId",
+        hasOwn(raw, "last_message_id"),
+        raw.last_message_id ?? null
+      ],
+      [
+        "lastMessageAt",
+        hasOwn(raw, "last_message_at"),
+        lastMessageAt?.toISOString() ?? null
+      ],
+      [
+        "lastMessagePreview",
+        hasOwn(raw, "last_message_preview"),
+        raw.last_message_preview ?? null
+      ]
+    ]
+  });
   const event = createProviderEvent({
     context: input,
     eventType: "chat.updated",
     providerName: "meta_cloud",
-    providerEventId: jid ? `chat:${jid}:${revision}` : null,
+    providerEventId: identity.providerEventId,
     occurredAt,
-    revision,
+    revision: identity.revision,
     jid,
     kind: "chat",
     chat: {
@@ -149,34 +214,39 @@ export const adaptMetaChatUpdate = (
       lid: raw.lid ?? null,
       type: jid ? (jid.endsWith("@g.us") ? "group" : "direct") : null,
       name: raw.name ?? null,
-      archived: Boolean(raw.archived),
-      pinned: Boolean(raw.pinned),
-      mutedUntil:
-        raw.muted_until === null || raw.muted_until === undefined
-          ? null
-          : timestamp(raw.muted_until).toISOString(),
-      unreadCount: Number(raw.unread_count || 0)
+      archived,
+      pinned,
+      mutedUntil,
+      unreadCount
     }
   });
   if (jid) {
-    event.chatState = {
+    const state: WhatsAppChatStateUpdate = {
       companyId: input.companyId,
       whatsappId: input.whatsappId,
       jid,
-      lid: raw.lid ?? null,
       isGroup: jid.endsWith("@g.us"),
-      archived: Boolean(raw.archived),
-      pinned: Boolean(raw.pinned),
-      mutedUntil:
-        raw.muted_until === null || raw.muted_until === undefined
-          ? null
-          : timestamp(raw.muted_until),
-      unreadCount: Number(raw.unread_count || 0),
-      lastMessageId: raw.last_message_id ?? null,
-      lastMessageAt,
-      lastMessagePreview: raw.last_message_preview ?? null,
-      revision
+      revision: identity.revision
     };
+    if (hasOwn(raw, "lid")) state.lid = raw.lid ?? null;
+    if (archived !== null) state.archived = archived;
+    if (pinned !== null) state.pinned = pinned;
+    if (hasOwn(raw, "muted_until")) {
+      state.mutedUntil = mutedUntil ? new Date(mutedUntil) : null;
+    }
+    if (unreadCount !== null && Number.isFinite(unreadCount)) {
+      state.unreadCount = unreadCount;
+    }
+    if (hasOwn(raw, "last_message_id")) {
+      state.lastMessageId = raw.last_message_id ?? null;
+    }
+    if (hasOwn(raw, "last_message_at")) {
+      state.lastMessageAt = lastMessageAt;
+    }
+    if (hasOwn(raw, "last_message_preview")) {
+      state.lastMessagePreview = raw.last_message_preview ?? null;
+    }
+    event.chatState = state;
   }
   return event;
 };
@@ -194,14 +264,28 @@ export const adaptMetaConnectionUpdate = (
       ? rawState
       : null;
   const occurredAt = timestamp(input.raw?.timestamp, input.observedAt);
-  const revision = String(occurredAt.getTime());
+  const identity = createLifecycleEventIdentity({
+    provider: "meta_cloud",
+    kind: "connection",
+    sourceId:
+      input.raw?.source_id ??
+      input.raw?.event_id ??
+      input.raw?.update_id ??
+      input.raw?.callback_index ??
+      null,
+    providerTimestamp: input.raw?.timestamp,
+    content: {
+      publicId: input.raw?.phone_number_id ?? null,
+      state
+    }
+  });
   return createProviderEvent({
     context: input,
     eventType: "connection.updated",
     providerName: "meta_cloud",
-    providerEventId: `connection:${input.whatsappId}:${revision}:${state}`,
+    providerEventId: identity.providerEventId,
     occurredAt,
-    revision,
+    revision: identity.revision,
     kind: "connection",
     connection: {
       publicId: input.raw?.phone_number_id ?? null,
@@ -223,9 +307,10 @@ export const adaptMetaLifecycleEvents = (
   }
 ): WhatsAppProviderEvent[] => {
   const events: WhatsAppProviderEvent[] = [];
-  for (const entry of input.payload?.entry || []) {
-    for (const change of entry.changes || []) {
+  for (const [entryIndex, entry] of (input.payload?.entry || []).entries()) {
+    for (const [changeIndex, change] of (entry.changes || []).entries()) {
       const value = change.value || {};
+      const sourcePrefix = `${entry.id ?? entryIndex}:${changeIndex}`;
       if (metaConnectionFields.has(change.field)) {
         events.push(
           adaptMetaConnectionUpdate({
@@ -234,16 +319,20 @@ export const adaptMetaLifecycleEvents = (
               state: value.state ?? value.event ?? change.field,
               phone_number_id:
                 value.phone_number_id ?? value.metadata?.phone_number_id ?? null,
-              timestamp: value.timestamp
+              timestamp: value.timestamp,
+              source_id: `${sourcePrefix}:${change.field}`
             }
           })
         );
       }
-      for (const chat of value.chats || []) {
+      for (const [chatIndex, chat] of (value.chats || []).entries()) {
         events.push(
           adaptMetaChatUpdate({
             ...input,
-            raw: chat
+            raw: {
+              ...chat,
+              source_id: `${sourcePrefix}:chat:${chatIndex}`
+            }
           })
         );
       }

@@ -1,4 +1,8 @@
 import * as Sentry from "@sentry/node";
+import P from "pino";
+
+import { Boom } from "@hapi/boom";
+import NodeCache from "node-cache";
 import makeWASocket, {
   WASocket,
   Browsers,
@@ -9,10 +13,6 @@ import makeWASocket, {
   isJidBroadcast,
   CacheStore
 } from "../messaging/public/baileys";
-import P from "pino";
-
-import { Boom } from "@hapi/boom";
-import NodeCache from "node-cache";
 import Whatsapp from "../models/Whatsapp";
 import { logger } from "../utils/logger";
 import { BaileysLogger as MAIN_LOGGER } from "../messaging/public/baileys";
@@ -25,6 +25,7 @@ import DeleteBaileysService from "../services/BaileysServices/DeleteBaileysServi
 import waitForSessionReady, {
   DEFAULT_RECONNECT_WAIT_MS
 } from "./waitForSessionReady";
+import { registerBaileysConnectionLifecycle } from "../services/WbotServices/BaileysConnectionLifecycle";
 
 const loggerBaileys = MAIN_LOGGER.child({});
 loggerBaileys.level = "error";
@@ -172,8 +173,12 @@ export const initWASocket = async (whatsapp: Whatsapp): Promise<Session> => {
         //   },
         // })
 
-        wsocket.ev.on(
-          "connection.update",
+        registerBaileysConnectionLifecycle(
+          wsocket,
+          {
+            companyId: whatsapp.companyId,
+            whatsappId: id
+          },
           async ({ connection, lastDisconnect, qr }) => {
             logger.info(
               `Socket  ${name} Connection Update ${connection || ""} ${

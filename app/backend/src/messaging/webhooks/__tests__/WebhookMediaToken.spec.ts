@@ -21,7 +21,7 @@ describe("WebhookMediaToken", () => {
     );
     const expires = Number(url.searchParams.get("expires"));
     const keyVersion = url.searchParams.get("keyVersion") || "";
-    const token = url.searchParams.get("token") || "";
+    const token = url.searchParams.get("sig") || "";
 
     expect(url.pathname).toBe(
       "/api/v1/webhook-media/message%2Fwith%20spaces"

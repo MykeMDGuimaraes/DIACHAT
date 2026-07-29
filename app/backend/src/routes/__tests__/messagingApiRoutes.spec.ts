@@ -140,7 +140,7 @@ describe("messaging admin routes", () => {
 
   it("registers the signed webhook media route without session or API-key middleware", async () => {
     const response = await request(buildApp()).get(
-      "/api/v1/webhook-media/message-1?companyId=7&expires=1&keyVersion=v1&token=x"
+      "/api/v1/webhook-media/message-1?companyId=7&expires=1&keyVersion=v1&sig=x"
     );
 
     expect(response.status).toBe(200);

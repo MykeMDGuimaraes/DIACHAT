@@ -1,5 +1,7 @@
 import { createProviderEvent } from "../../domain/WhatsAppProviderEvent";
-import WhatsAppProviderEventPublisher from "../WhatsAppProviderEventPublisher";
+import WhatsAppProviderEventPublisher, {
+  buildWhatsAppChatStatePatch
+} from "../WhatsAppProviderEventPublisher";
 
 const chatEvent = () => ({
   ...createProviderEvent({
@@ -34,6 +36,25 @@ const chatEvent = () => ({
 });
 
 describe("WhatsAppProviderEventPublisher", () => {
+  it("patches only chat fields supplied by a partial provider update", () => {
+    const patch = buildWhatsAppChatStatePatch({
+      companyId: 7,
+      whatsappId: 42,
+      jid: "5511999999999@s.whatsapp.net",
+      archived: true,
+      revision: "1722000000000"
+    });
+
+    expect(patch).toEqual({
+      archived: true,
+      revision: "1722000000000"
+    });
+    expect(patch).not.toHaveProperty("pinned");
+    expect(patch).not.toHaveProperty("mutedUntil");
+    expect(patch).not.toHaveProperty("unreadCount");
+    expect(patch).not.toHaveProperty("lastMessageId");
+  });
+
   it("persists a chat event and state atomically only once for duplicate aggregate identities", async () => {
     const operations: string[] = [];
     const findOrCreateEvent = jest

@@ -25,7 +25,7 @@ export const createWebhookMediaHandler =
     const expires = Number(req.query.expires);
     const keyVersion =
       typeof req.query.keyVersion === "string" ? req.query.keyVersion : "";
-    const token = typeof req.query.token === "string" ? req.query.token : "";
+    const token = typeof req.query.sig === "string" ? req.query.sig : "";
     const messageId = req.params.messageId;
     if (
       !verifyWebhookMediaToken({

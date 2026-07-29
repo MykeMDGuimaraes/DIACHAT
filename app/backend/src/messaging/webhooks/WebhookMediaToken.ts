@@ -58,7 +58,7 @@ export const signWebhookMediaUrl = (
     messageId
   )}?companyId=${companyId}&expires=${expires}&keyVersion=${encodeURIComponent(
     keyVersion
-  )}&token=${token}`;
+  )}&sig=${token}`;
 };
 
 export const verifyWebhookMediaToken = (input: {

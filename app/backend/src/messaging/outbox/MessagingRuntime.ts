@@ -11,6 +11,7 @@ import MetaInboxRecoveryService from "../channels/meta-cloud/MetaInboxRecoverySe
 import ConversationCommandDispatcher from "./ConversationCommandDispatcher";
 import ConversationCommandRecoveryService from "./ConversationCommandRecoveryService";
 import WebhookDeliveryBackfillService from "../webhooks/WebhookDeliveryBackfillService";
+import { logger } from "../../utils/logger";
 
 interface RecoveryRunner {
   recover: () => Promise<{ recovered: number }>;
@@ -51,6 +52,8 @@ export interface WebhookRuntimeConcurrency {
   fanout: number;
   delivery: number;
 }
+
+type WebhookPoolName = "fanout" | "delivery";
 
 const MAX_WEBHOOK_RUNTIME_CONCURRENCY = 128;
 
@@ -102,7 +105,15 @@ class MessagingRuntime {
     private readonly webhookBackfill: WebhookBackfillRunner = {
       runBatch: async () => ({ processed: 0, safeToDispatch: true })
     },
-    private readonly webhookConcurrency: WebhookRuntimeConcurrency = resolveWebhookRuntimeConcurrency()
+    private readonly webhookConcurrency: WebhookRuntimeConcurrency = resolveWebhookRuntimeConcurrency(),
+    private readonly reportWebhookPoolFailure: (
+      pool: WebhookPoolName,
+      failedLanes: number
+    ) => void = (pool, failedLanes) =>
+      logger.error(
+        { webhookPool: pool, failedLanes },
+        "Messaging webhook pool lanes failed"
+      )
   ) {}
 
   private async drainWebhookFanout(): Promise<number> {
@@ -118,8 +129,16 @@ class MessagingRuntime {
         return deliveries;
       }
     );
-    return (await Promise.all(lanes)).reduce(
-      (total, deliveries) => total + deliveries,
+    const settled = await Promise.allSettled(lanes);
+    const failedLanes = settled.filter(
+      result => result.status === "rejected"
+    ).length;
+    if (failedLanes) {
+      this.reportWebhookPoolFailure("fanout", failedLanes);
+    }
+    return settled.reduce(
+      (total, result) =>
+        total + (result.status === "fulfilled" ? result.value : 0),
       0
     );
   }
@@ -137,8 +156,16 @@ class MessagingRuntime {
         return dispatched;
       }
     );
-    return (await Promise.all(lanes)).reduce(
-      (total, dispatched) => total + dispatched,
+    const settled = await Promise.allSettled(lanes);
+    const failedLanes = settled.filter(
+      result => result.status === "rejected"
+    ).length;
+    if (failedLanes) {
+      this.reportWebhookPoolFailure("delivery", failedLanes);
+    }
+    return settled.reduce(
+      (total, result) =>
+        total + (result.status === "fulfilled" ? result.value : 0),
       0
     );
   }

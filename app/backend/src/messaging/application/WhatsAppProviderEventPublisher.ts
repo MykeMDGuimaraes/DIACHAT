@@ -19,18 +19,29 @@ interface PublisherDependencies {
   ): Promise<void>;
 }
 
-const chatStateValues = (state: WhatsAppChatStateUpdate) => ({
-  lid: state.lid,
-  isGroup: state.isGroup,
-  archived: state.archived,
-  pinned: state.pinned,
-  mutedUntil: state.mutedUntil,
-  unreadCount: state.unreadCount,
-  lastMessageId: state.lastMessageId,
-  lastMessageAt: state.lastMessageAt,
-  lastMessagePreview: state.lastMessagePreview,
-  revision: state.revision
-});
+const mutableChatStateFields = [
+  "lid",
+  "isGroup",
+  "archived",
+  "pinned",
+  "mutedUntil",
+  "unreadCount",
+  "lastMessageId",
+  "lastMessageAt",
+  "lastMessagePreview"
+] as const;
+
+export const buildWhatsAppChatStatePatch = (
+  state: WhatsAppChatStateUpdate
+): Record<string, unknown> => {
+  const patch: Record<string, unknown> = { revision: state.revision };
+  mutableChatStateFields.forEach(field => {
+    if (Object.prototype.hasOwnProperty.call(state, field)) {
+      patch[field] = state[field];
+    }
+  });
+  return patch;
+};
 
 const defaultDependencies: PublisherDependencies = {
   mirrorEnabled: () =>
@@ -55,6 +66,7 @@ const defaultDependencies: PublisherDependencies = {
       transaction
     }),
   upsertChatState: async (state, transaction) => {
+    const patch = buildWhatsAppChatStatePatch(state);
     const [persisted, created] = await WhatsAppChatState.findOrCreate({
       where: {
         companyId: state.companyId,
@@ -62,8 +74,10 @@ const defaultDependencies: PublisherDependencies = {
         jid: state.jid
       },
       defaults: {
-        ...state,
-        ...chatStateValues(state)
+        companyId: state.companyId,
+        whatsappId: state.whatsappId,
+        jid: state.jid,
+        ...patch
       } as any,
       transaction,
       lock: transaction.LOCK.UPDATE
@@ -72,7 +86,7 @@ const defaultDependencies: PublisherDependencies = {
       !created &&
       BigInt(String(persisted.revision || 0)) < BigInt(state.revision)
     ) {
-      await persisted.update(chatStateValues(state), { transaction });
+      await persisted.update(patch, { transaction });
     }
   }
 };
