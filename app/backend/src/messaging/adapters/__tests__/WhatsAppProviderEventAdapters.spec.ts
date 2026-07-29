@@ -532,6 +532,50 @@ describe("WhatsApp provider event adapters", () => {
     );
   });
 
+  it.each(["messages.upsert", "messages.update"] as const)(
+    "does not publish message.deleted for EPHEMERAL_SETTING on %s",
+    async listenerEvent => {
+      const handlers = new Map<string, (value: any) => Promise<void>>();
+      const publish = jest.fn().mockResolvedValue(undefined);
+      registerBaileysMirrorLifecycleListeners(
+        {
+          ev: {
+            on: (event: string, handler: (value: any) => Promise<void>) => {
+              handlers.set(event, handler);
+            }
+          }
+        },
+        context,
+        publish,
+        () => new Date("2024-07-26T13:20:04.000Z")
+      );
+      const key = {
+        id: "ephemeral-setting-1",
+        remoteJid: "5511999999999@s.whatsapp.net",
+        fromMe: false
+      };
+      const update = {
+        messageTimestamp: 1_722_000_006,
+        message: {
+          protocolMessage: {
+            type: 3,
+            ephemeralExpiration: 86400
+          }
+        }
+      };
+
+      if (listenerEvent === "messages.upsert") {
+        await handlers.get(listenerEvent)?.({
+          messages: [{ key, ...update }]
+        });
+      } else {
+        await handlers.get(listenerEvent)?.([{ key, update }]);
+      }
+
+      expect(publish).not.toHaveBeenCalled();
+    }
+  );
+
   it("uses stable Meta callback indices as lifecycle source identities", () => {
     const payload = {
       entry: [

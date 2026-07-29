@@ -150,7 +150,8 @@ export const adaptBaileysMessageEvents = (
     ];
   }
   const revokeStub = raw.messageStubType === 1;
-  if (raw.message?.protocolMessage || revokeStub) {
+  const revokeProtocol = raw.message?.protocolMessage?.type === 0;
+  if (revokeProtocol || revokeStub) {
     return [
       createProviderEvent({
         ...shared,
