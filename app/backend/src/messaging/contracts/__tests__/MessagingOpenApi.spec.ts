@@ -1,8 +1,8 @@
 import messagingOpenApi from "../MessagingOpenApi";
 
-describe("MessagingOpenApi 1.1", () => {
+describe("MessagingOpenApi 1.2", () => {
   it("publishes every Router P0 path as an authenticated full API path", () => {
-    expect(messagingOpenApi.info.version).toBe("1.1.0");
+    expect(messagingOpenApi.info.version).toBe("1.2.0");
 
     const requiredPaths = [
       "/api/v1/messages",
@@ -22,9 +22,9 @@ describe("MessagingOpenApi 1.1", () => {
     expect(messagingOpenApi.paths["/api/v1/messages"].post.security).toEqual([
       { ApiKey: [] }
     ]);
-    expect(
-      messagingOpenApi.paths["/api/v1/openapi.json"].get.security
-    ).toEqual([{ ApiKey: [] }]);
+    expect(messagingOpenApi.paths["/api/v1/openapi.json"].get.security).toEqual(
+      [{ ApiKey: [] }]
+    );
   });
 
   it("documents native buttons, correlation, epoch, scopes and stable webhook events", () => {
@@ -72,6 +72,77 @@ describe("MessagingOpenApi 1.1", () => {
         "conversation.created",
         "conversation.updated"
       ])
+    );
+  });
+
+  it("documents the whatsapp-mirror/1 envelope without removing v1.1 correlation fields", () => {
+    const schema = messagingOpenApi.components.schemas.WhatsAppMirrorEnvelope;
+
+    expect(schema.properties.schema.const).toBe("whatsapp-mirror/1");
+    expect(schema.required).toEqual([
+      "schema",
+      "id",
+      "type",
+      "createdAt",
+      "data"
+    ]);
+    expect(schema.properties.data.required).toEqual(
+      expect.arrayContaining([
+        "messageId",
+        "whatsappId",
+        "conversationId",
+        "contactId",
+        "externalTicketId",
+        "automationEpoch",
+        "actorType",
+        "kind",
+        "origin",
+        "provider",
+        "connection",
+        "contact",
+        "conversation",
+        "chat",
+        "message",
+        "truncated"
+      ])
+    );
+  });
+
+  it("documents rich message blocks and the canonical byte safety limits", () => {
+    const schemas = messagingOpenApi.components.schemas;
+    const envelope = schemas.WhatsAppMirrorEnvelope;
+    const message = schemas.WhatsAppMirrorMessage;
+
+    expect(envelope["x-maxCanonicalBytes"]).toBe(262144);
+    expect(message.required).toEqual(
+      expect.arrayContaining([
+        "quoted",
+        "reaction",
+        "interactive",
+        "media",
+        "location",
+        "contacts",
+        "poll",
+        "edit",
+        "delete"
+      ])
+    );
+    expect(message.properties.text["x-maxUtf8Bytes"]).toBe(65536);
+    expect(
+      schemas.WhatsAppMirrorQuotedMessage.properties.text["x-maxUtf8Bytes"]
+    ).toBe(4096);
+    expect(message.properties).toEqual(
+      expect.objectContaining({
+        quoted: expect.any(Object),
+        reaction: expect.any(Object),
+        interactive: expect.any(Object),
+        media: expect.any(Object),
+        location: expect.any(Object),
+        contacts: expect.any(Object),
+        poll: expect.any(Object),
+        edit: expect.any(Object),
+        delete: expect.any(Object)
+      })
     );
   });
 });

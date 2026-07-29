@@ -34,7 +34,7 @@ export const messagingOpenApi = {
   openapi: "3.1.0",
   info: {
     title: "DIA CHAT Messaging API",
-    version: "1.1.0",
+    version: "1.2.0",
     description:
       "Contrato público durável e idempotente do DIA CHAT para integrações de mensageria e automação."
   },
@@ -142,6 +142,366 @@ export const messagingOpenApi = {
         properties: {
           items: { type: "array", items: { type: "object" } },
           nextCursor: { type: ["string", "null"] }
+        }
+      },
+      WhatsAppMirrorProvider: {
+        type: "object",
+        additionalProperties: false,
+        required: ["name", "eventId", "messageId", "timestamp"],
+        properties: {
+          name: { type: ["string", "null"] },
+          eventId: { type: ["string", "null"] },
+          messageId: { type: ["string", "null"] },
+          timestamp: { type: ["string", "null"], format: "date-time" }
+        }
+      },
+      WhatsAppMirrorConnection: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "publicId", "state", "phoneNumber"],
+        properties: {
+          id: { type: ["integer", "null"] },
+          publicId: { type: ["string", "null"] },
+          state: { type: ["string", "null"] },
+          phoneNumber: { type: ["string", "null"] }
+        }
+      },
+      WhatsAppMirrorContact: {
+        type: "object",
+        additionalProperties: false,
+        required: [
+          "id",
+          "jid",
+          "lid",
+          "phoneNumber",
+          "name",
+          "pushName",
+          "isBusiness"
+        ],
+        properties: {
+          id: { type: ["string", "null"] },
+          jid: { type: ["string", "null"] },
+          lid: { type: ["string", "null"] },
+          phoneNumber: { type: ["string", "null"] },
+          name: { type: ["string", "null"] },
+          pushName: { type: ["string", "null"] },
+          isBusiness: { type: ["boolean", "null"] }
+        }
+      },
+      WhatsAppMirrorConversation: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "externalTicketId", "automationEpoch", "status"],
+        properties: {
+          id: { type: ["string", "null"] },
+          externalTicketId: { type: ["string", "null"] },
+          automationEpoch: { type: ["integer", "null"], minimum: 0 },
+          status: { type: ["string", "null"] }
+        }
+      },
+      WhatsAppMirrorChat: {
+        type: "object",
+        additionalProperties: false,
+        required: [
+          "jid",
+          "lid",
+          "type",
+          "name",
+          "archived",
+          "pinned",
+          "mutedUntil",
+          "unreadCount"
+        ],
+        properties: {
+          jid: { type: ["string", "null"] },
+          lid: { type: ["string", "null"] },
+          type: { type: ["string", "null"] },
+          name: { type: ["string", "null"] },
+          archived: { type: ["boolean", "null"] },
+          pinned: { type: ["boolean", "null"] },
+          mutedUntil: { type: ["string", "null"], format: "date-time" },
+          unreadCount: { type: ["integer", "null"], minimum: 0 }
+        }
+      },
+      WhatsAppMirrorQuotedMessage: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "providerMessageId", "participant", "type", "text"],
+        properties: {
+          id: { type: ["string", "null"] },
+          providerMessageId: { type: ["string", "null"] },
+          participant: { type: ["string", "null"] },
+          type: { type: ["string", "null"] },
+          text: {
+            type: ["string", "null"],
+            "x-maxUtf8Bytes": 4096
+          }
+        }
+      },
+      WhatsAppMirrorReaction: {
+        type: "object",
+        additionalProperties: false,
+        required: ["emoji", "targetMessageId", "removed"],
+        properties: {
+          emoji: { type: ["string", "null"] },
+          targetMessageId: { type: ["string", "null"] },
+          removed: { type: ["boolean", "null"] }
+        }
+      },
+      WhatsAppMirrorInteractive: {
+        type: "object",
+        additionalProperties: false,
+        required: ["type", "id", "title", "description"],
+        properties: {
+          type: { type: ["string", "null"] },
+          id: { type: ["string", "null"] },
+          title: { type: ["string", "null"] },
+          description: { type: ["string", "null"] }
+        }
+      },
+      WhatsAppMirrorMedia: {
+        type: "object",
+        additionalProperties: false,
+        required: [
+          "type",
+          "mimeType",
+          "fileName",
+          "sizeBytes",
+          "sha256",
+          "url",
+          "available",
+          "caption"
+        ],
+        properties: {
+          type: { type: ["string", "null"] },
+          mimeType: { type: ["string", "null"] },
+          fileName: { type: ["string", "null"] },
+          sizeBytes: { type: ["integer", "null"], minimum: 0 },
+          sha256: { type: ["string", "null"] },
+          url: { type: ["string", "null"] },
+          available: { type: ["boolean", "null"] },
+          caption: { type: ["string", "null"] }
+        }
+      },
+      WhatsAppMirrorLocation: {
+        type: "object",
+        additionalProperties: false,
+        required: ["latitude", "longitude", "name", "address", "url"],
+        properties: {
+          latitude: { type: ["number", "null"], minimum: -90, maximum: 90 },
+          longitude: {
+            type: ["number", "null"],
+            minimum: -180,
+            maximum: 180
+          },
+          name: { type: ["string", "null"] },
+          address: { type: ["string", "null"] },
+          url: { type: ["string", "null"] }
+        }
+      },
+      WhatsAppMirrorSharedContact: {
+        type: "object",
+        additionalProperties: false,
+        required: ["displayName", "vcard", "phoneNumbers"],
+        properties: {
+          displayName: { type: ["string", "null"] },
+          vcard: { type: ["string", "null"] },
+          phoneNumbers: {
+            type: ["array", "null"],
+            items: { type: ["string", "null"] }
+          }
+        }
+      },
+      WhatsAppMirrorPoll: {
+        type: "object",
+        additionalProperties: false,
+        required: ["name", "options", "selectedOptionIds", "multipleAnswers"],
+        properties: {
+          name: { type: ["string", "null"] },
+          options: {
+            type: ["array", "null"],
+            items: { type: ["string", "null"] }
+          },
+          selectedOptionIds: {
+            type: ["array", "null"],
+            items: { type: ["string", "null"] }
+          },
+          multipleAnswers: { type: ["boolean", "null"] }
+        }
+      },
+      WhatsAppMirrorEdit: {
+        type: "object",
+        additionalProperties: false,
+        required: ["targetMessageId", "text", "editedAt"],
+        properties: {
+          targetMessageId: { type: ["string", "null"] },
+          text: { type: ["string", "null"] },
+          editedAt: { type: ["string", "null"], format: "date-time" }
+        }
+      },
+      WhatsAppMirrorDelete: {
+        type: "object",
+        additionalProperties: false,
+        required: ["targetMessageId", "deletedAt", "forEveryone"],
+        properties: {
+          targetMessageId: { type: ["string", "null"] },
+          deletedAt: { type: ["string", "null"], format: "date-time" },
+          forEveryone: { type: ["boolean", "null"] }
+        }
+      },
+      WhatsAppMirrorMessage: {
+        type: "object",
+        additionalProperties: false,
+        required: [
+          "id",
+          "providerMessageId",
+          "direction",
+          "fromMe",
+          "type",
+          "text",
+          "timestamp",
+          "status",
+          "quoted",
+          "reaction",
+          "interactive",
+          "media",
+          "location",
+          "contacts",
+          "poll",
+          "edit",
+          "delete"
+        ],
+        properties: {
+          id: { type: ["string", "null"] },
+          providerMessageId: { type: ["string", "null"] },
+          direction: { type: ["string", "null"] },
+          fromMe: { type: ["boolean", "null"] },
+          type: { type: ["string", "null"] },
+          text: {
+            type: ["string", "null"],
+            "x-maxUtf8Bytes": 65536
+          },
+          timestamp: { type: ["string", "null"], format: "date-time" },
+          status: { type: ["string", "null"] },
+          quoted: {
+            anyOf: [
+              { $ref: "#/components/schemas/WhatsAppMirrorQuotedMessage" },
+              { type: "null" }
+            ]
+          },
+          reaction: {
+            anyOf: [
+              { $ref: "#/components/schemas/WhatsAppMirrorReaction" },
+              { type: "null" }
+            ]
+          },
+          interactive: {
+            anyOf: [
+              { $ref: "#/components/schemas/WhatsAppMirrorInteractive" },
+              { type: "null" }
+            ]
+          },
+          media: {
+            anyOf: [
+              { $ref: "#/components/schemas/WhatsAppMirrorMedia" },
+              { type: "null" }
+            ]
+          },
+          location: {
+            anyOf: [
+              { $ref: "#/components/schemas/WhatsAppMirrorLocation" },
+              { type: "null" }
+            ]
+          },
+          contacts: {
+            type: ["array", "null"],
+            items: {
+              $ref: "#/components/schemas/WhatsAppMirrorSharedContact"
+            }
+          },
+          poll: {
+            anyOf: [
+              { $ref: "#/components/schemas/WhatsAppMirrorPoll" },
+              { type: "null" }
+            ]
+          },
+          edit: {
+            anyOf: [
+              { $ref: "#/components/schemas/WhatsAppMirrorEdit" },
+              { type: "null" }
+            ]
+          },
+          delete: {
+            anyOf: [
+              { $ref: "#/components/schemas/WhatsAppMirrorDelete" },
+              { type: "null" }
+            ]
+          }
+        }
+      },
+      WhatsAppMirrorEnvelope: {
+        type: "object",
+        additionalProperties: false,
+        "x-maxCanonicalBytes": 262144,
+        "x-canonicalSerialization": "recursive-key-sort-json-utf8",
+        "x-digest": "SHA-256",
+        "x-eventIdentity": "UUIDv5",
+        required: ["schema", "id", "type", "createdAt", "data"],
+        properties: {
+          schema: { type: "string", const: "whatsapp-mirror/1" },
+          id: { type: "string", format: "uuid" },
+          type: { type: "string", minLength: 1 },
+          createdAt: { type: "string", format: "date-time" },
+          data: {
+            type: "object",
+            additionalProperties: false,
+            required: [
+              "messageId",
+              "whatsappId",
+              "conversationId",
+              "contactId",
+              "externalTicketId",
+              "automationEpoch",
+              "actorType",
+              "kind",
+              "origin",
+              "provider",
+              "connection",
+              "contact",
+              "conversation",
+              "chat",
+              "message",
+              "truncated"
+            ],
+            properties: {
+              messageId: { type: ["string", "null"] },
+              whatsappId: { type: ["integer", "null"] },
+              conversationId: { type: ["string", "null"] },
+              contactId: { type: ["string", "null"] },
+              externalTicketId: { type: ["string", "null"] },
+              automationEpoch: { type: ["integer", "null"], minimum: 0 },
+              actorType: { type: ["string", "null"] },
+              kind: { type: ["string", "null"] },
+              origin: { type: ["string", "null"] },
+              provider: {
+                $ref: "#/components/schemas/WhatsAppMirrorProvider"
+              },
+              connection: {
+                $ref: "#/components/schemas/WhatsAppMirrorConnection"
+              },
+              contact: {
+                $ref: "#/components/schemas/WhatsAppMirrorContact"
+              },
+              conversation: {
+                $ref: "#/components/schemas/WhatsAppMirrorConversation"
+              },
+              chat: { $ref: "#/components/schemas/WhatsAppMirrorChat" },
+              message: {
+                $ref: "#/components/schemas/WhatsAppMirrorMessage"
+              },
+              truncated: { type: "boolean" }
+            }
+          }
         }
       },
       Error: {
