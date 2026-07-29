@@ -41,7 +41,7 @@ describe("PublicMessageController", () => {
     expect(res.status).toHaveBeenCalledWith(202);
     expect(res.json).toHaveBeenCalledWith({
       id: "cmd_1",
-      status: "queued",
+      status: "accepted",
       messageId: "msg_1"
     });
   });
@@ -93,5 +93,56 @@ describe("PublicMessageController", () => {
         payload: { link: "https://cdn.example.com/photo.jpg", caption: "Foto" }
       })
     );
+  });
+
+  it("returns the stable accepted response and forwards Router correlation", async () => {
+    const create = jest.fn().mockResolvedValue({
+      command: {
+        id: "cmd_buttons",
+        status: "queued",
+        messageId: "msg_buttons",
+        conversationId: "conversation-uuid",
+        contactId: "3"
+      },
+      message: { id: "msg_buttons" },
+      replayed: false
+    });
+    const handler = createPublicTextMessageHandler({ create } as any);
+    const req: any = {
+      apiCredential: { id: "cred_1", companyId: 10, connectionIds: [2] },
+      body: {
+        connectionId: 2,
+        to: "5511999999999",
+        type: "buttons",
+        text: "Escolha",
+        buttons: [{ id: "accept:ticket_1", title: "Aceitar" }],
+        externalTicketId: "ticket_1",
+        automationEpoch: 4
+      },
+      header: jest.fn().mockReturnValue("request-buttons-123")
+    };
+    const res = response();
+
+    await handler(req, res);
+
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "buttons",
+        text: "Escolha",
+        payload: {
+          buttons: [{ id: "accept:ticket_1", title: "Aceitar" }]
+        },
+        externalTicketId: "ticket_1",
+        automationEpoch: 4
+      })
+    );
+    expect(res.status).toHaveBeenCalledWith(202);
+    expect(res.json).toHaveBeenCalledWith({
+      id: "cmd_buttons",
+      status: "accepted",
+      messageId: "msg_buttons",
+      conversationId: "conversation-uuid",
+      contactId: "3"
+    });
   });
 });

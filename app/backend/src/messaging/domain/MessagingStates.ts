@@ -5,7 +5,8 @@ export const MESSAGE_COMMAND_STATUS = {
   DELIVERED: "delivered",
   READ: "read",
   FAILED: "failed",
-  UNKNOWN: "unknown"
+  UNKNOWN: "unknown",
+  CANCELLED: "cancelled"
 } as const;
 
 export type MessageCommandStatusValue =

@@ -8,6 +8,8 @@ import MessageCommandDispatcher from "./MessageCommandDispatcher";
 import OutboundPairRecoveryService from "./OutboundPairRecoveryService";
 import MessagingCapacityObserver from "../operations/MessagingCapacityObserver";
 import MetaInboxRecoveryService from "../channels/meta-cloud/MetaInboxRecoveryService";
+import ConversationCommandDispatcher from "./ConversationCommandDispatcher";
+import ConversationCommandRecoveryService from "./ConversationCommandRecoveryService";
 
 interface RecoveryRunner {
   recover: () => Promise<{ recovered: number }>;
@@ -38,6 +40,8 @@ interface CapacityObserverRunner {
 }
 
 class MessagingRuntime {
+  // Parameter properties keep each worker replaceable in tests.
+  // eslint-disable-next-line no-useless-constructor
   constructor(
     private readonly recovery: RecoveryRunner,
     private readonly dispatcher: DispatchRunner,
@@ -53,6 +57,9 @@ class MessagingRuntime {
     },
     private readonly capacityObserver: CapacityObserverRunner = {
       observeOne: async () => ({ status: "idle" })
+    },
+    private readonly conversationDispatcher: DispatchRunner = {
+      dispatchOne: async () => ({ status: "idle" })
     }
   ) {}
 
@@ -92,6 +99,12 @@ class MessagingRuntime {
     }
 
     for (let index = 0; index < this.batchSize; index += 1) {
+      const result = await this.conversationDispatcher.dispatchOne();
+      if (result.status === "idle") break;
+      dispatched += 1;
+    }
+
+    for (let index = 0; index < this.batchSize; index += 1) {
       const result = await this.webhookFanout.fanoutOne();
       if (result.status === "idle") break;
       webhookDeliveriesCreated += result.deliveries;
@@ -121,12 +134,15 @@ export const createMessagingRuntime = (): MessagingRuntime =>
         const outbound = await new OutboundPairRecoveryService().recover();
         const webhooks = await new WebhookRecoveryService().recover();
         const inbox = await new MetaInboxRecoveryService().recover();
+        const conversations =
+          await new ConversationCommandRecoveryService().recover();
         return {
           recovered:
             outbound.recovered +
             webhooks.deliveries +
             webhooks.events +
-            inbox.recovered
+            inbox.recovered +
+            conversations.recovered
         };
       }
     },
@@ -138,7 +154,8 @@ export const createMessagingRuntime = (): MessagingRuntime =>
     new MetaInboxProcessor(),
     new WebhookFanoutService(),
     new WebhookDeliveryDispatcher(),
-    new MessagingCapacityObserver()
+    new MessagingCapacityObserver(),
+    new ConversationCommandDispatcher()
   );
 
 export default MessagingRuntime;

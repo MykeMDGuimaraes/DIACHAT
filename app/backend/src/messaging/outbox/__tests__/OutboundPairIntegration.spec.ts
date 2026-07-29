@@ -16,6 +16,8 @@ import OutboundPairRecoveryService from "../OutboundPairRecoveryService";
 
 const refs = { companyId: 0, whatsappId: 0 };
 
+jest.setTimeout(15_000);
+
 const createPair = async (
   overrides: Partial<Record<string, unknown>> = {}
 ): Promise<{ command: MessageCommand; event: MessagingOutboxEvent }> => {

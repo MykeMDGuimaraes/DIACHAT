@@ -11,10 +11,16 @@ interface WebhookRecoveryDependencies {
   requeueEvents(now: Date): Promise<[number, unknown[]?]>;
 }
 
-const eventTypes = [
+export const WEBHOOK_RECOVERABLE_EVENT_TYPES = [
   "message.received",
   "message.sent",
+  "message.failed",
   "message.status.updated",
+  "button.clicked",
+  "handoff.paused",
+  "handoff.released",
+  "conversation.created",
+  "conversation.updated",
   "ticket.created",
   "ticket.updated",
   "contact.updated"
@@ -44,7 +50,7 @@ const defaults: WebhookRecoveryDependencies = {
       },
       {
         where: {
-          eventType: { [Op.in]: eventTypes },
+          eventType: { [Op.in]: WEBHOOK_RECOVERABLE_EVENT_TYPES },
           status: OUTBOX_EVENT_STATUS.PROCESSING,
           leaseExpiresAt: { [Op.lte]: now }
         }
@@ -53,6 +59,8 @@ const defaults: WebhookRecoveryDependencies = {
 };
 
 class WebhookRecoveryService {
+  // Parameter property keeps recovery repositories replaceable in tests.
+  // eslint-disable-next-line no-useless-constructor
   constructor(
     private readonly dependencies: WebhookRecoveryDependencies = defaults
   ) {}

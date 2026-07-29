@@ -39,6 +39,7 @@ import ChannelProviderModal from "../../components/ChannelProviderModal";
 import MetaCloudChannelModal from "../../components/MetaCloudChannelModal";
 import WebhookSubscriptionsModal from "../../components/WebhookSubscriptionsModal";
 import ApiCredentialsModal from "../../components/ApiCredentialsModal";
+import RouterIntegrationModal from "../../components/RouterIntegrationModal";
 import ConfirmationModal from "../../components/ConfirmationModal";
 import QrcodeModal from "../../components/QrcodeModal";
 import { i18n } from "../../translate/i18n";
@@ -109,6 +110,7 @@ const Connections = () => {
 	const [metaCloudModalOpen, setMetaCloudModalOpen] = useState(false);
 	const [webhooksModalOpen, setWebhooksModalOpen] = useState(false);
 	const [apiCredentialsModalOpen, setApiCredentialsModalOpen] = useState(false);
+	const [routerIntegrationModalOpen, setRouterIntegrationModalOpen] = useState(false);
 	const [qrModalOpen, setQrModalOpen] = useState(false);
 	const [selectedWhatsApp, setSelectedWhatsApp] = useState(null);
 	const [confirmModalOpen, setConfirmModalOpen] = useState(false);
@@ -357,9 +359,22 @@ const Connections = () => {
 				onClose={() => setApiCredentialsModalOpen(false)}
 				connections={whatsApps}
 			/>
+			<RouterIntegrationModal
+				open={routerIntegrationModalOpen}
+				onClose={() => setRouterIntegrationModalOpen(false)}
+				connections={whatsApps}
+			/>
 			<MainHeader>
 				<Title>{i18n.t("connections.title")}</Title>
 				<MainHeaderButtonsWrapper>
+					<Button
+						variant="contained"
+						color="primary"
+						onClick={() => setRouterIntegrationModalOpen(true)}
+						style={{ marginRight: 8 }}
+					>
+						Integração Roteador
+					</Button>
 					<Button
 						variant="outlined"
 						color="primary"

@@ -1,9 +1,10 @@
 import { randomBytes } from "crypto";
+import { Op } from "sequelize";
+
 import AppError from "../../errors/AppError";
+import Whatsapp from "../../models/Whatsapp";
 import { hashApiKeySecret } from "../domain/PublicApiKey";
 import ApiCredential from "../persistence/models/ApiCredential";
-import Whatsapp from "../../models/Whatsapp";
-import { Op } from "sequelize";
 
 export interface IssueApiCredentialInput {
   companyId: number;
@@ -26,6 +27,8 @@ const defaultRepository: ApiCredentialRepository = {
 const createTokenPart = (): string => randomBytes(24).toString("hex");
 
 class ApiCredentialService {
+  // Parameter properties keep credential dependencies replaceable in tests.
+  // eslint-disable-next-line no-useless-constructor
   constructor(
     private readonly repository = defaultRepository,
     private readonly getPepper = () => process.env.API_KEY_PEPPER || "",
@@ -38,7 +41,12 @@ class ApiCredentialService {
       throw new AppError("API_KEY_PEPPER nao configurado", 500);
     }
     const connectionIds = [...new Set(input.connectionIds || [])];
-    const allowedScopes = new Set(["messages:write"]);
+    const allowedScopes = new Set([
+      "messages:write",
+      "conversations:write",
+      "integration:read",
+      "transcript:read"
+    ]);
     if (
       !input.name.trim() ||
       input.scopes.length === 0 ||

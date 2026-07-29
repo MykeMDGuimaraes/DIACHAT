@@ -21,7 +21,11 @@ describe("BaileysMessageCommandProvider", () => {
       })
     ).resolves.toEqual({ providerMessageId: "wamid_1" });
 
-    expect(sendText).toHaveBeenCalledWith({ ticket, text: "Olá" });
+    expect(sendText).toHaveBeenCalledWith({
+      ticket,
+      text: "Olá",
+      messageId: "cmd_1"
+    });
   });
 
   it("rejects an invalid command payload before attempting delivery", async () => {
@@ -78,7 +82,49 @@ describe("BaileysMessageCommandProvider", () => {
       content: {
         image: { url: "https://cdn.example.com/photo.jpg" },
         caption: "Foto"
-      }
+      },
+      messageId: "cmd_media"
+    });
+  });
+
+  it("sends native quick-reply buttons without a text fallback", async () => {
+    const ticket = { id: 17, contact: { number: "5511999999999" } };
+    const sendNativeButtons = jest
+      .fn()
+      .mockResolvedValue({ key: { id: "wamid_buttons" } });
+    const provider = new BaileysMessageCommandProvider({
+      findTicket: jest.fn().mockResolvedValue(ticket),
+      sendText: jest.fn(),
+      sendNativeButtons
+    });
+
+    await expect(
+      provider.send({
+        id: "cmd_buttons",
+        companyId: 10,
+        whatsappId: 2,
+        provider: "baileys",
+        messageKind: "buttons",
+        recipient: "5511999999999",
+        requestPayload: {
+          ticketId: 17,
+          text: "Escolha",
+          buttons: [
+            { id: "accept:ticket_1", title: "Aceitar" },
+            { id: "reject:ticket_1", title: "Recusar" }
+          ]
+        }
+      })
+    ).resolves.toEqual({ providerMessageId: "wamid_buttons" });
+
+    expect(sendNativeButtons).toHaveBeenCalledWith({
+      ticket,
+      text: "Escolha",
+      buttons: [
+        { id: "accept:ticket_1", title: "Aceitar" },
+        { id: "reject:ticket_1", title: "Recusar" }
+      ],
+      messageId: "cmd_buttons"
     });
   });
 });
