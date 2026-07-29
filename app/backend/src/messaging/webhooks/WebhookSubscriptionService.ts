@@ -14,6 +14,11 @@ const supportedEvents = new Set([
   "message.sent",
   "message.failed",
   "message.status.updated",
+  "button.clicked",
+  "handoff.paused",
+  "handoff.released",
+  "conversation.created",
+  "conversation.updated",
   "ticket.created",
   "ticket.updated",
   "contact.updated"

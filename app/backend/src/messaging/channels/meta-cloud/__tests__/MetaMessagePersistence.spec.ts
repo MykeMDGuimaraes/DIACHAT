@@ -91,4 +91,47 @@ describe("persistMetaMessage", () => {
       "notify"
     ]);
   });
+
+  it("publishes conversation.created when Meta creates the inbound ticket", async () => {
+    const ticket = {
+      id: 9,
+      uuid: "conversation-meta-1",
+      unreadMessages: 0,
+      update: jest.fn().mockResolvedValue(undefined)
+    };
+    const createOutbox = jest.fn().mockResolvedValue(undefined);
+    const dependencies = {
+      transaction: async <T>(callback: (transaction: any) => Promise<T>) =>
+        callback({ id: "tx" }),
+      findMessage: jest.fn().mockResolvedValue(null),
+      findContact: jest.fn().mockResolvedValue({ id: 3 }),
+      createContact: jest.fn(),
+      findTicket: jest.fn().mockResolvedValue(null),
+      createTicket: jest.fn().mockResolvedValue(ticket),
+      createMessage: jest.fn().mockResolvedValue({ id: "wamid.inbound" }),
+      createOutbox,
+      findAutomationState: jest.fn().mockResolvedValue(null),
+      loadMessage: jest
+        .fn()
+        .mockResolvedValue({ id: "wamid.inbound", ticket }),
+      notifyMessage: jest.fn()
+    };
+
+    await persistMetaMessage(7, 42, incoming, dependencies);
+
+    expect(createOutbox).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: "conversation.created",
+        aggregateId: "conversation-meta-1",
+        payload: expect.objectContaining({
+          conversationId: "conversation-meta-1",
+          contactId: "3",
+          whatsappId: 42,
+          actorType: "contact",
+          origin: "provider"
+        })
+      }),
+      { id: "tx" }
+    );
+  });
 });

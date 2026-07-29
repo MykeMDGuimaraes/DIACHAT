@@ -144,7 +144,9 @@ export const send = async (req: Request, res: Response): Promise<Response> => {
       contact,
       whatsapp.id!,
       0,
-      companyId
+      companyId,
+      undefined,
+      "api"
     );
 
     if (medias) {

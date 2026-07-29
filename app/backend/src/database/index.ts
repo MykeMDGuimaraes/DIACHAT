@@ -53,6 +53,8 @@ import MessagingInboxEvent from "../messaging/persistence/models/MessagingInboxE
 import WebhookSubscription from "../messaging/persistence/models/WebhookSubscription";
 import WebhookDelivery from "../messaging/persistence/models/WebhookDelivery";
 import MessagingCapacitySample from "../messaging/persistence/models/MessagingCapacitySample";
+import ConversationAutomationState from "../messaging/persistence/models/ConversationAutomationState";
+import ConversationCommand from "../messaging/persistence/models/ConversationCommand";
 
 // eslint-disable-next-line
 const dbConfig = require("../config/database");
@@ -115,6 +117,8 @@ const models = [
   WebhookSubscription,
   WebhookDelivery,
   MessagingCapacitySample,
+  ConversationAutomationState,
+  ConversationCommand,
 ];
 
 sequelize.addModels(models);

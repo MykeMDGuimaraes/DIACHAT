@@ -15,10 +15,17 @@ import { SEND_TIMEOUT_MS } from "../../domain/MessagingStates";
 
 interface BaileysMessageCommandProviderDependencies {
   findTicket(id: number, companyId: number, whatsappId: number): Promise<any>;
-  sendText(input: { ticket: any; text: string }): Promise<any>;
+  sendText(input: { ticket: any; text: string; messageId: string }): Promise<any>;
+  sendNativeButtons?(input: {
+    ticket: any;
+    text: string;
+    buttons: Array<{ id: string; title: string }>;
+    messageId: string;
+  }): Promise<any>;
   sendContent?(input: {
     ticket: any;
     content: Record<string, unknown>;
+    messageId: string;
   }): Promise<any>;
 }
 
@@ -28,17 +35,23 @@ const defaultDependencies: BaileysMessageCommandProviderDependencies = {
       where: { id, companyId, whatsappId },
       include: [Contact]
     }),
-  sendText: async ({ ticket, text }) => {
+  sendText: async ({ ticket, text, messageId }) => {
     const { default: adapter } = await import(
       "./getBaileysTicketMessagingProvider"
     );
-    return adapter.sendText({ ticket, text });
+    return adapter.sendText({ ticket, text, messageId });
   },
-  sendContent: async ({ ticket, content }) => {
+  sendNativeButtons: async ({ ticket, text, buttons, messageId }) => {
     const { default: adapter } = await import(
       "./getBaileysTicketMessagingProvider"
     );
-    return adapter.sendContent({ ticket, content });
+    return adapter.sendNativeButtons({ ticket, text, buttons, messageId });
+  },
+  sendContent: async ({ ticket, content, messageId }) => {
+    const { default: adapter } = await import(
+      "./getBaileysTicketMessagingProvider"
+    );
+    return adapter.sendContent({ ticket, content, messageId });
   }
 };
 
@@ -57,6 +70,39 @@ const mediaContent = (
       ? { fileName: payload.fileName }
       : {}),
     ...(payload.mimeType ? { mimetype: payload.mimeType } : {})
+  };
+};
+
+const nativeButtons = (
+  payload: Record<string, unknown>
+): { text: string; buttons: Array<{ id: string; title: string }> } => {
+  const text = payload.text;
+  const buttons = payload.buttons;
+  if (
+    typeof text !== "string" ||
+    !text.trim() ||
+    !Array.isArray(buttons) ||
+    buttons.length < 1 ||
+    buttons.length > 3
+  ) {
+    throw new AppError("Payload de botoes invalido", 400);
+  }
+  return {
+    text,
+    buttons: buttons.map(button => {
+      const item = button as { id?: unknown; title?: unknown };
+      if (
+        typeof item.id !== "string" ||
+        !item.id ||
+        Buffer.byteLength(item.id, "utf8") > 256 ||
+        typeof item.title !== "string" ||
+        !item.title ||
+        item.title.length > 20
+      ) {
+        throw new AppError("Botao nativo invalido", 400);
+      }
+      return { id: item.id, title: item.title };
+    })
   };
 };
 
@@ -85,6 +131,8 @@ const withSendTimeout = async <T>(operation: Promise<T>): Promise<T> => {
 class BaileysMessageCommandProvider implements MessagingProvider {
   readonly provider = "baileys";
 
+  // Parameter property keeps the adapter replaceable in tests.
+  // eslint-disable-next-line no-useless-constructor
   constructor(private readonly dependencies = defaultDependencies) {}
 
   async send(
@@ -109,7 +157,7 @@ class BaileysMessageCommandProvider implements MessagingProvider {
       });
     }
     if (
-      !["text", "image", "audio", "video", "document"].includes(
+      !["text", "buttons", "image", "audio", "video", "document"].includes(
         command.messageKind
       )
     ) {
@@ -144,15 +192,33 @@ class BaileysMessageCommandProvider implements MessagingProvider {
     }
 
     let content: Record<string, unknown> | undefined;
+    let buttons:
+      | { text: string; buttons: Array<{ id: string; title: string }> }
+      | undefined;
     if (command.messageKind !== "text") {
-      if (!this.dependencies.sendContent) {
+      if (
+        command.messageKind === "buttons" &&
+        !this.dependencies.sendNativeButtons
+      ) {
         throw new PermanentSendError({
-          code: "BAILEYS_MEDIA_UNAVAILABLE",
-          message: "Envio de midia Baileys indisponivel"
+          code: "BAILEYS_BUTTONS_UNAVAILABLE",
+          message: "Envio de botoes nativos Baileys indisponivel"
         });
       }
+      if (!this.dependencies.sendContent) {
+        if (command.messageKind !== "buttons") {
+          throw new PermanentSendError({
+            code: "BAILEYS_MEDIA_UNAVAILABLE",
+            message: "Envio de midia Baileys indisponivel"
+          });
+        }
+      }
       try {
-        content = mediaContent(command.messageKind, command.requestPayload);
+        if (command.messageKind === "buttons") {
+          buttons = nativeButtons(command.requestPayload);
+        } else {
+          content = mediaContent(command.messageKind, command.requestPayload);
+        }
       } catch (error) {
         throw new PermanentSendError({
           code: "BAILEYS_INVALID_MEDIA",
@@ -168,14 +234,25 @@ class BaileysMessageCommandProvider implements MessagingProvider {
         sent = await withSendTimeout(
           this.dependencies.sendText({
             ticket,
-            text: command.requestPayload.text as string
+            text: command.requestPayload.text as string,
+            messageId: command.id
+          })
+        );
+      } else if (command.messageKind === "buttons") {
+        sent = await withSendTimeout(
+          this.dependencies.sendNativeButtons!({
+            ticket,
+            text: buttons!.text,
+            buttons: buttons!.buttons,
+            messageId: command.id
           })
         );
       } else {
         sent = await withSendTimeout(
           this.dependencies.sendContent!({
             ticket,
-            content: content as Record<string, unknown>
+            content: content as Record<string, unknown>,
+            messageId: command.id
           })
         );
       }

@@ -12,6 +12,7 @@ import sequelize from "../../../database";
 import MessageCommand from "../../persistence/models/MessageCommand";
 import MessagingOutboxEvent from "../../persistence/models/MessagingOutboxEvent";
 import MessageCommandDispatcher, {
+  automationCommandIsCurrent,
   buildMessageFailedEvent,
   buildMessageSentEvent,
   buildMessageUnknownEvent,
@@ -27,6 +28,11 @@ const command = {
   provider: "baileys",
   recipient: "5531999999999",
   requestPayload: { text: "Ola" }
+  ,
+  externalTicketId: "ticket-uuid",
+  automationEpoch: 4,
+  conversationId: "conversation-uuid",
+  contactId: "8"
 } as any;
 
 const claim = (attemptCount = 1) => ({
@@ -59,6 +65,7 @@ describe("MessageCommandDispatcher", () => {
     const dispatcher = new MessageCommandDispatcher(undefined, []);
     const dependencies = (dispatcher as any).dependencies;
     dependencies.claimNext = jest.fn().mockResolvedValue(claim());
+    dependencies.withSendPermit = undefined;
     dependencies.markFailed = jest.fn().mockResolvedValue(true);
     dependencies.markUnknown = jest.fn().mockResolvedValue(true);
 
@@ -81,6 +88,23 @@ describe("MessageCommandDispatcher", () => {
 
     await expect(dispatcher.dispatchOne()).resolves.toEqual({ status: "sent" });
     expect(dependencies.markSent).toHaveBeenCalledWith(claim(), "wamid_1");
+  });
+
+  it("does not call the provider when a pause wins the final send permit", async () => {
+    const send = jest
+      .fn()
+      .mockResolvedValue({ providerMessageId: "must-not-send" });
+    const dependencies = buildDependencies({
+      send,
+      withSendPermit: jest.fn().mockResolvedValue({ status: "cancelled" })
+    });
+    const dispatcher = new MessageCommandDispatcher(dependencies);
+
+    await expect(dispatcher.dispatchOne()).resolves.toEqual({
+      status: "cancelled"
+    });
+    expect(send).not.toHaveBeenCalled();
+    expect(dependencies.markSent).not.toHaveBeenCalled();
   });
 
   it("does nothing when no outbox event is ready", async () => {
@@ -250,7 +274,11 @@ describe("MessageCommandDispatcher", () => {
         payload: expect.objectContaining({
           providerMessageId: "wamid.1",
           kind: "text",
-          origin: "api"
+          origin: "api",
+          conversationId: "conversation-uuid",
+          contactId: "8",
+          externalTicketId: "ticket-uuid",
+          automationEpoch: 4
         })
       })
     );
@@ -271,6 +299,51 @@ describe("MessageCommandDispatcher", () => {
         payload: expect.objectContaining({ status: "unknown" })
       })
     );
+  });
+
+  it("keeps a disconnected Baileys command queued without exhausting provider attempts", async () => {
+    const error = new RetryableSendError({
+      code: "BAILEYS_SOCKET_UNAVAILABLE",
+      message: "sessao desconectada"
+    });
+    const dependencies = buildDependencies({
+      claimNext: jest.fn().mockResolvedValue(claim(MAX_SEND_ATTEMPTS)),
+      send: jest.fn().mockRejectedValue(error)
+    });
+    const dispatcher = new MessageCommandDispatcher(dependencies);
+    const now = new Date("2026-07-24T12:00:00.000Z");
+
+    await expect(dispatcher.dispatchOne(now)).resolves.toEqual({
+      status: "retry_scheduled"
+    });
+    expect(dependencies.markDeadLetter).not.toHaveBeenCalled();
+    const [, , availableAt] = (dependencies.scheduleRetry as jest.Mock).mock
+      .calls[0];
+    expect(availableAt).toEqual(new Date("2026-07-24T12:00:30.000Z"));
+  });
+
+  it("rejects stale or human-controlled automation immediately before send", () => {
+    expect(
+      automationCommandIsCurrent(command, {
+        state: "automation",
+        automationEpoch: 4,
+        conversationId: "conversation-uuid"
+      })
+    ).toBe(true);
+    expect(
+      automationCommandIsCurrent(command, {
+        state: "human_controlled",
+        automationEpoch: 4,
+        conversationId: "conversation-uuid"
+      })
+    ).toBe(false);
+    expect(
+      automationCommandIsCurrent(command, {
+        state: "automation",
+        automationEpoch: 5,
+        conversationId: "conversation-uuid"
+      })
+    ).toBe(false);
   });
 });
 

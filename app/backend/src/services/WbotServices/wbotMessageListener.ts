@@ -27,6 +27,11 @@ import { publishTenantEvent } from "../../libs/tenantEvents";
 import { toConversationMessageDTO } from "../InternalV1Services/Dtos";
 import CreateMessageService from "../MessageServices/CreateMessageService";
 import { emitMessageReceived } from "../../messaging/outbox/EmitMessagingDomainEvent";
+import {
+  acknowledgeBaileysProviderMessage,
+  extractSelectedButtonId,
+  isBaileysApiProviderMessage
+} from "../../messaging/public/domainEvents";
 import { logger } from "../../utils/logger";
 import CreateOrUpdateContactService from "../ContactServices/CreateOrUpdateContactService";
 import FindOrCreateTicketService from "../TicketServices/FindOrCreateTicketService";
@@ -377,6 +382,7 @@ export const getBodyMessage = (msg: proto.IWebMessageInfo): string | null => {
         msg.message?.buttonsResponseMessage?.selectedButtonId,
       templateButtonReplyMessage:
         msg.message?.templateButtonReplyMessage?.selectedId,
+      interactiveResponseMessage: extractSelectedButtonId(msg),
       messageContextInfo:
         msg.message?.buttonsResponseMessage?.selectedButtonId ||
         msg.message?.listResponseMessage?.title,
@@ -1077,6 +1083,7 @@ const isValidMsg = (msg: proto.IWebMessageInfo): boolean => {
       msgType === "documentWithCaptionMessage" ||
       msgType === "stickerMessage" ||
       msgType === "buttonsResponseMessage" ||
+      msgType === "interactiveResponseMessage" ||
       msgType === "buttonsMessage" ||
       msgType === "messageContextInfo" ||
       msgType === "locationMessage" ||
@@ -2370,7 +2377,8 @@ const handleMessage = async (
       wbot.id!,
       unreadMessages,
       companyId,
-      groupContact
+      groupContact,
+      "provider"
     );
 
     await provider(ticket, msg, companyId, contact, wbot as WASocket);
@@ -2903,25 +2911,19 @@ const handleMessage = async (
 
 const handleMsgAck = async (
   msg: WAMessage,
-  chat: number | null | undefined
+  chat: number | null | undefined,
+  companyId: number
 ) => {
   await new Promise(r => setTimeout(r, 500));
   const io = getIO();
 
   try {
-    const messageToUpdate = await Message.findByPk(msg.key.id, {
-      include: [
-        "contact",
-        {
-          model: Message,
-          as: "quotedMsg",
-          include: ["contact"]
-        }
-      ]
-    });
-
+    const messageToUpdate = await acknowledgeBaileysProviderMessage(
+      companyId,
+      msg.key.id,
+      chat
+    );
     if (!messageToUpdate) return;
-    await messageToUpdate.update({ ack: chat });
     io.to(messageToUpdate.ticketId.toString()).emit(
       `company-${messageToUpdate.companyId}-appMessage`,
       {
@@ -3000,11 +3002,14 @@ const wbotMessageListener = async (
       if (!messages) return;
 
       for (const message of messages) {
+        const apiProviderMessage = message.key.id
+          ? await isBaileysApiProviderMessage(companyId, message.key.id)
+          : false;
         const messageExists = await Message.count({
           where: { id: message.key.id!, companyId }
         });
 
-        if (!messageExists) {
+        if (!messageExists && !apiProviderMessage) {
           await handleMessage(message, wbot, companyId);
           await verifyCampaignMessageAndCloseTicket(message, companyId);
         }
@@ -3016,7 +3021,7 @@ const wbotMessageListener = async (
       messageUpdate.forEach(async (message: WAMessageUpdate) => {
         (wbot as WASocket)!.readMessages([message.key]);
 
-        handleMsgAck(message, message.update.status);
+        handleMsgAck(message, message.update.status, companyId);
       });
     });
 

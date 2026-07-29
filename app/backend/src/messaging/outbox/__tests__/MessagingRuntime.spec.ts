@@ -73,4 +73,26 @@ describe("MessagingRuntime", () => {
     );
     expect(processOne).toHaveBeenCalledTimes(4);
   });
+
+  it("drains durable conversation commands in the same modular runtime", async () => {
+    const conversationDispatch = jest
+      .fn()
+      .mockResolvedValueOnce({ status: "completed" })
+      .mockResolvedValue({ status: "idle" });
+    const runtime = new MessagingRuntime(
+      { recover: jest.fn().mockResolvedValue({ recovered: 0 }) },
+      { dispatchOne: jest.fn().mockResolvedValue({ status: "idle" }) },
+      5,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { dispatchOne: conversationDispatch }
+    );
+
+    await expect(runtime.runOnce()).resolves.toEqual(
+      expect.objectContaining({ dispatched: 1 })
+    );
+    expect(conversationDispatch).toHaveBeenCalledTimes(2);
+  });
 });

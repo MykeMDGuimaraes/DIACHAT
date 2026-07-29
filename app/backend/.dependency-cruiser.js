@@ -14,7 +14,7 @@ const MESSAGING_ALLOWED_CORE_TARGETS = [
   "^src/utils/logger",
   "^src/helpers/GetTicketWbot",
   "^src/libs/wbot",
-  "^src/models/(AuditLog|Company|Contact|Message|Ticket|Whatsapp|Queue|User|Setting)(\\.ts)?$",
+  "^src/models/(AuditLog|Company|Contact|Message|Ticket|TicketTraking|Whatsapp|Queue|User|Setting)(\\.ts)?$",
   "^src/services/MessageServices/CreateMessageService",
   "^src/services/WhatsappService/CreateWhatsAppService"
 ];

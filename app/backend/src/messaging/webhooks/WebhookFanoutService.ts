@@ -10,6 +10,7 @@ interface DomainEvent {
   eventType: string;
   aggregateId: string;
   payload: Record<string, any>;
+  createdAt: Date;
 }
 
 interface WebhookFanoutDependencies {
@@ -28,6 +29,11 @@ const deliverableEvents = [
   "message.sent",
   "message.failed",
   "message.status.updated",
+  "button.clicked",
+  "handoff.paused",
+  "handoff.released",
+  "conversation.created",
+  "conversation.updated",
   "ticket.created",
   "ticket.updated",
   "contact.updated"
@@ -87,6 +93,8 @@ const matches = (subscription: any, event: DomainEvent): boolean => {
 };
 
 class WebhookFanoutService {
+  // Parameter property keeps fanout persistence replaceable in tests.
+  // eslint-disable-next-line no-useless-constructor
   constructor(
     private readonly dependencies: WebhookFanoutDependencies = defaultDependencies
   ) {}
@@ -120,7 +128,9 @@ class WebhookFanoutService {
               payload: {
                 id: event.id,
                 type: event.eventType,
-                createdAt: new Date().toISOString(),
+                createdAt: event.createdAt
+                  ? new Date(event.createdAt).toISOString()
+                  : new Date().toISOString(),
                 data: event.payload
               },
               status: "ready",

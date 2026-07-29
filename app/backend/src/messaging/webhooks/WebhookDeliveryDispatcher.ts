@@ -6,6 +6,7 @@ import sequelize from "../../database";
 import { WEBHOOK_DELIVERY_STATUS } from "../domain/MessagingStates";
 import WebhookDelivery from "../persistence/models/WebhookDelivery";
 import WebhookSubscription from "../persistence/models/WebhookSubscription";
+import Message from "../../models/Message";
 import {
   decryptMessagingSecret,
   loadMessagingKeyring,
@@ -19,6 +20,7 @@ import {
 
 interface ClaimedDelivery {
   id: string;
+  companyId: number;
   subscriptionId: string;
   urlSnapshot: string;
   methodSnapshot?: string;
@@ -44,7 +46,7 @@ interface DispatcherDependencies {
   decryptSecret(value: string, keyring: MessagingKeyring): string;
   getKeyring(): MessagingKeyring;
   post(input: PostInput): Promise<PostResult>;
-  complete(id: string, status: number, body: string): Promise<unknown>;
+  complete(id: string, status: number): Promise<unknown>;
   retry(
     id: string,
     availableAt: Date,
@@ -54,8 +56,10 @@ interface DispatcherDependencies {
   deadLetter(id: string, status?: number, error?: string): Promise<unknown>;
   recordSuccess(subscriptionId: string): Promise<unknown>;
   recordFailure(subscriptionId: string): Promise<unknown>;
+  pauseSubscription(subscriptionId: string): Promise<unknown>;
   now(): Date;
   jitter(maximumMs: number): number;
+  hydratePayload?(delivery: ClaimedDelivery): Promise<Record<string, any>>;
 }
 
 export const nextSubscriptionFailureState = (
@@ -180,12 +184,12 @@ const defaultDependencies: DispatcherDependencies = {
   decryptSecret: decryptMessagingSecret,
   getKeyring: loadMessagingKeyring,
   post: securePost,
-  complete: (id, status, body) =>
+  complete: (id, status) =>
     WebhookDelivery.update(
       {
         status: WEBHOOK_DELIVERY_STATUS.DELIVERED,
         responseStatus: status,
-        responseBody: body,
+        responseBody: null,
         deliveredAt: new Date(),
         leaseExpiresAt: null,
         lastError: null
@@ -235,23 +239,53 @@ const defaultDependencies: DispatcherDependencies = {
         { transaction }
       );
     }),
+  pauseSubscription: subscriptionId =>
+    WebhookSubscription.update(
+      { pausedAt: new Date(), lastFailureAt: new Date() },
+      { where: { id: subscriptionId } }
+  ),
   now: () => new Date(),
-  jitter: maximumMs => Math.floor(Math.random() * Math.max(1, maximumMs))
+  jitter: maximumMs => Math.floor(Math.random() * Math.max(1, maximumMs)),
+  hydratePayload: async delivery => {
+    if (
+      delivery.payload?.type !== "message.received" ||
+      delivery.payload?.data?.actorType !== "contact" ||
+      !delivery.payload?.data?.messageId
+    ) {
+      return delivery.payload;
+    }
+    const message = await Message.findOne({
+      where: {
+        id: String(delivery.payload.data.messageId),
+        companyId: delivery.companyId
+      },
+      attributes: ["id", "body"]
+    });
+    if (!message?.body) return delivery.payload;
+    return {
+      ...delivery.payload,
+      data: { ...delivery.payload.data, text: message.body }
+    };
+  }
 };
 
 class WebhookDeliveryDispatcher {
+  // Parameter property keeps transport and persistence ports replaceable.
+  // eslint-disable-next-line no-useless-constructor
   constructor(
     private readonly dependencies: DispatcherDependencies = defaultDependencies
   ) {}
 
   private nextAttempt(delivery: ClaimedDelivery, result?: PostResult): Date {
-    const baseSeconds = Math.min(
-      3600,
-      30 * 2 ** Math.max(0, delivery.attemptCount - 1)
-    );
+    const correlationSchedule = [2, 5, 10, 20, 40];
+    const generalSchedule = [5, 15, 30, 60, 120];
+    const schedule =
+      result?.status === 503 ? correlationSchedule : generalSchedule;
+    const scheduledSeconds =
+      schedule[Math.min(delivery.attemptCount - 1, schedule.length - 1)];
     const retrySeconds = Math.min(
-      3600,
-      result?.retryAfterSeconds || baseSeconds
+      120,
+      Math.max(scheduledSeconds, result?.retryAfterSeconds || 0)
     );
     return new Date(
       this.dependencies.now().getTime() +
@@ -266,7 +300,10 @@ class WebhookDeliveryDispatcher {
     const delivery = await this.dependencies.claimNext();
     if (!delivery) return { status: "idle" };
     try {
-      const rawBody = JSON.stringify(delivery.payload);
+      const outboundPayload = this.dependencies.hydratePayload
+        ? await this.dependencies.hydratePayload(delivery)
+        : delivery.payload;
+      const rawBody = JSON.stringify(outboundPayload);
       const timestamp = Math.floor(
         this.dependencies.now().getTime() / 1000
       ).toString();
@@ -286,13 +323,18 @@ class WebhookDeliveryDispatcher {
         }
       });
       if (response.status >= 200 && response.status < 300) {
-        await this.dependencies.complete(
-          delivery.id,
-          response.status,
-          response.body
-        );
+        await this.dependencies.complete(delivery.id, response.status);
         await this.dependencies.recordSuccess(delivery.subscriptionId);
         return { status: "delivered" };
+      }
+      if (response.status === 401) {
+        await this.dependencies.deadLetter(
+          delivery.id,
+          response.status,
+          `HTTP_${response.status}`
+        );
+        await this.dependencies.pauseSubscription(delivery.subscriptionId);
+        return { status: "dead_letter" };
       }
       if (
         delivery.attemptCount < 6 &&
@@ -302,20 +344,22 @@ class WebhookDeliveryDispatcher {
           delivery.id,
           this.nextAttempt(delivery, response),
           response.status,
-          response.body
+          `HTTP_${response.status}`
         );
         return { status: "retry" };
       }
       await this.dependencies.deadLetter(
         delivery.id,
         response.status,
-        response.body
+        `HTTP_${response.status}`
       );
       await this.dependencies.recordFailure(delivery.subscriptionId);
       return { status: "dead_letter" };
     } catch (error) {
       const reason =
-        error instanceof Error ? error.message : "Falha de webhook";
+        error instanceof Error && error.message === "Webhook timeout"
+          ? "WEBHOOK_TIMEOUT"
+          : "WEBHOOK_DELIVERY_ERROR";
       if (delivery.attemptCount < 6) {
         await this.dependencies.retry(
           delivery.id,

@@ -10,8 +10,10 @@ interface PublicTextMessageCreator {
     idempotencyKey: string;
     recipient: string;
     text?: string;
-    kind?: "text" | "image" | "audio" | "video" | "document" | "template";
+    kind?: "text" | "buttons" | "image" | "audio" | "video" | "document" | "template";
     payload?: Record<string, any>;
+    externalTicketId?: string;
+    automationEpoch?: number;
   }) => Promise<{ command: any; message: any; replayed: boolean }>;
 }
 
@@ -44,17 +46,37 @@ export const createPublicTextMessageHandler = (
       ? {}
       : {
           kind: messageType,
-          payload: messageType === "template" ? req.body.template : req.body.media
-        })
+          payload:
+            messageType === "template"
+              ? req.body.template
+              : messageType === "buttons"
+                ? { buttons: req.body.buttons }
+                : req.body.media
+        }),
+    ...(req.body.externalTicketId !== undefined
+      ? {
+          externalTicketId: req.body.externalTicketId,
+          automationEpoch: req.body.automationEpoch
+        }
+      : {})
   });
 
   if (result.replayed) {
     res.set("Idempotent-Replayed", "true");
   }
 
-  return res.status(result.replayed ? 200 : 202).json({
-    id: result.command.id,
-    status: result.command.status,
-    messageId: result.message?.id || result.command.messageId
-  });
+  const body =
+    result.command.responseSnapshot ||
+    {
+      id: result.command.id,
+      status: "accepted",
+      messageId: result.message?.id || result.command.messageId,
+      ...(result.command.conversationId
+        ? { conversationId: result.command.conversationId }
+        : {}),
+      ...(result.command.contactId
+        ? { contactId: String(result.command.contactId) }
+        : {})
+    };
+  return res.status(result.replayed ? 200 : 202).json(body);
 };

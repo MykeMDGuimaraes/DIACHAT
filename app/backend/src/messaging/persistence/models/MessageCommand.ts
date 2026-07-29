@@ -69,6 +69,24 @@ class MessageCommand extends Model<MessageCommand> {
   messageId: string;
 
   @Column(DataType.STRING)
+  externalTicketId: string;
+
+  @Column(DataType.INTEGER)
+  automationEpoch: number;
+
+  @Column(DataType.STRING)
+  conversationId: string;
+
+  @Column(DataType.STRING)
+  contactId: string;
+
+  @Column(DataType.JSONB)
+  responseSnapshot: Record<string, unknown>;
+
+  @Column(DataType.DATE)
+  cancelledAt: Date;
+
+  @Column(DataType.STRING)
   providerMessageId: string;
 
   @Column(DataType.STRING)
