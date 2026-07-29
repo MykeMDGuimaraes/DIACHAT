@@ -13,3 +13,7 @@ description: How app/backend survives clean npm installs despite firewall-blocke
 ## Lockfile deve ser regenerado após merges que mudam package.json
 O deploy build (`scripts/deploy-build.sh`) usa `npm ci`, que falha (EUSAGE) se `package-lock.json` estiver fora de sincronia com `package.json`. Merges que alteram package.json exigem regenerar o lock (`rm package-lock.json && npm install --package-lock-only` — o `--package-lock-only` sozinho pode dizer "up to date" e não corrigir) e validar com `npm ci --dry-run` antes de publicar.
 **Why:** publish falhou em 2026-07-27 após merge do PR Messaging v1 porque o lock ainda apontava baileys 6.7.23 em vez do tarball vendorado 6.7.18.
+
+## Cuidado: commits automáticos "Update package lock file" da plataforma podem QUEBRAR o lock
+Em 2026-07-29 a reconciliação pós-merge de uma task regenerou o lock do backend removendo as entradas resolvidas de `sharp`/`@img/*` (peer **não-opcional** do baileys vendorado — o meta marca jimp/link-preview-js/audio-decode como opcionais, mas não sharp). Resultado: `npm ci` do publish falhou com EUSAGE "Missing: sharp@0.35.3". package.json não tinha mudado — correção foi restaurar o lock do commit do último build bem-sucedido (`git checkout <sha> -- package-lock.json`) e validar com `npm ci --dry-run`.
+**How to apply:** após qualquer commit automático que toque package-lock.json, rodar `npm ci --dry-run` antes de publicar; se quebrar sem mudança em package.json, preferir restaurar o lock conhecido-bom a regenerar.
