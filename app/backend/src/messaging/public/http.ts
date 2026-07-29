@@ -38,6 +38,7 @@ export {
 export { webhookAdminHandlers } from "../webhooks/WebhookAdminController";
 export {
   messagingMetrics,
-  messagingCapacityProbe
+  messagingCapacityProbe,
+  messagingCapacityReplay
 } from "../operations/MessagingOperationsController";
 export { default as messagingOpenApi } from "../contracts/MessagingOpenApi";

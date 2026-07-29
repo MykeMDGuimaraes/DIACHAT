@@ -1,6 +1,7 @@
 import { Op } from "sequelize";
 
 import WebhookDelivery from "../persistence/models/WebhookDelivery";
+import { recordWhatsAppMirrorMetric } from "../operations/WhatsAppMirrorMetrics";
 
 interface WebhookBodyPurgeDependencies {
   purgeExpired(
@@ -37,6 +38,7 @@ class WebhookBodyPurgeService {
         silent: true
       }
     );
+    if (purged > 0) recordWhatsAppMirrorMetric("purgedBody", purged);
     return { purged };
   }
 }

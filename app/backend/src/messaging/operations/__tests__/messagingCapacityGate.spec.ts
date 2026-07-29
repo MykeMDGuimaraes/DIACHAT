@@ -1,6 +1,12 @@
 // The capacity runner is JavaScript so it can execute before the TypeScript app.
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const { loadConfig, percentile } = require("../../../../scripts/messagingCapacityGate");
+const {
+  buildReplayReport,
+  loadConfig,
+  loadReplayConfig,
+  percentile,
+  validateReplayFixture
+} = require("../../../../scripts/messagingCapacityGate.js");
 
 describe("messagingCapacityGate", () => {
   it("refuses to run without explicit opt-in and 20 real connection ids", () => {
@@ -17,5 +23,93 @@ describe("messagingCapacityGate", () => {
 
   it("calculates the observed p95", () => {
     expect(percentile([5, 10, 15, 20, 100], 0.95)).toBe(100);
+  });
+
+  it("defaults replay to offline validation and fixes the approved capacity target", () => {
+    expect(loadReplayConfig({})).toMatchObject({
+      mode: "dry-validation",
+      requestsPerSecond: 150,
+      durationSeconds: 1800,
+      drainDeadlineSeconds: 900,
+      expectedEvents: 270000
+    });
+  });
+
+  it("refuses live replay unless every staging-only safety prerequisite is explicit", () => {
+    expect(() =>
+      loadReplayConfig({ MESSAGING_WEBHOOK_REPLAY_RUN: "STAGING_ONLY" })
+    ).toThrow("CAPACITY_ENVIRONMENT=staging");
+
+    expect(() =>
+      loadReplayConfig({
+        MESSAGING_WEBHOOK_REPLAY_RUN: "STAGING_ONLY",
+        CAPACITY_ENVIRONMENT: "staging",
+        CAPACITY_TARGET_URL: "https://staging.diachat.example",
+        CAPACITY_SERVICE_TOKEN: "secret",
+        CAPACITY_REPLAY_WHATSAPP_ID: "7",
+        CAPACITY_RECEIVER_METRICS_URL:
+          "https://n8n-staging.example/webhook/capacity-status",
+        CAPACITY_RPS: "149"
+      })
+    ).toThrow("150 eventos/s");
+  });
+
+  it("accepts only synthetic PII-free replay fixture fields", () => {
+    const fixture = {
+      name: "baileys-rich-v1",
+      provider: "baileys",
+      events: [
+        {
+          eventType: "message.received",
+          kind: "text",
+          text: "Synthetic capacity event",
+          actorType: "contact"
+        }
+      ]
+    };
+
+    expect(validateReplayFixture(fixture)).toEqual(fixture);
+    expect(() =>
+      validateReplayFixture({
+        ...fixture,
+        events: [{ ...fixture.events[0], phoneNumber: "synthetic-phone" }]
+      })
+    ).toThrow("phoneNumber");
+  });
+
+  it("fails the report on loss, unexpected duplicates, plaintext or missed drain deadline", () => {
+    const report = buildReplayReport(
+      {
+        expectedEvents: 270000,
+        drainDeadlineSeconds: 900
+      },
+      {
+        accepted: 270000,
+        receiver: {
+          received: 269999,
+          expectedDuplicates: 0,
+          unexpectedDuplicates: 1,
+          signatureFailures: 0,
+          plaintextViolations: 1
+        },
+        pipeline: {
+          projectionFailures: 1,
+          cryptoFailures: 0,
+          deadLettersDelta: 1
+        },
+        drainSeconds: 901
+      }
+    );
+
+    expect(report.gates).toEqual({
+      zeroLoss: false,
+      zeroUnexpectedDuplicates: false,
+      zeroPlaintext: false,
+      hmacVerified: true,
+      drainedWithinDeadline: false,
+      pipelineHealthy: false
+    });
+    expect(report.passed).toBe(false);
+    expect(JSON.stringify(report)).not.toContain("secret");
   });
 });

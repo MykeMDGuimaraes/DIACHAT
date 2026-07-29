@@ -8,6 +8,7 @@ import AppError from "../../errors/AppError";
 import Message from "../../models/Message";
 import { WhatsAppMirrorMedia } from "./WhatsAppMirrorPayloadBuilder";
 import { signWebhookMediaUrl } from "./WebhookMediaToken";
+import { recordWhatsAppMirrorMetric } from "../operations/WhatsAppMirrorMetrics";
 
 interface StoredWebhookMedia {
   storedPath: string | null;
@@ -67,7 +68,11 @@ class WebhookMediaService {
     absolutePath: string;
     sizeBytes: number;
   } | null> {
-    if (!storedPath || path.isAbsolute(storedPath) || storedPath.includes("\0")) {
+    if (
+      !storedPath ||
+      path.isAbsolute(storedPath) ||
+      storedPath.includes("\0")
+    ) {
       return null;
     }
     const root = path.resolve(this.dependencies.root);
@@ -102,32 +107,40 @@ class WebhookMediaService {
     messageId: string,
     now = new Date()
   ): Promise<WhatsAppMirrorMedia | null> {
-    const message = await this.dependencies.loadMessage(companyId, messageId);
-    if (!message || (!message.storedPath && !message.mediaType)) return null;
-    const storedPath = message.storedPath;
-    const common = {
-      type: message.mediaType,
-      mimeType: mimeTypeFor(storedPath),
-      fileName: storedPath ? path.basename(storedPath) : null,
-      caption: message.body
-    };
-    const file = await this.safeFile(storedPath);
-    if (!file) {
-      return {
-        ...common,
-        sizeBytes: null,
-        sha256: null,
-        url: null,
-        available: false
+    try {
+      const message = await this.dependencies.loadMessage(companyId, messageId);
+      if (!message || (!message.storedPath && !message.mediaType)) return null;
+      const storedPath = message.storedPath;
+      const common = {
+        type: message.mediaType,
+        mimeType: mimeTypeFor(storedPath),
+        fileName: storedPath ? path.basename(storedPath) : null,
+        caption: message.body
       };
+      const file = await this.safeFile(storedPath);
+      if (!file) {
+        recordWhatsAppMirrorMetric("mediaUnavailable");
+        return {
+          ...common,
+          sizeBytes: null,
+          sha256: null,
+          url: null,
+          available: false
+        };
+      }
+      const projected = {
+        ...common,
+        sizeBytes: file.sizeBytes,
+        sha256: await sha256File(file.absolutePath),
+        url: this.dependencies.signUrl(messageId, companyId, now),
+        available: true
+      };
+      recordWhatsAppMirrorMetric("mediaAvailable");
+      return projected;
+    } catch (error) {
+      recordWhatsAppMirrorMetric("mediaFailure");
+      throw error;
     }
-    return {
-      ...common,
-      sizeBytes: file.sizeBytes,
-      sha256: await sha256File(file.absolutePath),
-      url: this.dependencies.signUrl(messageId, companyId, now),
-      available: true
-    };
   }
 
   async open(

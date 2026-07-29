@@ -17,6 +17,7 @@ import WhatsAppMirrorProjectionService, {
   WhatsAppMirrorSourceEvent
 } from "./WhatsAppMirrorProjectionService";
 import { WhatsAppMirrorSerializedSnapshot } from "./WhatsAppMirrorPayloadBuilder";
+import { recordWhatsAppMirrorMetric } from "../operations/WhatsAppMirrorMetrics";
 
 type DomainEvent = WhatsAppMirrorSourceEvent;
 
@@ -186,22 +187,34 @@ class WebhookFanoutService {
     ).filter(item => matches(item, event));
     const prepared: Array<Record<string, unknown>> = [];
     if (subscriptions.length) {
-      const snapshot = mirrorEnabled
-        ? await this.dependencies.buildSnapshot(event)
-        : await this.dependencies.buildLegacySnapshot(event);
+      let snapshot;
+      try {
+        snapshot = mirrorEnabled
+          ? await this.dependencies.buildSnapshot(event)
+          : await this.dependencies.buildLegacySnapshot(event);
+      } catch (error) {
+        recordWhatsAppMirrorMetric("projectionFailure");
+        throw error;
+      }
       const keyring = this.dependencies.getKeyring();
       for (const subscription of subscriptions) {
         const id = this.dependencies.newId();
-        const encrypted = this.dependencies.encryptBody(
-          Buffer.from(snapshot.rawBody, "utf8"),
-          {
-            companyId: event.companyId,
-            subscriptionId: subscription.id,
-            deliveryId: id,
-            eventId: event.id
-          },
-          keyring
-        );
+        let encrypted;
+        try {
+          encrypted = this.dependencies.encryptBody(
+            Buffer.from(snapshot.rawBody, "utf8"),
+            {
+              companyId: event.companyId,
+              subscriptionId: subscription.id,
+              deliveryId: id,
+              eventId: event.id
+            },
+            keyring
+          );
+        } catch (error) {
+          recordWhatsAppMirrorMetric("cryptoFailure");
+          throw error;
+        }
         if (encrypted.bodySha256 !== snapshot.bodySha256) {
           throw new Error("Digest do snapshot de webhook divergente");
         }

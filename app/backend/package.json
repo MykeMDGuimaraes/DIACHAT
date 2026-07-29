@@ -19,6 +19,8 @@
     "check:messaging-architecture": "depcruise src --config .dependency-cruiser.js",
     "check:boundary-fixtures": "node scripts/checkBoundaryFixtures.js",
     "capacity:messaging": "node scripts/messagingCapacityGate.js",
+    "capacity:whatsapp-mirror": "node scripts/messagingCapacityGate.js --whatsapp-mirror",
+    "verify:roteador-contract": "node scripts/verifyRoteadorContractFixtures.js",
     "docker:push": "docker buildx build --platform linux/amd64,linux/arm64 -t rafaeldomenegueti/atendechat-backend:latest . --push",
     "docker:push:hml": "docker buildx build --platform linux/amd64,linux/arm64 -t rafaeldomenegueti/atendechat-backend:hml . --push"
   },

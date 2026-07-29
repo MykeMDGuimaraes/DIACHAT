@@ -1,0 +1,69 @@
+{
+  "name": "meta-rich-v1",
+  "provider": "meta_cloud",
+  "events": [
+    {
+      "eventType": "message.received",
+      "kind": "text",
+      "text": "Synthetic Meta capacity event",
+      "actorType": "contact",
+      "fromMe": false
+    },
+    {
+      "eventType": "button.clicked",
+      "kind": "interactive",
+      "text": "Synthetic list choice",
+      "actorType": "contact",
+      "fromMe": false,
+      "interactive": {
+        "type": "list_reply",
+        "id": "fixture-list-1",
+        "title": "Synthetic list option"
+      }
+    },
+    {
+      "eventType": "message.status.updated",
+      "kind": "text",
+      "actorType": "system",
+      "fromMe": true,
+      "status": "delivered"
+    },
+    {
+      "eventType": "connection.updated",
+      "kind": "state",
+      "actorType": "system",
+      "fromMe": null,
+      "state": "connected"
+    }
+  ],
+  "roteadorEnvelopes": [
+    {
+      "id": "fixture-meta-message",
+      "type": "message.received",
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "data": {
+        "messageId": "fixture-meta-message",
+        "conversationId": "fixture-conversation",
+        "contactId": "fixture-contact",
+        "externalTicketId": "fixture-ticket",
+        "automationEpoch": 3,
+        "actorType": "contact",
+        "text": "Synthetic Meta capacity event"
+      }
+    },
+    {
+      "id": "fixture-meta-status",
+      "type": "message.status.updated",
+      "createdAt": "2026-01-01T00:00:02.000Z",
+      "data": {
+        "messageId": "fixture-meta-status",
+        "conversationId": "fixture-conversation",
+        "contactId": "fixture-contact",
+        "externalTicketId": "fixture-ticket",
+        "automationEpoch": 3,
+        "actorType": "system",
+        "status": "delivered"
+      }
+    }
+  ]
+}

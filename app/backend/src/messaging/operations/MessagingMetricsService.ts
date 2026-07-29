@@ -18,6 +18,7 @@ import {
   OUTBOX_EVENT_STATUS,
   WEBHOOK_DELIVERY_STATUS
 } from "../domain/MessagingStates";
+import { snapshotWhatsAppMirrorMetrics } from "./WhatsAppMirrorMetrics";
 
 const oldestAgeSeconds = (createdAt?: Date | null): number =>
   createdAt
@@ -40,6 +41,8 @@ const graphLifecycle = () => {
 };
 
 class MessagingMetricsService {
+  // Metrics are collected from process-wide repositories and fixed counters.
+  // eslint-disable-next-line class-methods-use-this
   async collect(companyId?: number): Promise<Record<string, unknown>> {
     const companyWhere = companyId ? { companyId } : {};
     const now = new Date();
@@ -69,7 +72,10 @@ class MessagingMetricsService {
       oldestWebhook,
       capacityReady,
       capacityObservedLastMinute,
-      oldestCapacity
+      oldestCapacity,
+      mirrorEventsCompletedLastMinute,
+      mirrorDeliveriesLastMinute,
+      mirrorBodiesPurgedLastMinute
     ] = await Promise.all([
       MessageCommand.count({
         where: { ...companyWhere, status: MESSAGE_COMMAND_STATUS.QUEUED }
@@ -229,6 +235,26 @@ class MessagingMetricsService {
         where: { ...companyWhere, status: "ready" },
         attributes: ["createdAt"],
         order: [["createdAt", "ASC"]]
+      }),
+      MessagingOutboxEvent.count({
+        where: {
+          ...companyWhere,
+          status: OUTBOX_EVENT_STATUS.COMPLETED,
+          updatedAt: { [Op.gte]: new Date(Date.now() - 60_000) }
+        }
+      }),
+      WebhookDelivery.count({
+        where: {
+          ...companyWhere,
+          status: WEBHOOK_DELIVERY_STATUS.DELIVERED,
+          deliveredAt: { [Op.gte]: new Date(Date.now() - 60_000) }
+        }
+      }),
+      WebhookDelivery.count({
+        where: {
+          ...companyWhere,
+          bodyPurgedAt: { [Op.gte]: new Date(Date.now() - 60_000) }
+        }
       })
     ]);
 
@@ -256,6 +282,7 @@ class MessagingMetricsService {
     const legacySunset = Number.isNaN(configuredLegacySunset.getTime())
       ? new Date("2026-09-22T00:00:00.000Z")
       : configuredLegacySunset;
+    const mirrorRuntime = snapshotWhatsAppMirrorMetrics();
     return {
       collectedAt: new Date().toISOString(),
       companyId: companyId || null,
@@ -298,6 +325,17 @@ class MessagingMetricsService {
         ready: capacityReady,
         observedLastMinute: capacityObservedLastMinute,
         oldestPendingSeconds: oldestAgeSeconds(oldestCapacity?.createdAt)
+      },
+      mirror: {
+        ...mirrorRuntime,
+        purge: {
+          ...(mirrorRuntime.purge as Record<string, unknown>),
+          bodiesLastMinute: mirrorBodiesPurgedLastMinute
+        },
+        throughput: {
+          eventsCompletedLastMinute: mirrorEventsCompletedLastMinute,
+          deliveriesLastMinute: mirrorDeliveriesLastMinute
+        }
       },
       process: process.memoryUsage(),
       postgresPool: pool

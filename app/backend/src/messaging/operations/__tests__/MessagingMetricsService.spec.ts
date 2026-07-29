@@ -7,10 +7,57 @@ import MessagingOutboxEvent from "../../persistence/models/MessagingOutboxEvent"
 import WebhookDelivery from "../../persistence/models/WebhookDelivery";
 import WebhookSubscription from "../../persistence/models/WebhookSubscription";
 import MessagingMetricsService from "../MessagingMetricsService";
+import {
+  recordWhatsAppMirrorMetric,
+  resetWhatsAppMirrorMetricsForTests
+} from "../WhatsAppMirrorMetrics";
 
 describe("MessagingMetricsService", () => {
   afterEach(() => {
     jest.restoreAllMocks();
+    resetWhatsAppMirrorMetricsForTests();
+  });
+
+  it("includes fixed-label mirror failure, crypto, media and purge aggregates", async () => {
+    jest.spyOn(MessageCommand, "count").mockResolvedValue(0);
+    jest.spyOn(MessageCommand, "findOne").mockResolvedValue(null);
+    jest.spyOn(MessagingOutboxEvent, "count").mockResolvedValue(0);
+    jest.spyOn(MessagingOutboxEvent, "findOne").mockResolvedValue(null);
+    jest.spyOn(MessagingInboxEvent, "count").mockResolvedValue(0);
+    jest.spyOn(MessagingInboxEvent, "findOne").mockResolvedValue(null);
+    jest.spyOn(WebhookDelivery, "count").mockResolvedValue(0);
+    jest.spyOn(WebhookDelivery, "findOne").mockResolvedValue(null);
+    jest.spyOn(WebhookSubscription, "count").mockResolvedValue(0);
+    jest.spyOn(MessagingCapacitySample, "count").mockResolvedValue(0);
+    jest.spyOn(MessagingCapacitySample, "findOne").mockResolvedValue(null);
+    jest.spyOn(AuditLog, "count").mockResolvedValue(0);
+    jest.spyOn(AuditLog, "findOne").mockResolvedValue(null);
+    recordWhatsAppMirrorMetric("projectionFailure");
+    recordWhatsAppMirrorMetric("cryptoFailure");
+    recordWhatsAppMirrorMetric("mediaUnavailable");
+    recordWhatsAppMirrorMetric("purgedBody", 2);
+
+    const result = (await new MessagingMetricsService().collect(7)) as {
+      mirror: Record<string, unknown>;
+    };
+
+    expect(result.mirror).toEqual({
+      projectionFailures: 1,
+      cryptoFailures: 1,
+      media: { available: 0, unavailable: 1, failures: 0 },
+      purge: { encryptedBodies: 2, bodiesLastMinute: 0 },
+      throughput: {
+        eventsCompletedLastMinute: 0,
+        deliveriesLastMinute: 0
+      }
+    });
+    expect(Object.keys(result.mirror)).toEqual([
+      "projectionFailures",
+      "cryptoFailures",
+      "media",
+      "purge",
+      "throughput"
+    ]);
   });
 
   it("counts processing webhook deliveries as in-flight, pending and lease-expired", async () => {

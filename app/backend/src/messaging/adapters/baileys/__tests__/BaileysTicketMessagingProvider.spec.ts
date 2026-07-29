@@ -68,8 +68,7 @@ describe("BaileysTicketMessagingProvider", () => {
 
   it("round-trips the native flow payload with the installed Baileys package", () => {
     const script = `
-      import baileys from "baileys";
-      const { proto } = baileys;
+      import { proto } from "baileys";
       const value = proto.Message.fromObject({
         viewOnceMessage: { message: { interactiveMessage: {
           body: { text: "Escolha" },

@@ -1,7 +1,13 @@
 import { Op } from "sequelize";
 import WebhookBodyPurgeService from "../WebhookBodyPurgeService";
+import {
+  resetWhatsAppMirrorMetricsForTests,
+  snapshotWhatsAppMirrorMetrics
+} from "../../operations/WhatsAppMirrorMetrics";
 
 describe("WebhookBodyPurgeService", () => {
+  afterEach(() => resetWhatsAppMirrorMetricsForTests());
+
   it("purges expired ciphertext while preserving its digest", async () => {
     const purgeExpired = jest.fn().mockResolvedValue([3]);
     const now = new Date("2026-07-29T12:00:00.000Z");
@@ -23,5 +29,8 @@ describe("WebhookBodyPurgeService", () => {
         silent: true
       }
     );
+    expect(snapshotWhatsAppMirrorMetrics()).toMatchObject({
+      purge: { encryptedBodies: 3 }
+    });
   });
 });

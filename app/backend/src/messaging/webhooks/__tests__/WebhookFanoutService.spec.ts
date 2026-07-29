@@ -1,12 +1,17 @@
 import WebhookFanoutService from "../WebhookFanoutService";
+import {
+  resetWhatsAppMirrorMetricsForTests,
+  snapshotWhatsAppMirrorMetrics
+} from "../../operations/WhatsAppMirrorMetrics";
 
 describe("WebhookFanoutService", () => {
+  afterEach(() => resetWhatsAppMirrorMetricsForTests());
   it("uses the rich mirror snapshot only when the feature flag is enabled", async () => {
     const createDelivery = jest.fn();
     const completeEvent = jest.fn();
     const transaction = {};
     const buildSnapshot = jest.fn().mockResolvedValue({
-      rawBody: "{\"schema\":\"whatsapp-mirror/1\"}",
+      rawBody: '{"schema":"whatsapp-mirror/1"}',
       bodySha256: "snapshot-digest"
     });
     const buildLegacySnapshot = jest.fn();
@@ -27,17 +32,19 @@ describe("WebhookFanoutService", () => {
         createdAt: new Date("2026-07-29T12:00:00.000Z"),
         leaseToken: "event-lease-1"
       }),
-      findSubscriptions: jest.fn().mockResolvedValue([{
-        id: "sub_1",
-        companyId: 7,
-        url: "https://hooks.example.com/diachat",
-        events: ["message.received"],
-        connectionIds: [42],
-        messageKinds: ["text"],
-        includeApiOrigin: false,
-        secretCiphertext: "ciphertext",
-        keyVersion: "v1"
-      }]),
+      findSubscriptions: jest.fn().mockResolvedValue([
+        {
+          id: "sub_1",
+          companyId: 7,
+          url: "https://hooks.example.com/diachat",
+          events: ["message.received"],
+          connectionIds: [42],
+          messageKinds: ["text"],
+          includeApiOrigin: false,
+          secretCiphertext: "ciphertext",
+          keyVersion: "v1"
+        }
+      ]),
       createDelivery,
       completeEvent,
       buildSnapshot,
@@ -54,30 +61,36 @@ describe("WebhookFanoutService", () => {
       mirrorEnabled: jest.fn().mockReturnValue(true)
     });
 
-    await expect(service.fanoutOne()).resolves.toEqual({ status: "created", deliveries: 1 });
+    await expect(service.fanoutOne()).resolves.toEqual({
+      status: "created",
+      deliveries: 1
+    });
     expect(buildSnapshot).toHaveBeenCalledTimes(1);
     expect(buildLegacySnapshot).not.toHaveBeenCalled();
-    expect(createDelivery).toHaveBeenCalledWith(expect.objectContaining({
-      id: "del_1",
-      subscriptionId: "sub_1",
-      companyId: 7,
-      eventId: "evt_1",
-      urlSnapshot: "https://hooks.example.com/diachat",
-      secretCiphertextSnapshot: "ciphertext",
-      bodyCiphertext: "encrypted-body",
-      bodyKeyVersion: "body-v2",
-      bodySha256: "snapshot-digest",
-      bodyExpiresAt: null,
-      bodyPurgedAt: null,
-      payload: {
-        messageId: "msg_1",
-        whatsappId: 42,
-        conversationId: null,
-        contactId: null,
-        externalTicketId: null,
-        automationEpoch: null
-      }
-    }), transaction);
+    expect(createDelivery).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "del_1",
+        subscriptionId: "sub_1",
+        companyId: 7,
+        eventId: "evt_1",
+        urlSnapshot: "https://hooks.example.com/diachat",
+        secretCiphertextSnapshot: "ciphertext",
+        bodyCiphertext: "encrypted-body",
+        bodyKeyVersion: "body-v2",
+        bodySha256: "snapshot-digest",
+        bodyExpiresAt: null,
+        bodyPurgedAt: null,
+        payload: {
+          messageId: "msg_1",
+          whatsappId: 42,
+          conversationId: null,
+          contactId: null,
+          externalTicketId: null,
+          automationEpoch: null
+        }
+      }),
+      transaction
+    );
     expect(completeEvent).toHaveBeenCalledWith(
       "evt_1",
       "event-lease-1",
@@ -87,7 +100,7 @@ describe("WebhookFanoutService", () => {
 
   it("encrypts the exact hydrated v1.1 envelope bytes when the feature flag is off", async () => {
     const rawBody =
-      "{\"id\":\"evt_1\",\"type\":\"message.received\",\"createdAt\":\"2026-07-29T12:00:00.000Z\",\"data\":{\"messageId\":\"msg_1\",\"whatsappId\":42,\"actorType\":\"contact\",\"text\":\"texto persistido\"}}";
+      '{"id":"evt_1","type":"message.received","createdAt":"2026-07-29T12:00:00.000Z","data":{"messageId":"msg_1","whatsappId":42,"actorType":"contact","text":"texto persistido"}}';
     const buildSnapshot = jest.fn();
     const buildLegacySnapshot = jest.fn().mockResolvedValue({
       rawBody,
@@ -176,8 +189,22 @@ describe("WebhookFanoutService", () => {
     const createDelivery = jest.fn();
     const service = new WebhookFanoutService({
       transaction: callback => callback({}),
-      claimEvent: jest.fn().mockResolvedValue({ id: "evt_1", companyId: 7, eventType: "message.received", aggregateId: "msg_1", payload: { origin: "api" } }),
-      findSubscriptions: jest.fn().mockResolvedValue([{ id: "sub_1", events: ["message.received"], connectionIds: [], messageKinds: [], includeApiOrigin: false }]),
+      claimEvent: jest.fn().mockResolvedValue({
+        id: "evt_1",
+        companyId: 7,
+        eventType: "message.received",
+        aggregateId: "msg_1",
+        payload: { origin: "api" }
+      }),
+      findSubscriptions: jest.fn().mockResolvedValue([
+        {
+          id: "sub_1",
+          events: ["message.received"],
+          connectionIds: [],
+          messageKinds: [],
+          includeApiOrigin: false
+        }
+      ]),
       createDelivery,
       completeEvent: jest.fn()
     });
@@ -225,15 +252,17 @@ describe("WebhookFanoutService", () => {
                 throw new Error("encryption failed");
               })
             : jest.fn(),
-        getKeyring: jest
-          .fn()
-          .mockReturnValue({ activeKeyId: "v1", keys: {} }),
+        getKeyring: jest.fn().mockReturnValue({ activeKeyId: "v1", keys: {} }),
         newId: jest.fn().mockReturnValue("del_1"),
         mirrorEnabled: jest.fn().mockReturnValue(true)
       });
 
       await expect(service.fanoutOne()).rejects.toThrow(`${failure} failed`);
       expect(completeEvent).not.toHaveBeenCalled();
+      expect(snapshotWhatsAppMirrorMetrics()).toMatchObject({
+        projectionFailures: failure === "projection" ? 1 : 0,
+        cryptoFailures: failure === "encryption" ? 1 : 0
+      });
     }
   );
 });

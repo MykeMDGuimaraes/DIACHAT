@@ -1,0 +1,26 @@
+{
+  "generatedAt": "2026-07-29T22:50:33.235Z",
+  "mode": "dry-validation",
+  "liveGate": "not-run",
+  "fixtures": [
+    {
+      "name": "baileys-rich-v1",
+      "provider": "baileys",
+      "events": 4,
+      "roteadorEnvelopes": 2
+    },
+    {
+      "name": "meta-rich-v1",
+      "provider": "meta_cloud",
+      "events": 4,
+      "roteadorEnvelopes": 2
+    }
+  ],
+  "target": {
+    "requestsPerSecond": 150,
+    "durationSeconds": 1800,
+    "expectedEvents": 270000,
+    "drainDeadlineSeconds": 900
+  },
+  "validationPassed": true
+}

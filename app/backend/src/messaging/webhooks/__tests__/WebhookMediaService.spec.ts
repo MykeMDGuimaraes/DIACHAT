@@ -3,6 +3,10 @@ import os from "os";
 import path from "path";
 
 import WebhookMediaService from "../WebhookMediaService";
+import {
+  resetWhatsAppMirrorMetricsForTests,
+  snapshotWhatsAppMirrorMetrics
+} from "../../operations/WhatsAppMirrorMetrics";
 
 describe("WebhookMediaService", () => {
   let root: string;
@@ -13,6 +17,7 @@ describe("WebhookMediaService", () => {
 
   afterEach(async () => {
     await fs.rm(root, { recursive: true, force: true });
+    resetWhatsAppMirrorMetricsForTests();
   });
 
   it("projects only a protected signed file descriptor and returns the same safe file for access", async () => {
@@ -50,9 +55,16 @@ describe("WebhookMediaService", () => {
       absolutePath: path.join(root, "company-7", "photo.jpg"),
       mimeType: "image/jpeg"
     });
+    expect(snapshotWhatsAppMirrorMetrics()).toMatchObject({
+      media: { available: 1, unavailable: 0, failures: 0 }
+    });
   });
 
-  it.each(["company-7/missing.jpg", "../outside.jpg", "company-7/../../outside.jpg"])(
+  it.each([
+    "company-7/missing.jpg",
+    "../outside.jpg",
+    "company-7/../../outside.jpg"
+  ])(
     "projects unavailable and returns 404 for a missing or unsafe path: %s",
     async storedPath => {
       const service = new WebhookMediaService({
@@ -77,6 +89,9 @@ describe("WebhookMediaService", () => {
       });
       await expect(service.open(7, "message-1")).rejects.toMatchObject({
         statusCode: 404
+      });
+      expect(snapshotWhatsAppMirrorMetrics()).toMatchObject({
+        media: { available: 0, unavailable: 1, failures: 0 }
       });
     }
   );
