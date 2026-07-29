@@ -32,8 +32,9 @@ interface LegacyDelivery {
 
 interface WebhookDeliveryBackfillDependencies {
   claimLegacy(): Promise<LegacyDelivery | null>;
-  buildSnapshot(
-    event: WhatsAppMirrorSourceEvent
+  buildLegacySnapshot(
+    event: WhatsAppMirrorSourceEvent,
+    persistedEnvelope: Record<string, any>
   ): Promise<Pick<WhatsAppMirrorSerializedSnapshot, "rawBody" | "bodySha256">>;
   encryptBody(
     rawBody: Buffer,
@@ -106,8 +107,11 @@ const defaults: WebhookDeliveryBackfillDependencies = {
       );
       return delivery.toJSON() as LegacyDelivery;
     }),
-  buildSnapshot: event =>
-    new WhatsAppMirrorProjectionService().buildSnapshot(event),
+  buildLegacySnapshot: (event, persistedEnvelope) =>
+    new WhatsAppMirrorProjectionService().buildLegacySnapshot(
+      event,
+      persistedEnvelope
+    ),
   encryptBody: encryptWebhookBody,
   getKeyring: loadMessagingKeyring,
   persistEncrypted: (id, leaseToken, values) =>
@@ -218,15 +222,18 @@ class WebhookDeliveryBackfillService {
       const legacyPayload = delivery.payload || {};
       const occurredAt =
         legacyPayload.createdAt || delivery.createdAt || this.dependencies.now();
-      const snapshot = await this.dependencies.buildSnapshot({
-        id: delivery.eventId,
-        companyId: delivery.companyId,
-        eventType: delivery.eventType,
-        aggregateId: String(payload.messageId || delivery.eventId),
-        payload: sourcePayload(delivery),
-        createdAt: new Date(occurredAt),
-        leaseToken: delivery.leaseToken
-      });
+      const snapshot = await this.dependencies.buildLegacySnapshot(
+        {
+          id: delivery.eventId,
+          companyId: delivery.companyId,
+          eventType: delivery.eventType,
+          aggregateId: String(payload.messageId || delivery.eventId),
+          payload: sourcePayload(delivery),
+          createdAt: new Date(occurredAt),
+          leaseToken: delivery.leaseToken
+        },
+        legacyPayload
+      );
       const encrypted = this.dependencies.encryptBody(
         Buffer.from(snapshot.rawBody, "utf8"),
         {

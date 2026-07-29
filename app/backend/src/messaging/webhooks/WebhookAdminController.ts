@@ -1,4 +1,6 @@
 import { Request, Response } from "express";
+import { Op } from "sequelize";
+import sequelize from "../../database";
 import AppError from "../../errors/AppError";
 import WebhookDelivery from "../persistence/models/WebhookDelivery";
 import WebhookSubscription from "../persistence/models/WebhookSubscription";
@@ -14,6 +16,15 @@ interface WebhookAdminDependencies {
   remove(companyId: number, id: string): Promise<void>;
   listDeliveries(companyId: number, query: Record<string, any>): Promise<any[]>;
   retryDelivery(companyId: number, id: string): Promise<void>;
+}
+
+interface RetryWebhookDeliveryDependencies {
+  transaction<T>(callback: (transaction: any) => Promise<T>): Promise<T>;
+  update(
+    values: Record<string, unknown>,
+    options: Record<string, unknown>
+  ): Promise<unknown>;
+  findOne(options: Record<string, unknown>): Promise<any | null>;
 }
 
 const subscriptionResponseFields = [
@@ -119,30 +130,65 @@ const serializeDelivery = (value: any): Record<string, unknown> => {
 export const retryWebhookDelivery = async (
   companyId: number,
   id: string,
-  now = new Date()
-): Promise<void> => {
-  const delivery = await WebhookDelivery.findOne({
-    where: { id, companyId }
-  });
-  if (!delivery) throw new AppError("Webhook delivery not found", 404);
-  if (delivery.status !== "dead_letter")
-    throw new AppError("Webhook delivery is not dead-lettered", 409);
-  const expired =
-    delivery.bodyExpiresAt &&
-    new Date(delivery.bodyExpiresAt).getTime() <= now.getTime();
-  if (!delivery.bodyCiphertext || delivery.bodyPurgedAt || expired) {
-    throw new AppError("Webhook delivery body expired", 410);
+  now = new Date(),
+  dependencies: RetryWebhookDeliveryDependencies = {
+    transaction: callback => sequelize.transaction(callback),
+    update: (values, options) =>
+      WebhookDelivery.update(values as any, options as any),
+    findOne: options => WebhookDelivery.findOne(options as any)
   }
-  await delivery.update({
-    status: "ready",
-    attemptCount: 0,
-    availableAt: now,
-    leaseExpiresAt: null,
-    leaseToken: null,
-    lastError: null,
-    bodyExpiresAt: null
+): Promise<void> =>
+  dependencies.transaction(async transaction => {
+    const updateResult = await dependencies.update(
+      {
+        status: "ready",
+        attemptCount: 0,
+        availableAt: now,
+        leaseExpiresAt: null,
+        leaseToken: null,
+        lastError: null,
+        bodyExpiresAt: null
+      },
+      {
+        where: {
+          companyId,
+          id,
+          status: "dead_letter",
+          bodyCiphertext: { [Op.ne]: null },
+          bodyPurgedAt: null,
+          bodyExpiresAt: { [Op.gt]: now }
+        },
+        transaction
+      }
+    );
+    const affected = Array.isArray(updateResult)
+      ? Number(updateResult[0])
+      : Number(updateResult);
+    if (affected > 0) return;
+
+    const delivery = await dependencies.findOne({
+      where: { id, companyId },
+      attributes: [
+        "status",
+        "bodyCiphertext",
+        "bodyPurgedAt",
+        "bodyExpiresAt",
+        "leaseToken"
+      ],
+      transaction
+    });
+    if (!delivery) throw new AppError("Webhook delivery not found", 404);
+    if (delivery.status !== "dead_letter") {
+      throw new AppError("Webhook delivery is not dead-lettered", 409);
+    }
+    const expired =
+      !delivery.bodyExpiresAt ||
+      new Date(delivery.bodyExpiresAt).getTime() <= now.getTime();
+    if (!delivery.bodyCiphertext || delivery.bodyPurgedAt || expired) {
+      throw new AppError("Webhook delivery body expired", 410);
+    }
+    throw new AppError("Webhook delivery changed concurrently", 409);
   });
-};
 
 const defaults: WebhookAdminDependencies = {
   create: createWebhookSubscription,

@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import WebhookDelivery from "../../persistence/models/WebhookDelivery";
+import { Op } from "sequelize";
 import {
   createWebhookAdminHandlers,
   retryWebhookDelivery
@@ -177,6 +177,68 @@ describe("WebhookAdminController", () => {
     expect(res.sendStatus).toHaveBeenCalledWith(202);
   });
 
+  it("atomically requeues only an eligible dead-letter body", async () => {
+    const transaction = {};
+    const update = jest.fn().mockResolvedValue([1]);
+    const findOne = jest.fn();
+    const now = new Date("2026-07-29T12:00:00.000Z");
+
+    await retryWebhookDelivery(7, "del_1", now, {
+      transaction: callback => callback(transaction),
+      update,
+      findOne
+    } as any);
+
+    expect(update).toHaveBeenCalledWith(
+      {
+        status: "ready",
+        attemptCount: 0,
+        availableAt: now,
+        leaseExpiresAt: null,
+        leaseToken: null,
+        lastError: null,
+        bodyExpiresAt: null
+      },
+      {
+        where: {
+          companyId: 7,
+          id: "del_1",
+          status: "dead_letter",
+          bodyCiphertext: { [Op.ne]: null },
+          bodyPurgedAt: null,
+          bodyExpiresAt: { [Op.gt]: now }
+        },
+        transaction
+      }
+    );
+    expect(findOne).not.toHaveBeenCalled();
+  });
+
+  it("never overwrites a processing lease when the conditional retry loses a race", async () => {
+    const leaseOwnerUpdate = jest.fn();
+    const update = jest.fn().mockResolvedValue([0]);
+    const findOne = jest.fn().mockResolvedValue({
+      status: "processing",
+      leaseToken: "new-dispatch-lease",
+      update: leaseOwnerUpdate
+    });
+
+    await expect(
+      retryWebhookDelivery(
+        7,
+        "del_1",
+        new Date("2026-07-29T12:00:00.000Z"),
+        {
+          transaction: callback => callback({}),
+          update,
+          findOne
+        } as any
+      )
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(leaseOwnerUpdate).not.toHaveBeenCalled();
+  });
+
   it.each([
     {
       name: "purged",
@@ -191,14 +253,35 @@ describe("WebhookAdminController", () => {
       bodyExpiresAt: new Date("2020-01-01T00:00:00.000Z")
     }
   ])("returns 410 when retrying a $name delivery body", async bodyState => {
-    jest.spyOn(WebhookDelivery, "findOne").mockResolvedValue({
-      status: "dead_letter",
-      update: jest.fn(),
-      ...bodyState
-    } as any);
+    await expect(
+      retryWebhookDelivery(
+        7,
+        "del_1",
+        new Date("2026-07-29T12:00:00.000Z"),
+        {
+          transaction: callback => callback({}),
+          update: jest.fn().mockResolvedValue([0]),
+          findOne: jest.fn().mockResolvedValue({
+            status: "dead_letter",
+            ...bodyState
+          })
+        } as any
+      )
+    ).rejects.toMatchObject({ statusCode: 410 });
+  });
 
-    await expect(retryWebhookDelivery(7, "del_1")).rejects.toMatchObject({
-      statusCode: 410
-    });
+  it("returns 404 when the conditional retry cannot refetch the delivery", async () => {
+    await expect(
+      retryWebhookDelivery(
+        7,
+        "missing",
+        new Date("2026-07-29T12:00:00.000Z"),
+        {
+          transaction: callback => callback({}),
+          update: jest.fn().mockResolvedValue([0]),
+          findOne: jest.fn().mockResolvedValue(null)
+        } as any
+      )
+    ).rejects.toMatchObject({ statusCode: 404 });
   });
 });

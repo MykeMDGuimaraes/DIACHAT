@@ -26,6 +26,11 @@ const legacy = {
 const dependencies = (overrides: Record<string, unknown> = {}) =>
   ({
     claimLegacy: jest.fn().mockResolvedValue(legacy),
+    buildLegacySnapshot: jest.fn().mockResolvedValue({
+      rawBody:
+        "{\"id\":\"legacy-envelope-id\",\"type\":\"message.received\",\"createdAt\":\"2026-07-24T12:00:00.000Z\",\"data\":{\"messageId\":\"msg_1\",\"whatsappId\":42,\"conversationId\":\"conv_1\",\"text\":\"hydrated-persisted-text\"}}",
+      bodySha256: "legacy-digest"
+    }),
     buildSnapshot: jest.fn().mockResolvedValue({
       rawBody: "{\"schema\":\"whatsapp-mirror/1\"}",
       bodySha256: "snapshot-digest"
@@ -33,7 +38,7 @@ const dependencies = (overrides: Record<string, unknown> = {}) =>
     encryptBody: jest.fn().mockReturnValue({
       bodyCiphertext: "encrypted-body",
       bodyKeyVersion: "v2",
-      bodySha256: "snapshot-digest"
+      bodySha256: "legacy-digest"
     }),
     getKeyring: jest
       .fn()
@@ -47,14 +52,14 @@ const dependencies = (overrides: Record<string, unknown> = {}) =>
   } as any);
 
 describe("WebhookDeliveryBackfillService", () => {
-  it("hydrates/project legacy data, encrypts active bodies, and scrubs JSONB", async () => {
+  it("encrypts the exact hydrated legacy envelope and never projects it as rich mirror", async () => {
     const deps = dependencies();
     const service = new WebhookDeliveryBackfillService(deps);
 
     await expect(service.processOne()).resolves.toEqual({
       status: "encrypted"
     });
-    expect(deps.buildSnapshot).toHaveBeenCalledWith(
+    expect(deps.buildLegacySnapshot).toHaveBeenCalledWith(
       expect.objectContaining({
         id: "evt_1",
         aggregateId: "msg_1",
@@ -62,10 +67,15 @@ describe("WebhookDeliveryBackfillService", () => {
           messageId: "msg_1",
           whatsappId: 42
         })
-      })
+      }),
+      legacy.payload
     );
+    expect(deps.buildSnapshot).not.toHaveBeenCalled();
     expect(deps.encryptBody).toHaveBeenCalledWith(
-      Buffer.from("{\"schema\":\"whatsapp-mirror/1\"}", "utf8"),
+      Buffer.from(
+        "{\"id\":\"legacy-envelope-id\",\"type\":\"message.received\",\"createdAt\":\"2026-07-24T12:00:00.000Z\",\"data\":{\"messageId\":\"msg_1\",\"whatsappId\":42,\"conversationId\":\"conv_1\",\"text\":\"hydrated-persisted-text\"}}",
+        "utf8"
+      ),
       {
         companyId: 7,
         subscriptionId: "sub_1",
@@ -80,7 +90,7 @@ describe("WebhookDeliveryBackfillService", () => {
       expect.objectContaining({
         bodyCiphertext: "encrypted-body",
         bodyKeyVersion: "v2",
-        bodySha256: "snapshot-digest",
+        bodySha256: "legacy-digest",
         bodyExpiresAt: null,
         payload: {
           messageId: "msg_1",
@@ -117,14 +127,14 @@ describe("WebhookDeliveryBackfillService", () => {
   });
 
   it("scrubs delivered plaintext without rebuilding a body", async () => {
-    const buildSnapshot = jest.fn();
+    const buildLegacySnapshot = jest.fn();
     const scrubDelivered = jest.fn();
     const service = new WebhookDeliveryBackfillService(
       dependencies({
         claimLegacy: jest
           .fn()
           .mockResolvedValue({ ...legacy, status: "delivered" }),
-        buildSnapshot,
+        buildLegacySnapshot,
         scrubDelivered
       })
     );
@@ -132,7 +142,7 @@ describe("WebhookDeliveryBackfillService", () => {
     await expect(service.processOne()).resolves.toEqual({
       status: "scrubbed"
     });
-    expect(buildSnapshot).not.toHaveBeenCalled();
+    expect(buildLegacySnapshot).not.toHaveBeenCalled();
     expect(scrubDelivered).toHaveBeenCalledWith(
       "del_1",
       "backfill-lease-1",
@@ -153,7 +163,9 @@ describe("WebhookDeliveryBackfillService", () => {
     const persistEncrypted = jest.fn();
     const service = new WebhookDeliveryBackfillService(
       dependencies({
-        buildSnapshot: jest.fn().mockRejectedValue(new Error("projection failed")),
+        buildLegacySnapshot: jest
+          .fn()
+          .mockRejectedValue(new Error("projection failed")),
         persistEncrypted,
         releaseClaim
       })

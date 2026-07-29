@@ -22,7 +22,7 @@ type DomainEvent = WhatsAppMirrorSourceEvent;
 
 interface WebhookFanoutDependencies {
   transaction<T>(callback: (transaction: any) => Promise<T>): Promise<T>;
-  claimEvent(): Promise<DomainEvent | null>;
+  claimEvent(eventTypes: readonly string[]): Promise<DomainEvent | null>;
   findSubscriptions(companyId: number, transaction?: any): Promise<any[]>;
   createDelivery(
     data: Record<string, unknown>,
@@ -36,6 +36,9 @@ interface WebhookFanoutDependencies {
   buildSnapshot(
     event: DomainEvent
   ): Promise<Pick<WhatsAppMirrorSerializedSnapshot, "rawBody" | "bodySha256">>;
+  buildLegacySnapshot(
+    event: DomainEvent
+  ): Promise<Pick<WhatsAppMirrorSerializedSnapshot, "rawBody" | "bodySha256">>;
   encryptBody(
     rawBody: Buffer,
     binding: WebhookBodyBinding,
@@ -43,15 +46,11 @@ interface WebhookFanoutDependencies {
   ): EncryptedWebhookBody;
   getKeyring(): MessagingKeyring;
   newId(): string;
+  mirrorEnabled(): boolean;
 }
 
-const deliverableEvents = [
+const legacyDeliverableEvents = [
   "message.received",
-  "message.reaction",
-  "message.edited",
-  "message.deleted",
-  "chat.updated",
-  "connection.updated",
   "message.sent",
   "message.failed",
   "message.status.updated",
@@ -65,14 +64,22 @@ const deliverableEvents = [
   "contact.updated"
 ];
 
+const specializedMirrorEvents = [
+  "message.reaction",
+  "message.edited",
+  "message.deleted",
+  "chat.updated",
+  "connection.updated"
+];
+
 const defaultDependencies: WebhookFanoutDependencies = {
   transaction: callback => sequelize.transaction(callback),
-  claimEvent: () =>
+  claimEvent: eventTypes =>
     sequelize.transaction(async transaction => {
       const leaseToken = randomUUID();
       const event = await MessagingOutboxEvent.findOne({
         where: {
-          eventType: { [Op.in]: deliverableEvents },
+          eventType: { [Op.in]: eventTypes },
           status: "ready",
           availableAt: { [Op.lte]: new Date() }
         },
@@ -106,9 +113,13 @@ const defaultDependencies: WebhookFanoutDependencies = {
     ),
   buildSnapshot: event =>
     new WhatsAppMirrorProjectionService().buildSnapshot(event),
+  buildLegacySnapshot: event =>
+    new WhatsAppMirrorProjectionService().buildLegacySnapshot(event),
   encryptBody: encryptWebhookBody,
   getKeyring: loadMessagingKeyring,
-  newId: randomUUID
+  newId: randomUUID,
+  mirrorEnabled: () =>
+    process.env.MESSAGING_WEBHOOK_MIRROR_V1_ENABLED === "true"
 };
 
 const matches = (subscription: any, event: DomainEvent): boolean => {
@@ -163,14 +174,21 @@ class WebhookFanoutService {
     status: "idle" | "created";
     deliveries: number;
   }> {
-    const event = await this.dependencies.claimEvent();
+    const mirrorEnabled = this.dependencies.mirrorEnabled();
+    const event = await this.dependencies.claimEvent(
+      mirrorEnabled
+        ? [...legacyDeliverableEvents, ...specializedMirrorEvents]
+        : legacyDeliverableEvents
+    );
     if (!event) return { status: "idle", deliveries: 0 };
     const subscriptions = (
       await this.dependencies.findSubscriptions(event.companyId)
     ).filter(item => matches(item, event));
     const prepared: Array<Record<string, unknown>> = [];
     if (subscriptions.length) {
-      const snapshot = await this.dependencies.buildSnapshot(event);
+      const snapshot = mirrorEnabled
+        ? await this.dependencies.buildSnapshot(event)
+        : await this.dependencies.buildLegacySnapshot(event);
       const keyring = this.dependencies.getKeyring();
       for (const subscription of subscriptions) {
         const id = this.dependencies.newId();

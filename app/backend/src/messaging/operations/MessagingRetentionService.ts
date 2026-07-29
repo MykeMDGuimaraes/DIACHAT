@@ -84,7 +84,8 @@ class MessagingRetentionService {
       this.models.deliveries.destroy({
         where: {
           status: { [Op.in]: ["delivered", "dead_letter"] },
-          createdAt: { [Op.lt]: deleteBefore }
+          createdAt: { [Op.lt]: deleteBefore },
+          bodyPurgedAt: { [Op.ne]: null }
         }
       }),
       ...(this.models.capacity

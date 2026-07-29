@@ -1,10 +1,15 @@
 import WebhookFanoutService from "../WebhookFanoutService";
 
 describe("WebhookFanoutService", () => {
-  it("creates tenant-isolated deliveries with URL and secret snapshots", async () => {
+  it("uses the rich mirror snapshot only when the feature flag is enabled", async () => {
     const createDelivery = jest.fn();
     const completeEvent = jest.fn();
     const transaction = {};
+    const buildSnapshot = jest.fn().mockResolvedValue({
+      rawBody: "{\"schema\":\"whatsapp-mirror/1\"}",
+      bodySha256: "snapshot-digest"
+    });
+    const buildLegacySnapshot = jest.fn();
     const service = new WebhookFanoutService({
       transaction: callback => callback(transaction),
       claimEvent: jest.fn().mockResolvedValue({
@@ -35,10 +40,8 @@ describe("WebhookFanoutService", () => {
       }]),
       createDelivery,
       completeEvent,
-      buildSnapshot: jest.fn().mockResolvedValue({
-        rawBody: "{\"schema\":\"whatsapp-mirror/1\"}",
-        bodySha256: "snapshot-digest"
-      }),
+      buildSnapshot,
+      buildLegacySnapshot,
       encryptBody: jest.fn().mockReturnValue({
         bodyCiphertext: "encrypted-body",
         bodyKeyVersion: "body-v2",
@@ -47,10 +50,13 @@ describe("WebhookFanoutService", () => {
       getKeyring: jest
         .fn()
         .mockReturnValue({ activeKeyId: "body-v2", keys: {} }),
-      newId: jest.fn().mockReturnValue("del_1")
+      newId: jest.fn().mockReturnValue("del_1"),
+      mirrorEnabled: jest.fn().mockReturnValue(true)
     });
 
     await expect(service.fanoutOne()).resolves.toEqual({ status: "created", deliveries: 1 });
+    expect(buildSnapshot).toHaveBeenCalledTimes(1);
+    expect(buildLegacySnapshot).not.toHaveBeenCalled();
     expect(createDelivery).toHaveBeenCalledWith(expect.objectContaining({
       id: "del_1",
       subscriptionId: "sub_1",
@@ -78,6 +84,93 @@ describe("WebhookFanoutService", () => {
       transaction
     );
   });
+
+  it("encrypts the exact hydrated v1.1 envelope bytes when the feature flag is off", async () => {
+    const rawBody =
+      "{\"id\":\"evt_1\",\"type\":\"message.received\",\"createdAt\":\"2026-07-29T12:00:00.000Z\",\"data\":{\"messageId\":\"msg_1\",\"whatsappId\":42,\"actorType\":\"contact\",\"text\":\"texto persistido\"}}";
+    const buildSnapshot = jest.fn();
+    const buildLegacySnapshot = jest.fn().mockResolvedValue({
+      rawBody,
+      bodySha256: "legacy-digest"
+    });
+    const encryptBody = jest.fn().mockReturnValue({
+      bodyCiphertext: "encrypted-legacy-body",
+      bodyKeyVersion: "body-v2",
+      bodySha256: "legacy-digest"
+    });
+    const service = new WebhookFanoutService({
+      transaction: callback => callback({}),
+      claimEvent: jest.fn().mockResolvedValue({
+        id: "evt_1",
+        companyId: 7,
+        eventType: "message.received",
+        aggregateId: "msg_1",
+        payload: {
+          messageId: "msg_1",
+          whatsappId: 42,
+          actorType: "contact"
+        },
+        createdAt: new Date("2026-07-29T12:00:00.000Z"),
+        leaseToken: "event-lease-1"
+      }),
+      findSubscriptions: jest.fn().mockResolvedValue([
+        {
+          id: "sub_1",
+          events: ["message.received"],
+          connectionIds: [],
+          messageKinds: [],
+          includeApiOrigin: true
+        }
+      ]),
+      createDelivery: jest.fn(),
+      completeEvent: jest.fn(),
+      buildSnapshot,
+      buildLegacySnapshot,
+      encryptBody,
+      getKeyring: jest
+        .fn()
+        .mockReturnValue({ activeKeyId: "body-v2", keys: {} }),
+      newId: jest.fn().mockReturnValue("del_1"),
+      mirrorEnabled: jest.fn().mockReturnValue(false)
+    });
+
+    await service.fanoutOne();
+
+    expect(buildLegacySnapshot).toHaveBeenCalledTimes(1);
+    expect(buildSnapshot).not.toHaveBeenCalled();
+    expect(encryptBody).toHaveBeenCalledWith(
+      Buffer.from(rawBody, "utf8"),
+      {
+        companyId: 7,
+        subscriptionId: "sub_1",
+        deliveryId: "del_1",
+        eventId: "evt_1"
+      },
+      { activeKeyId: "body-v2", keys: {} }
+    );
+  });
+
+  it.each([
+    { enabled: false, specialized: false },
+    { enabled: true, specialized: true }
+  ])(
+    "gates specialized event claims when mirror enabled is $enabled",
+    async ({ enabled, specialized }) => {
+      const claimEvent = jest.fn().mockResolvedValue(null);
+      const service = new WebhookFanoutService({
+        claimEvent,
+        mirrorEnabled: jest.fn().mockReturnValue(enabled)
+      });
+
+      await service.fanoutOne();
+
+      expect(claimEvent).toHaveBeenCalledWith(
+        expect.arrayContaining(["message.received", "message.sent"])
+      );
+      const claimedEvents = claimEvent.mock.calls[0][0] as string[];
+      expect(claimedEvents.includes("message.reaction")).toBe(specialized);
+    }
+  );
 
   it("does not send public API-originated events unless explicitly enabled", async () => {
     const createDelivery = jest.fn();
@@ -135,7 +228,8 @@ describe("WebhookFanoutService", () => {
         getKeyring: jest
           .fn()
           .mockReturnValue({ activeKeyId: "v1", keys: {} }),
-        newId: jest.fn().mockReturnValue("del_1")
+        newId: jest.fn().mockReturnValue("del_1"),
+        mirrorEnabled: jest.fn().mockReturnValue(true)
       });
 
       await expect(service.fanoutOne()).rejects.toThrow(`${failure} failed`);

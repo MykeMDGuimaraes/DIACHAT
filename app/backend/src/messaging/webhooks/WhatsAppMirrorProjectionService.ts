@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import Message from "../../models/Message";
 import WhatsAppMirrorPayloadBuilder, {
   WhatsAppMirrorPayloadInput,
@@ -39,6 +40,46 @@ class WhatsAppMirrorProjectionService {
 
   constructor(dependencies: Partial<ProjectionDependencies> = {}) {
     this.dependencies = { ...defaultDependencies, ...dependencies };
+  }
+
+  async buildLegacySnapshot(
+    event: WhatsAppMirrorSourceEvent,
+    persistedEnvelope?: Record<string, any>
+  ): Promise<Pick<WhatsAppMirrorSerializedSnapshot, "rawBody" | "bodySha256">> {
+    const envelopeData =
+      persistedEnvelope?.data && typeof persistedEnvelope.data === "object"
+        ? persistedEnvelope.data
+        : event.payload || {};
+    const messageId =
+      envelopeData.messageId === null || envelopeData.messageId === undefined
+        ? null
+        : String(envelopeData.messageId);
+    const persistedMessage =
+      event.eventType === "message.received" &&
+      envelopeData.actorType === "contact" &&
+      messageId
+        ? await this.dependencies.loadMessage(event.companyId, messageId)
+        : null;
+    const data = persistedMessage?.body
+      ? { ...envelopeData, text: persistedMessage.body }
+      : envelopeData;
+    const envelope = persistedEnvelope
+      ? { ...persistedEnvelope, data }
+      : {
+          id: event.id,
+          type: event.eventType,
+          createdAt: event.createdAt
+            ? new Date(event.createdAt).toISOString()
+            : new Date().toISOString(),
+          data
+        };
+    const rawBody = JSON.stringify(envelope);
+    return {
+      rawBody,
+      bodySha256: createHash("sha256")
+        .update(Buffer.from(rawBody, "utf8"))
+        .digest("hex")
+    };
   }
 
   async buildSnapshot(
