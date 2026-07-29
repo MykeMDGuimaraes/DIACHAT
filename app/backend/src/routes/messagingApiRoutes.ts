@@ -5,6 +5,11 @@ import {
   listApiCredentialsHandler,
   revokeApiCredentialHandler,
   createPublicTextMessageHandler,
+  createHandoffConversationHandler,
+  createFinalizeConversationHandler,
+  createIntegrationReadinessHandler,
+  createTranscriptHandler,
+  transcriptMediaHandler,
   requireApiScope,
   createMetaCloudChannelHandler,
   listMetaCloudChannelsHandler,
@@ -21,8 +26,21 @@ import isAuth from "../middleware/isAuth";
 
 const messagingApiRoutes = Router();
 
-messagingApiRoutes.get("/openapi.json", (_req, res) =>
-  res.json(messagingOpenApi)
+messagingApiRoutes.get(
+  "/openapi.json",
+  apiKeyAuth,
+  requireApiScope("integration:read"),
+  (_req, res) => res.json(messagingOpenApi)
+);
+messagingApiRoutes.get(
+  "/integration/ready",
+  apiKeyAuth,
+  requireApiScope("integration:read"),
+  createIntegrationReadinessHandler()
+);
+messagingApiRoutes.get(
+  "/transcript/media/:messageId",
+  transcriptMediaHandler
 );
 messagingApiRoutes.post(
   "/credentials",
@@ -119,6 +137,30 @@ messagingApiRoutes.post(
   publicApiRateLimit,
   requireApiScope("messages:write"),
   createPublicTextMessageHandler()
+);
+
+messagingApiRoutes.post(
+  "/conversations/:conversationId/handoff",
+  apiKeyAuth,
+  publicApiRateLimit,
+  requireApiScope("conversations:write"),
+  createHandoffConversationHandler()
+);
+
+messagingApiRoutes.post(
+  "/conversations/:conversationId/finalize",
+  apiKeyAuth,
+  publicApiRateLimit,
+  requireApiScope("conversations:write"),
+  createFinalizeConversationHandler()
+);
+
+messagingApiRoutes.get(
+  "/conversations/:conversationId/messages",
+  apiKeyAuth,
+  publicApiRateLimit,
+  requireApiScope("transcript:read"),
+  createTranscriptHandler()
 );
 
 export default messagingApiRoutes;

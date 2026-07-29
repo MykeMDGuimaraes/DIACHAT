@@ -3,36 +3,68 @@ import type Ticket from "../../../models/Ticket";
 import { RetryableSendError } from "../../contracts/ProviderSendError";
 import { sendBaileysSocketMessage } from "./BaileysSocketPort";
 
-type TicketSocket = Pick<WASocket, "sendMessage">;
+type TicketSocket = Pick<WASocket, "sendMessage"> & {
+  relayMessage?: WASocket["relayMessage"];
+  user?: WASocket["user"];
+};
 
 interface SendTicketTextInput {
   ticket: Ticket;
   text: string;
+  messageId?: string;
   quoted?: WAMessage;
 }
 
 interface SendTicketContentInput {
   ticket: Ticket;
   content: Record<string, unknown>;
+  messageId?: string;
   quoted?: WAMessage;
 }
 
+interface SendNativeButtonsInput {
+  ticket: Ticket;
+  text: string;
+  buttons: Array<{ id: string; title: string }>;
+  messageId: string;
+  quoted?: WAMessage;
+}
+
+type NativeButtonsRelay = (
+  socket: Pick<WASocket, "relayMessage" | "user">,
+  jid: string,
+  text: string,
+  buttons: Array<{ id: string; title: string }>,
+  messageId: string,
+  quoted?: WAMessage
+) => Promise<WAMessage>;
+
+const defaultNativeButtonsRelay: NativeButtonsRelay = async (...args) => {
+  const { relayNativeButtons } = await import("./BaileysNativeButtonsTransport");
+  return relayNativeButtons(...args);
+};
+
 class BaileysTicketMessagingProvider {
+  // Parameter properties keep socket and relay ports replaceable in tests.
+  // eslint-disable-next-line no-useless-constructor
   constructor(
-    private readonly getSocket: (ticket: Ticket) => Promise<TicketSocket>
+    private readonly getSocket: (ticket: Ticket) => Promise<TicketSocket>,
+    private readonly nativeButtonsRelay: NativeButtonsRelay = defaultNativeButtonsRelay
   ) {}
 
   async sendText({
     ticket,
     text,
+    messageId,
     quoted
   }: SendTicketTextInput): Promise<WAMessage> {
-    return this.sendContent({ ticket, content: { text }, quoted });
+    return this.sendContent({ ticket, content: { text }, messageId, quoted });
   }
 
   async sendContent({
     ticket,
     content,
+    messageId,
     quoted
   }: SendTicketContentInput): Promise<WAMessage> {
     // Socket indisponivel acontece ANTES de sendMessage: falha retryable
@@ -56,7 +88,45 @@ class BaileysTicketMessagingProvider {
       socket,
       jid,
       content as any,
-      quoted ? { quoted } : undefined
+      quoted || messageId ? { ...(quoted ? { quoted } : {}), messageId } : undefined
+    );
+  }
+
+  async sendNativeButtons({
+    ticket,
+    text,
+    buttons,
+    messageId,
+    quoted
+  }: SendNativeButtonsInput): Promise<WAMessage> {
+    let socket: TicketSocket;
+    try {
+      socket = await this.getSocket(ticket);
+    } catch (error) {
+      throw new RetryableSendError({
+        code: "BAILEYS_SOCKET_UNAVAILABLE",
+        message: "Sessao Baileys indisponivel antes do envio",
+        details: {
+          cause: error instanceof Error ? error.message : String(error)
+        }
+      });
+    }
+    if (!socket.relayMessage || !socket.user?.id) {
+      throw new RetryableSendError({
+        code: "BAILEYS_INTERACTIVE_SOCKET_UNAVAILABLE",
+        message: "Socket Baileys sem suporte interativo"
+      });
+    }
+    const jid = `${ticket.contact.number}@${
+      ticket.isGroup ? "g.us" : "s.whatsapp.net"
+    }`;
+    return this.nativeButtonsRelay(
+      socket as Pick<WASocket, "relayMessage" | "user">,
+      jid,
+      text,
+      buttons,
+      messageId,
+      quoted
     );
   }
 }

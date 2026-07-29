@@ -24,7 +24,9 @@ describe("PublicTextMessageService", () => {
       findContact: jest.fn().mockResolvedValue(null),
       createContact: jest.fn().mockResolvedValue({ id: 3 }),
       findTicket: jest.fn().mockResolvedValue(null),
-      createTicket: jest.fn().mockResolvedValue({ id: 4 }),
+      createTicket: jest
+        .fn()
+        .mockResolvedValue({ id: 4, uuid: "conversation-uuid" }),
       updateTicket: jest.fn(),
       createMessage,
       createCommand,
@@ -53,6 +55,13 @@ describe("PublicTextMessageService", () => {
         id: "cmd_1",
         messageId: "msg_1",
         recipient: "5511999999999",
+        responseSnapshot: expect.objectContaining({
+          id: "cmd_1",
+          status: "accepted",
+          messageId: "msg_1",
+          conversationId: "conversation-uuid",
+          contactId: "3"
+        }),
         requestPayload: { ticketId: 4, text: "Olá" }
       }),
       transaction
@@ -64,13 +73,26 @@ describe("PublicTextMessageService", () => {
       }),
       transaction
     );
+    expect(createOutboxEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: "conversation.created",
+        aggregateId: "conversation-uuid",
+        payload: expect.objectContaining({
+          conversationId: "conversation-uuid",
+          contactId: "3",
+          whatsappId: 2
+        })
+      }),
+      transaction
+    );
   });
 
   it("returns a replay without creating another message", async () => {
     const existing = {
       id: "cmd_1",
       requestFingerprint: "same",
-      messageId: "msg_1"
+      messageId: "msg_1",
+      responseSnapshot: { id: "cmd_1", status: "accepted" }
     };
     const service = new PublicTextMessageService({
       transaction: async callback => callback({}),
@@ -94,11 +116,40 @@ describe("PublicTextMessageService", () => {
     });
   });
 
+  it("reports an idempotent request without a frozen response as in progress", async () => {
+    const service = new PublicTextMessageService({
+      transaction: async callback => callback({}),
+      findCommand: jest.fn().mockResolvedValue({
+        id: "cmd_1",
+        requestFingerprint: "same",
+        responseSnapshot: null
+      }),
+      findWhatsapp: jest.fn().mockResolvedValue({ id: 2 }),
+      findContact: jest.fn(),
+      createContact: jest.fn(),
+      findTicket: jest.fn(),
+      createTicket: jest.fn(),
+      updateTicket: jest.fn(),
+      createMessage: jest.fn(),
+      createCommand: jest.fn(),
+      createOutboxEvent: jest.fn()
+    });
+    jest.spyOn(service, "fingerprint").mockReturnValue("same");
+
+    await expect(service.create(input)).rejects.toEqual(
+      expect.objectContaining({
+        message: "REQUEST_IN_PROGRESS",
+        statusCode: 409
+      })
+    );
+  });
+
   it("returns the winning command when a concurrent insert hits the unique idempotency index", async () => {
     const existing = {
       id: "cmd_1",
       requestFingerprint: "same",
-      messageId: "msg_1"
+      messageId: "msg_1",
+      responseSnapshot: { id: "cmd_1", status: "accepted" }
     };
     const service = new PublicTextMessageService({
       transaction: async callback => {
@@ -196,5 +247,159 @@ describe("PublicTextMessageService", () => {
       }),
       expect.anything()
     );
+  });
+
+  it("persists native buttons and Router correlation without changing callback ids", async () => {
+    const createCommand = jest
+      .fn()
+      .mockResolvedValue({ id: "cmd_buttons", status: "queued" });
+    const reserveAutomatedMessage = jest.fn();
+    const service = new PublicTextMessageService({
+      transaction: async callback => callback({}),
+      findCommand: jest.fn().mockResolvedValue(null),
+      findWhatsapp: jest.fn().mockResolvedValue({ id: 2, status: "CONNECTED" }),
+      findContact: jest.fn().mockResolvedValue({ id: 3 }),
+      createContact: jest.fn(),
+      findTicket: jest.fn().mockResolvedValue({
+        id: 4,
+        uuid: "conversation-uuid"
+      }),
+      createTicket: jest.fn(),
+      updateTicket: jest.fn(),
+      createMessage: jest.fn().mockResolvedValue({ id: "msg_buttons" }),
+      createCommand,
+      createOutboxEvent: jest.fn(),
+      reserveAutomatedMessage
+    });
+    jest.spyOn(service, "createCommandId").mockReturnValue("cmd_buttons");
+
+    await service.create({
+      ...input,
+      text: "Escolha",
+      kind: "buttons",
+      payload: {
+        buttons: [
+          { id: "accept:ticket_1", title: "Aceitar" },
+          { id: "reject:ticket_1", title: "Recusar" }
+        ]
+      },
+      externalTicketId: "ticket_1",
+      automationEpoch: 4
+    });
+
+    expect(createCommand).toHaveBeenCalledWith(
+      expect.objectContaining({
+        messageKind: "buttons",
+        externalTicketId: "ticket_1",
+        automationEpoch: 4,
+        conversationId: "conversation-uuid",
+        requestPayload: {
+          ticketId: 4,
+          text: "Escolha",
+          buttons: [
+            { id: "accept:ticket_1", title: "Aceitar" },
+            { id: "reject:ticket_1", title: "Recusar" }
+          ]
+        }
+      }),
+      expect.anything()
+    );
+    expect(reserveAutomatedMessage).toHaveBeenCalledWith({
+      companyId: 10,
+      conversationId: "conversation-uuid",
+      externalTicketId: "ticket_1",
+      automationEpoch: 4,
+      transaction: expect.anything()
+    });
+    expect(
+      reserveAutomatedMessage.mock.invocationCallOrder[0]
+    ).toBeLessThan(createCommand.mock.invocationCallOrder[0]);
+  });
+
+  it("rejects button payloads that exceed the native quick-reply contract", async () => {
+    const service = new PublicTextMessageService({} as any);
+
+    await expect(
+      service.create({
+        ...input,
+        kind: "buttons",
+        payload: {
+          buttons: [
+            { id: "one", title: "Um" },
+            { id: "two", title: "Dois" },
+            { id: "three", title: "Tres" },
+            { id: "four", title: "Quatro" }
+          ]
+        },
+        externalTicketId: "ticket_1",
+        automationEpoch: 0
+      })
+    ).rejects.toMatchObject({ statusCode: 400 });
+  });
+
+  it("does not fall back to text when the selected provider lacks native buttons", async () => {
+    const service = new PublicTextMessageService({
+      transaction: async callback => callback({}),
+      findCommand: jest.fn(),
+      findWhatsapp: jest.fn().mockResolvedValue({
+        id: 2,
+        channelType: "meta_cloud"
+      }),
+      findContact: jest.fn(),
+      createContact: jest.fn(),
+      findTicket: jest.fn(),
+      createTicket: jest.fn(),
+      updateTicket: jest.fn(),
+      createMessage: jest.fn(),
+      createCommand: jest.fn(),
+      createOutboxEvent: jest.fn()
+    });
+
+    await expect(
+      service.create({
+        ...input,
+        kind: "buttons",
+        payload: { buttons: [{ id: "accept:1", title: "Aceitar" }] },
+        externalTicketId: "ticket_1",
+        automationEpoch: 0
+      })
+    ).rejects.toMatchObject({
+      statusCode: 422,
+      message: "CAPABILITY_NOT_SUPPORTED"
+    });
+  });
+
+  it("replays from the frozen command even when the channel was removed", async () => {
+    const existing = {
+      id: "cmd_1",
+      requestFingerprint: "same",
+      responseSnapshot: {
+        id: "cmd_1",
+        status: "accepted",
+        conversationId: "conversation-uuid"
+      }
+    };
+    const findWhatsapp = jest.fn().mockResolvedValue(null);
+    const service = new PublicTextMessageService({
+      transaction: async callback => callback({}),
+      findCommand: jest.fn().mockResolvedValue(existing),
+      findWhatsapp,
+      findContact: jest.fn(),
+      createContact: jest.fn(),
+      findTicket: jest.fn(),
+      createTicket: jest.fn(),
+      updateTicket: jest.fn(),
+      createMessage: jest.fn(),
+      createCommand: jest.fn(),
+      createOutboxEvent: jest.fn()
+    });
+    jest.spyOn(service, "fingerprint").mockReturnValue("same");
+
+    await expect(service.create(input)).resolves.toEqual({
+      command: existing,
+      message: null,
+      replayed: true
+    });
+    expect(findWhatsapp).not.toHaveBeenCalled();
   });
 });

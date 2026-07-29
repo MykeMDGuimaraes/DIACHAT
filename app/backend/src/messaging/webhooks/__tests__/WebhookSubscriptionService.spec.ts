@@ -51,4 +51,39 @@ describe("createWebhookSubscription", () => {
       keyVersion: "v2"
     }));
   });
+
+  it("accepts every event required by the Router contract", async () => {
+    const create = jest.fn().mockResolvedValue({ id: "router-sub" });
+
+    await expect(
+      createWebhookSubscription(
+        {
+          companyId: 7,
+          name: "Roteador",
+          url: "https://router.example.com/api/v1/webhooks/dia-chat",
+          events: [
+            "button.clicked",
+            "message.received",
+            "message.sent",
+            "message.failed",
+            "message.status.updated",
+            "handoff.paused",
+            "handoff.released",
+            "conversation.created",
+            "conversation.updated"
+          ],
+          includeApiOrigin: true
+        },
+        {
+          create,
+          generateSecret: jest.fn().mockReturnValue("secret-once"),
+          encryptSecret: jest.fn().mockReturnValue("ciphertext"),
+          keyring: { activeKeyId: "v1", keys: { v1: "unused" } }
+        }
+      )
+    ).resolves.toMatchObject({ id: "router-sub" });
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({ includeApiOrigin: true })
+    );
+  });
 });

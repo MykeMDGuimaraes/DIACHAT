@@ -16,6 +16,15 @@ export {
 } from "../api/ApiCredentialController";
 export { createPublicTextMessageHandler } from "../api/PublicMessageController";
 export {
+  createHandoffConversationHandler,
+  createFinalizeConversationHandler
+} from "../api/ConversationController";
+export { createIntegrationReadinessHandler } from "../api/IntegrationController";
+export {
+  createTranscriptHandler,
+  transcriptMediaHandler
+} from "../api/TranscriptController";
+export {
   createMetaCloudChannelHandler,
   listMetaCloudChannelsHandler,
   rotateMetaCloudChannelHandler,

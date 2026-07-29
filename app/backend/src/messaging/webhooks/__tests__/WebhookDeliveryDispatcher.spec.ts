@@ -4,6 +4,7 @@ import WebhookDeliveryDispatcher, {
 
 const delivery = {
   id: "del_1",
+  companyId: 7,
   subscriptionId: "sub_1",
   urlSnapshot: "https://hooks.example.com/diachat",
   secretCiphertextSnapshot: "ciphertext",
@@ -27,6 +28,7 @@ describe("WebhookDeliveryDispatcher", () => {
       deadLetter: jest.fn(),
       recordSuccess: jest.fn(),
       recordFailure: jest.fn(),
+      pauseSubscription: jest.fn(),
       now: jest.fn().mockReturnValue(new Date("2026-07-24T12:00:00.000Z")),
       jitter: jest.fn().mockReturnValue(0)
     });
@@ -46,7 +48,7 @@ describe("WebhookDeliveryDispatcher", () => {
         })
       })
     );
-    expect(complete).toHaveBeenCalled();
+    expect(complete).toHaveBeenCalledWith("del_1", 204);
   });
 
   it("requeues retryable failures with bounded backoff", async () => {
@@ -61,6 +63,7 @@ describe("WebhookDeliveryDispatcher", () => {
       deadLetter: jest.fn(),
       recordSuccess: jest.fn(),
       recordFailure: jest.fn(),
+      pauseSubscription: jest.fn(),
       now: jest.fn().mockReturnValue(new Date("2026-07-24T12:00:00.000Z")),
       jitter: jest.fn().mockReturnValue(0)
     });
@@ -69,9 +72,9 @@ describe("WebhookDeliveryDispatcher", () => {
     });
     expect(retry).toHaveBeenCalledWith(
       "del_1",
-      expect.any(Date),
+      new Date("2026-07-24T12:00:02.000Z"),
       503,
-      "unavailable"
+      "HTTP_503"
     );
   });
 
@@ -87,13 +90,18 @@ describe("WebhookDeliveryDispatcher", () => {
       deadLetter,
       recordSuccess: jest.fn(),
       recordFailure: jest.fn(),
+      pauseSubscription: jest.fn(),
       now: jest.fn().mockReturnValue(new Date()),
       jitter: jest.fn().mockReturnValue(0)
     });
     await expect(dispatcher.dispatchOne()).resolves.toEqual({
       status: "dead_letter"
     });
-    expect(deadLetter).toHaveBeenCalledWith("del_1", undefined, "timeout");
+    expect(deadLetter).toHaveBeenCalledWith(
+      "del_1",
+      undefined,
+      "WEBHOOK_DELIVERY_ERROR"
+    );
   });
 
   it("requeues a delivery when loading the signing keyring fails", async () => {
@@ -110,6 +118,7 @@ describe("WebhookDeliveryDispatcher", () => {
       deadLetter: jest.fn(),
       recordSuccess: jest.fn(),
       recordFailure: jest.fn(),
+      pauseSubscription: jest.fn(),
       now: jest.fn().mockReturnValue(new Date("2026-07-24T12:00:00.000Z")),
       jitter: jest.fn().mockReturnValue(0)
     });
@@ -121,7 +130,7 @@ describe("WebhookDeliveryDispatcher", () => {
       "del_1",
       expect.any(Date),
       undefined,
-      "keyring indisponível"
+      "WEBHOOK_DELIVERY_ERROR"
     );
   });
 
@@ -142,6 +151,7 @@ describe("WebhookDeliveryDispatcher", () => {
       deadLetter,
       recordSuccess: jest.fn(),
       recordFailure,
+      pauseSubscription: jest.fn(),
       now: jest.fn().mockReturnValue(new Date("2026-07-24T12:00:00.000Z")),
       jitter: jest.fn().mockReturnValue(0)
     });
@@ -152,7 +162,7 @@ describe("WebhookDeliveryDispatcher", () => {
     expect(deadLetter).toHaveBeenCalledWith(
       "del_1",
       undefined,
-      "segredo inválido"
+      "WEBHOOK_DELIVERY_ERROR"
     );
     expect(recordFailure).toHaveBeenCalledWith("sub_1");
   });
@@ -164,5 +174,63 @@ describe("WebhookDeliveryDispatcher", () => {
       lastFailureAt: now,
       pausedAt: now
     });
+  });
+
+  it("hydrates contact text only in memory before signing and posting", async () => {
+    const post = jest.fn().mockResolvedValue({ status: 202, body: "" });
+    const hydratePayload = jest.fn().mockResolvedValue({
+      ...delivery.payload,
+      data: { ...delivery.payload.data, text: "resposta NPS" }
+    });
+    const dispatcher = new WebhookDeliveryDispatcher({
+      claimNext: jest.fn().mockResolvedValue(delivery),
+      decryptSecret: jest.fn().mockReturnValue("signing-secret"),
+      getKeyring: jest.fn().mockReturnValue({ activeKeyId: "v1", keys: {} }),
+      hydratePayload,
+      post,
+      complete: jest.fn(),
+      retry: jest.fn(),
+      deadLetter: jest.fn(),
+      recordSuccess: jest.fn(),
+      recordFailure: jest.fn(),
+      pauseSubscription: jest.fn(),
+      now: jest.fn().mockReturnValue(new Date("2026-07-24T12:00:00.000Z")),
+      jitter: jest.fn().mockReturnValue(0)
+    });
+
+    await dispatcher.dispatchOne();
+
+    expect(hydratePayload).toHaveBeenCalledWith(delivery);
+    expect(post).toHaveBeenCalledWith(
+      expect.objectContaining({
+        rawBody: expect.stringContaining('"text":"resposta NPS"')
+      })
+    );
+    expect(delivery.payload.data).toEqual({});
+  });
+
+  it("pauses immediately on 401 without retrying", async () => {
+    const pauseSubscription = jest.fn();
+    const deadLetter = jest.fn();
+    const dispatcher = new WebhookDeliveryDispatcher({
+      claimNext: jest.fn().mockResolvedValue(delivery),
+      decryptSecret: jest.fn().mockReturnValue("secret"),
+      getKeyring: jest.fn().mockReturnValue({ activeKeyId: "v1", keys: {} }),
+      post: jest.fn().mockResolvedValue({ status: 401, body: "unauthorized" }),
+      complete: jest.fn(),
+      retry: jest.fn(),
+      deadLetter,
+      recordSuccess: jest.fn(),
+      recordFailure: jest.fn(),
+      pauseSubscription,
+      now: jest.fn().mockReturnValue(new Date("2026-07-24T12:00:00.000Z")),
+      jitter: jest.fn().mockReturnValue(0)
+    });
+
+    await expect(dispatcher.dispatchOne()).resolves.toEqual({
+      status: "dead_letter"
+    });
+    expect(deadLetter).toHaveBeenCalledWith("del_1", 401, "HTTP_401");
+    expect(pauseSubscription).toHaveBeenCalledWith("sub_1");
   });
 });

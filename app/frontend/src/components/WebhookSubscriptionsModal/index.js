@@ -19,10 +19,15 @@ import api from "../../services/api";
 import toastError from "../../errors/toastError";
 
 const supportedEvents = [
+  "button.clicked",
   "message.received",
   "message.sent",
   "message.failed",
   "message.status.updated",
+  "handoff.paused",
+  "handoff.released",
+  "conversation.created",
+  "conversation.updated",
   "ticket.created",
   "ticket.updated",
   "contact.updated"

@@ -13,18 +13,29 @@ const mockMetaList = jest.fn((_req: Request, res: Response) =>
 const mockOk = jest.fn((_req: Request, res: Response) =>
   res.status(200).json({})
 );
+const mockConversation = jest.fn((_req: Request, res: Response) =>
+  res.status(202).json({ status: "accepted" })
+);
 
 jest.mock("../../messaging/public/http", () => {
   const { default: isMessagingAdmin } = jest.requireActual(
     "../../messaging/api/MessagingAdminGuard"
   );
   return {
-    apiKeyAuth: jest.fn(),
+    apiKeyAuth: jest.fn(
+      (_req: Request, _res: Response, next: NextFunction) => next()
+    ),
     createIssueApiCredentialHandler: () => mockOk,
     listApiCredentialsHandler: mockOk,
     revokeApiCredentialHandler: mockOk,
     createPublicTextMessageHandler: () => jest.fn(),
-    requireApiScope: () => jest.fn(),
+    requireApiScope: () =>
+      jest.fn((_req: Request, _res: Response, next: NextFunction) => next()),
+    createHandoffConversationHandler: () => mockConversation,
+    createFinalizeConversationHandler: () => mockConversation,
+    createIntegrationReadinessHandler: () => mockOk,
+    createTranscriptHandler: () => mockOk,
+    transcriptMediaHandler: mockOk,
     createMetaCloudChannelHandler: () => mockOk,
     listMetaCloudChannelsHandler: mockMetaList,
     revokeMetaCloudChannelHandler: mockOk,
@@ -39,7 +50,9 @@ jest.mock("../../messaging/public/http", () => {
       listDeliveries: mockOk,
       retryDelivery: mockOk
     },
-    publicApiRateLimit: jest.fn(),
+    publicApiRateLimit: jest.fn(
+      (_req: Request, _res: Response, next: NextFunction) => next()
+    ),
     messagingOpenApi: {},
     isMessagingAdmin
   };
@@ -98,4 +111,27 @@ describe("messaging admin routes", () => {
       expect(response.status).toBe(200);
     }
   );
+
+  it.each([
+    ["post", "/api/v1/conversations/conversation-1/handoff"],
+    ["post", "/api/v1/conversations/conversation-1/finalize"]
+  ] as const)("registers the Router contract route %s %s", async (method, route) => {
+    const response = await request(buildApp())
+      [method](route)
+      .set("Authorization", "Bearer dch_live_test.secret")
+      .set("Idempotency-Key", "request-12345678")
+      .send({});
+
+    expect(response.status).toBe(202);
+  });
+
+  it("registers authenticated integration readiness", async () => {
+    const response = await request(buildApp())
+      .get(
+        "/api/v1/integration/ready?connectionId=2&automationQueueId=11&humanQueueId=12"
+      )
+      .set("Authorization", "Bearer dch_live_test.secret");
+
+    expect(response.status).toBe(200);
+  });
 });

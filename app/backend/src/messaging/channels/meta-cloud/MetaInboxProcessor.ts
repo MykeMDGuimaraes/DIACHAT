@@ -1,3 +1,5 @@
+import { Op } from "sequelize";
+
 import sequelize from "../../../database";
 import Message from "../../../models/Message";
 import Contact from "../../../models/Contact";
@@ -6,13 +8,13 @@ import Whatsapp from "../../../models/Whatsapp";
 import MessageCommand from "../../persistence/models/MessageCommand";
 import MessagingInboxEvent from "../../persistence/models/MessagingInboxEvent";
 import MessagingOutboxEvent from "../../persistence/models/MessagingOutboxEvent";
+import ConversationAutomationState from "../../persistence/models/ConversationAutomationState";
 import {
   NormalizedMetaMessage,
   NormalizedMetaStatus,
   parseMetaCallback
 } from "./MetaCallbackParser";
 import MetaMediaService from "./MetaMediaService";
-import { Op } from "sequelize";
 
 interface ClaimedInbox {
   id: string;
@@ -83,6 +85,11 @@ export interface MetaMessagePersistenceDependencies {
   createTicket(data: Record<string, unknown>, transaction: any): Promise<any>;
   createMessage(data: Record<string, unknown>, transaction: any): Promise<any>;
   createOutbox(data: Record<string, unknown>, transaction: any): Promise<any>;
+  findAutomationState?(
+    companyId: number,
+    conversationId: string,
+    transaction: any
+  ): Promise<any>;
   loadMessage(id: string): Promise<any>;
   notifyMessage(message: Message, companyId: number): Promise<void> | void;
 }
@@ -116,6 +123,11 @@ const metaMessagePersistenceDependencies: MetaMessagePersistenceDependencies = {
     Message.create(data as any, { transaction }),
   createOutbox: (data, transaction) =>
     MessagingOutboxEvent.create(data as any, { transaction }),
+  findAutomationState: (companyId, conversationId, transaction) =>
+    ConversationAutomationState.findOne({
+      where: { companyId, conversationId },
+      transaction
+    }),
   loadMessage: id =>
     Message.findByPk(id, {
       include: [
@@ -184,6 +196,7 @@ export const persistMetaMessage = async (
       contact.id,
       transaction
     );
+    const conversationCreated = !ticket;
     if (!ticket) {
       ticket = await dependencies.createTicket(
         {
@@ -226,6 +239,35 @@ export const persistMetaMessage = async (
       },
       { transaction }
     );
+    const automationState =
+      ticket.uuid && dependencies.findAutomationState
+        ? await dependencies.findAutomationState(
+            companyId,
+            ticket.uuid,
+            transaction
+          )
+        : null;
+    if (conversationCreated) {
+      await dependencies.createOutbox(
+        {
+          companyId,
+          eventType: "conversation.created",
+          aggregateId: ticket.uuid,
+          payload: {
+            conversationId: ticket.uuid,
+            contactId: String(contact.id),
+            whatsappId,
+            externalTicketId: automationState?.externalTicketId || null,
+            automationEpoch: automationState?.automationEpoch ?? null,
+            actorType: "contact",
+            origin: "provider"
+          },
+          status: "ready",
+          attemptCount: 0
+        },
+        transaction
+      );
+    }
     await dependencies.createOutbox(
       {
         companyId,
@@ -235,6 +277,11 @@ export const persistMetaMessage = async (
           messageId: incoming.providerMessageId,
           whatsappId,
           kind: incoming.kind,
+          conversationId: ticket.uuid,
+          contactId: String(contact.id),
+          externalTicketId: automationState?.externalTicketId || null,
+          automationEpoch: automationState?.automationEpoch ?? null,
+          actorType: "contact",
           origin: "provider"
         },
         status: "ready",
@@ -333,9 +380,14 @@ const defaultDependencies: MetaInboxProcessorDependencies = {
           aggregateId: command.id,
           payload: {
             commandId: command.id,
+            messageId: command.messageId,
             providerMessageId: incoming.providerMessageId,
             status: incoming.status,
             whatsappId,
+            conversationId: command.conversationId,
+            contactId: command.contactId,
+            externalTicketId: command.externalTicketId,
+            automationEpoch: command.automationEpoch,
             origin: "provider"
           },
           status: "ready",
@@ -403,10 +455,13 @@ const defaultDependencies: MetaInboxProcessorDependencies = {
 };
 
 class MetaInboxProcessor {
+  // Parameter property keeps the durable inbox ports replaceable in tests.
+  // eslint-disable-next-line no-useless-constructor
   constructor(
     private readonly dependencies: MetaInboxProcessorDependencies = defaultDependencies
   ) {}
 
+  // eslint-disable-next-line class-methods-use-this
   parse(payload: Record<string, any>) {
     return parseMetaCallback(payload);
   }

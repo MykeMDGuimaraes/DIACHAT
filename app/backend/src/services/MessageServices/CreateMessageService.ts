@@ -7,6 +7,7 @@ import {
 import Message from "../../models/Message";
 import Ticket from "../../models/Ticket";
 import Whatsapp from "../../models/Whatsapp";
+import { publishPersistedBaileysMessageEvents } from "../../messaging/public/domainEvents";
 
 export interface MessageData {
   id: string;
@@ -89,6 +90,11 @@ const CreateMessageService = async ({
     await message.update({ queueId: message.ticket.queueId });
   }
 
+  await publishPersistedBaileysMessageEvents(
+    message,
+    message.ticket,
+    companyId
+  );
   notifyCreatedMessage(message, companyId);
 
   return message;

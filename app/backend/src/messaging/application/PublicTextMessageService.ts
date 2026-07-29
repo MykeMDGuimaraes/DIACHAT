@@ -9,6 +9,7 @@ import Whatsapp from "../../models/Whatsapp";
 import { createRequestFingerprint, validateIdempotencyKey } from "../domain/IdempotencyKey";
 import MessageCommand from "../persistence/models/MessageCommand";
 import MessagingOutboxEvent from "../persistence/models/MessagingOutboxEvent";
+import ConversationAutomationService from "./ConversationAutomationService";
 
 export interface CreatePublicTextMessageInput {
   companyId: number;
@@ -17,8 +18,10 @@ export interface CreatePublicTextMessageInput {
   idempotencyKey: string;
   recipient: string;
   text?: string;
-  kind?: "text" | "image" | "audio" | "video" | "document" | "template";
+  kind?: "text" | "buttons" | "image" | "audio" | "video" | "document" | "template";
   payload?: Record<string, any>;
+  externalTicketId?: string;
+  automationEpoch?: number;
 }
 
 interface PublicTextMessageDependencies {
@@ -38,6 +41,13 @@ interface PublicTextMessageDependencies {
   createMessage: (data: Record<string, unknown>, transaction: any) => Promise<any>;
   createCommand: (data: Record<string, unknown>, transaction: any) => Promise<any>;
   createOutboxEvent: (data: Record<string, unknown>, transaction: any) => Promise<any>;
+  reserveAutomatedMessage?: (input: {
+    companyId: number;
+    conversationId: string;
+    externalTicketId: string;
+    automationEpoch: number;
+    transaction: any;
+  }) => Promise<unknown>;
 }
 
 const defaultDependencies: PublicTextMessageDependencies = {
@@ -65,35 +75,51 @@ const defaultDependencies: PublicTextMessageDependencies = {
         status: { [Op.in]: ["open", "pending"] }
       },
       order: [["id", "DESC"]],
-      transaction
+      transaction,
+      lock: transaction.LOCK.UPDATE
     }),
   createTicket: (data, transaction) => Ticket.create(data as any, { transaction }),
   updateTicket: (ticket, data, transaction) => ticket.update(data, { transaction }),
   createMessage: (data, transaction) => Message.create(data as any, { transaction }),
   createCommand: (data, transaction) => MessageCommand.create(data as any, { transaction }),
   createOutboxEvent: (data, transaction) =>
-    MessagingOutboxEvent.create(data as any, { transaction })
+    MessagingOutboxEvent.create(data as any, { transaction }),
+  reserveAutomatedMessage: input =>
+    new ConversationAutomationService().reserveAutomatedMessage(input)
 };
 
 class PublicTextMessageService {
+  // Parameter property keeps the transactional repository replaceable in tests.
+  // eslint-disable-next-line no-useless-constructor
   constructor(private readonly dependencies = defaultDependencies) {}
 
+  // eslint-disable-next-line class-methods-use-this
   createCommandId(): string {
     return uuidv4();
   }
 
+  // eslint-disable-next-line class-methods-use-this
   fingerprint(
     input: CreatePublicTextMessageInput,
-    recipient: string,
-    provider = "baileys"
+    recipient: string
   ): string {
     const kind = input.kind || "text";
-    const payload = kind === "text" ? { text: input.text } : input.payload;
+    const payload =
+      kind === "text"
+        ? { text: input.text }
+        : {
+            ...(input.payload || {}),
+            ...(kind === "buttons" ? { text: input.text } : {})
+          };
     return createRequestFingerprint({
-      provider,
+      provider: "dia_chat",
       messageKind: kind,
       recipient,
-      requestPayload: payload
+      requestPayload: {
+        ...payload,
+        externalTicketId: input.externalTicketId,
+        automationEpoch: input.automationEpoch
+      }
     });
   }
 
@@ -106,33 +132,72 @@ class PublicTextMessageService {
     const recipient = input.recipient.replace(/\D/g, "");
     const kind = input.kind || "text";
     const payload: Record<string, any> =
-      kind === "text" ? { text: input.text } : { ...(input.payload || {}) };
-    const supportedKinds = ["text", "image", "audio", "video", "document", "template"];
-    const validText = kind !== "text" ||
+      kind === "text"
+        ? { text: input.text }
+        : {
+            ...(input.payload || {}),
+            ...(kind === "buttons" ? { text: input.text } : {})
+          };
+    const supportedKinds = ["text", "buttons", "image", "audio", "video", "document", "template"];
+    const validText = !["text", "buttons"].includes(kind) ||
       (typeof input.text === "string" && input.text.trim().length > 0);
     const validMedia = !["image", "audio", "video", "document"].includes(kind) ||
       (typeof payload.link === "string" && /^https:\/\//i.test(payload.link));
     const validTemplate = kind !== "template" ||
       (typeof payload.name === "string" && typeof payload.language === "string");
+    const buttons = Array.isArray(payload.buttons) ? payload.buttons : [];
+    const validButtons =
+      kind !== "buttons" ||
+      (buttons.length >= 1 &&
+        buttons.length <= 3 &&
+        buttons.every(
+          button =>
+            button &&
+            typeof button.id === "string" &&
+            Buffer.byteLength(button.id, "utf8") >= 1 &&
+            Buffer.byteLength(button.id, "utf8") <= 256 &&
+            typeof button.title === "string" &&
+            button.title.length >= 1 &&
+            button.title.length <= 20
+        ));
+    const validRouterContext =
+      input.externalTicketId === undefined ||
+      (typeof input.externalTicketId === "string" &&
+        input.externalTicketId.trim().length > 0 &&
+        Number.isInteger(input.automationEpoch) &&
+        (input.automationEpoch as number) >= 0);
     if (
       recipient.length < 10 ||
       recipient.length > 15 ||
       !supportedKinds.includes(kind) ||
       !validText ||
       !validMedia ||
-      !validTemplate
+      !validTemplate ||
+      !validButtons ||
+      !validRouterContext
     ) {
       throw new AppError("Mensagem ou destinatario invalidos", 400);
     }
-    const preview = kind === "text"
+    const preview = ["text", "buttons"].includes(kind)
       ? String(input.text)
       : String(payload.caption || `[${kind}]`);
 
     const normalizedInput = { ...input, idempotencyKey };
-    let requestFingerprint = "";
+    const requestFingerprint = this.fingerprint(normalizedInput, recipient);
 
     try {
       return await this.dependencies.transaction(async transaction => {
+      const existing = await this.dependencies.findCommand(normalizedInput, transaction);
+      if (existing) {
+        if (existing.requestFingerprint !== requestFingerprint) {
+          throw new AppError("IDEMPOTENCY_CONFLICT", 409);
+        }
+        if (!existing.responseSnapshot) {
+          throw new AppError("REQUEST_IN_PROGRESS", 409);
+        }
+        return { command: existing, message: null, replayed: true };
+      }
+
       const whatsapp = await this.dependencies.findWhatsapp(
         normalizedInput.whatsappId,
         normalizedInput.companyId,
@@ -142,22 +207,15 @@ class PublicTextMessageService {
         throw new AppError("Canal de WhatsApp nao encontrado", 404);
       }
       const provider = whatsapp.channelType === "meta_cloud" ? "meta_cloud" : "baileys";
+      if (kind === "buttons" && provider !== "baileys") {
+        throw new AppError("CAPABILITY_NOT_SUPPORTED", 422);
+      }
       if (kind === "template" && provider !== "meta_cloud") {
         throw new AppError(
           "Templates estao disponiveis somente em canais Meta Cloud",
           400
         );
       }
-      requestFingerprint = this.fingerprint(normalizedInput, recipient, provider);
-
-      const existing = await this.dependencies.findCommand(normalizedInput, transaction);
-      if (existing) {
-        if (existing.requestFingerprint !== requestFingerprint) {
-          throw new AppError("IDEMPOTENCY_CONFLICT", 409);
-        }
-        return { command: existing, message: null, replayed: true };
-      }
-
       let contact = await this.dependencies.findContact(
         recipient,
         normalizedInput.companyId,
@@ -182,6 +240,7 @@ class PublicTextMessageService {
         normalizedInput.companyId,
         transaction
       );
+      let conversationCreated = false;
       if (!ticket) {
         ticket = await this.dependencies.createTicket(
           {
@@ -195,12 +254,29 @@ class PublicTextMessageService {
           },
           transaction
         );
+        conversationCreated = true;
       } else {
         await this.dependencies.updateTicket(
           ticket,
           { lastMessage: preview },
           transaction
         );
+      }
+
+      if (
+        normalizedInput.externalTicketId !== undefined &&
+        normalizedInput.automationEpoch !== undefined
+      ) {
+        await (
+          this.dependencies.reserveAutomatedMessage ||
+          defaultDependencies.reserveAutomatedMessage!
+        )({
+          companyId: normalizedInput.companyId,
+          conversationId: ticket.uuid,
+          externalTicketId: normalizedInput.externalTicketId,
+          automationEpoch: normalizedInput.automationEpoch,
+          transaction
+        });
       }
 
       const commandId = this.createCommandId();
@@ -235,7 +311,18 @@ class PublicTextMessageService {
           status: "queued",
           attemptCount: 0,
           messageId: message.id,
-          requestPayload: { ticketId: ticket.id, ...payload }
+          externalTicketId: normalizedInput.externalTicketId,
+          automationEpoch: normalizedInput.automationEpoch,
+          conversationId: ticket.uuid,
+          contactId: String(contact.id),
+          requestPayload: { ticketId: ticket.id, ...payload },
+          responseSnapshot: {
+            id: commandId,
+            status: "accepted",
+            messageId: message.id,
+            conversationId: ticket.uuid,
+            contactId: String(contact.id)
+          }
         },
         transaction
       );
@@ -250,6 +337,27 @@ class PublicTextMessageService {
         },
         transaction
       );
+      if (conversationCreated) {
+        await this.dependencies.createOutboxEvent(
+          {
+            companyId: normalizedInput.companyId,
+            eventType: "conversation.created",
+            aggregateId: ticket.uuid,
+            payload: {
+              conversationId: ticket.uuid,
+              contactId: String(contact.id),
+              whatsappId: normalizedInput.whatsappId,
+              externalTicketId: normalizedInput.externalTicketId || null,
+              automationEpoch: normalizedInput.automationEpoch ?? null,
+              actorType: "system",
+              origin: "api"
+            },
+            status: "ready",
+            attemptCount: 0
+          },
+          transaction
+        );
+      }
 
         return { command, message, replayed: false };
       });
@@ -266,6 +374,9 @@ class PublicTextMessageService {
       }
       if (winningCommand.requestFingerprint !== requestFingerprint) {
         throw new AppError("IDEMPOTENCY_CONFLICT", 409);
+      }
+      if (!winningCommand.responseSnapshot) {
+        throw new AppError("REQUEST_IN_PROGRESS", 409);
       }
       return { command: winningCommand, message: null, replayed: true };
     }

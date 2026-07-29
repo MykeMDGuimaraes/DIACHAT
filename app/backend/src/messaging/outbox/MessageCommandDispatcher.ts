@@ -1,3 +1,4 @@
+/* eslint-disable max-classes-per-file */
 import { randomUUID } from "crypto";
 import { Op } from "sequelize";
 import sequelize from "../../database";
@@ -22,6 +23,7 @@ import {
 } from "../domain/MessagingStates";
 import MessageCommand from "../persistence/models/MessageCommand";
 import MessagingOutboxEvent from "../persistence/models/MessagingOutboxEvent";
+import ConversationAutomationState from "../persistence/models/ConversationAutomationState";
 import { logger } from "../../utils/logger";
 
 export interface MessageCommandEventSource {
@@ -30,6 +32,10 @@ export interface MessageCommandEventSource {
   whatsappId: number;
   messageId?: string | null;
   messageKind: string;
+  externalTicketId?: string | null;
+  automationEpoch?: number | null;
+  conversationId?: string | null;
+  contactId?: string | null;
 }
 
 export interface MessageOutboxEventDto {
@@ -46,6 +52,10 @@ export interface MessageOutboxEventDto {
     status?: string;
     errorCode?: string | null;
     errorMessage?: string | null;
+    externalTicketId?: string | null;
+    automationEpoch?: number | null;
+    conversationId?: string | null;
+    contactId?: string | null;
   };
   status: string;
   attemptCount: number;
@@ -64,6 +74,10 @@ export const buildMessageSentEvent = (
     whatsappId: command.whatsappId,
     providerMessageId: providerMessageId || null,
     kind: command.messageKind,
+    externalTicketId: command.externalTicketId,
+    automationEpoch: command.automationEpoch,
+    conversationId: command.conversationId,
+    contactId: command.contactId,
     origin: "api"
   },
   status: OUTBOX_EVENT_STATUS.READY,
@@ -83,6 +97,10 @@ export const buildMessageFailedEvent = (
     messageId: command.messageId,
     whatsappId: command.whatsappId,
     kind: command.messageKind,
+    externalTicketId: command.externalTicketId,
+    automationEpoch: command.automationEpoch,
+    conversationId: command.conversationId,
+    contactId: command.contactId,
     origin: "api",
     status: MESSAGE_COMMAND_STATUS.FAILED,
     errorCode,
@@ -104,6 +122,10 @@ export const buildMessageUnknownEvent = (
     messageId: command.messageId,
     whatsappId: command.whatsappId,
     kind: command.messageKind,
+    externalTicketId: command.externalTicketId,
+    automationEpoch: command.automationEpoch,
+    conversationId: command.conversationId,
+    contactId: command.contactId,
     origin: "api",
     status: MESSAGE_COMMAND_STATUS.UNKNOWN,
     errorCode: MESSAGE_COMMAND_ERROR_CODE.SEND_OUTCOME_UNKNOWN,
@@ -120,11 +142,35 @@ interface ClaimedDispatch {
   command: DispatchableMessageCommand & MessageCommandEventSource;
 }
 
+export const automationCommandIsCurrent = (
+  command: MessageCommandEventSource,
+  state?: {
+    state: string;
+    automationEpoch: number;
+    conversationId: string;
+  } | null
+): boolean => {
+  if (!command.externalTicketId) return true;
+  return Boolean(
+    state &&
+      state.state === "automation" &&
+      state.automationEpoch === command.automationEpoch &&
+      state.conversationId === command.conversationId
+  );
+};
+
 export interface MessageCommandDispatcherDependencies {
   claimNext: (now: Date) => Promise<ClaimedDispatch | null>;
   send: (
     command: DispatchableMessageCommand
   ) => Promise<{ providerMessageId?: string }>;
+  withSendPermit?: (
+    claim: ClaimedDispatch,
+    send: () => Promise<{ providerMessageId?: string }>
+  ) => Promise<{
+    status: "permitted" | "cancelled" | "fenced";
+    delivery?: { providerMessageId?: string };
+  }>;
   markSent: (
     claim: ClaimedDispatch,
     providerMessageId?: string
@@ -207,7 +253,18 @@ const finalizePair = async (
 
 const createDefaultDependencies = (
   providers: MessagingProvider[]
-): MessageCommandDispatcherDependencies => ({
+): MessageCommandDispatcherDependencies => {
+  const send = async (command: DispatchableMessageCommand) => {
+    const provider = providers.find(item => item.provider === command.provider);
+    if (!provider) {
+      throw new PermanentSendError({
+        code: "PROVIDER_NOT_SUPPORTED",
+        message: `Provider de mensageria nao suportado: ${command.provider}`
+      });
+    }
+    return provider.send(command);
+  };
+  return {
   claimNext: now =>
     sequelize.transaction(async transaction => {
       const event = await MessagingOutboxEvent.findOne({
@@ -244,6 +301,50 @@ const createDefaultDependencies = (
         return null;
       }
 
+      if (command.externalTicketId) {
+        const state = await ConversationAutomationState.findOne({
+          where: {
+            companyId: command.companyId,
+            externalTicketId: command.externalTicketId
+          },
+          transaction,
+          lock: transaction.LOCK.UPDATE
+        });
+        if (
+          !automationCommandIsCurrent(
+            command.toJSON() as unknown as MessageCommandEventSource,
+            state?.toJSON() as any
+          )
+        ) {
+          await command.update(
+            {
+              status: MESSAGE_COMMAND_STATUS.CANCELLED,
+              errorCode: "STALE_AUTOMATION_EPOCH",
+              cancelledAt: now,
+              completedAt: now
+            },
+            { transaction }
+          );
+          await event.update(
+            {
+              status: OUTBOX_EVENT_STATUS.COMPLETED,
+              leaseExpiresAt: null,
+              leaseToken: null
+            },
+            { transaction }
+          );
+          await MessagingOutboxEvent.create(
+            buildMessageFailedEvent(
+              command.toJSON() as unknown as MessageCommandEventSource,
+              "STALE_AUTOMATION_EPOCH",
+              "Comando cancelado antes do envio"
+            ) as any,
+            { transaction }
+          );
+          return null;
+        }
+      }
+
       const leaseToken = randomUUID();
       const leaseExpiresAt = new Date(now.getTime() + SEND_LEASE_MS);
       const attemptCount = command.attemptCount + 1;
@@ -274,16 +375,85 @@ const createDefaultDependencies = (
           MessageCommandEventSource
       };
     }),
-  send: async command => {
-    const provider = providers.find(item => item.provider === command.provider);
-    if (!provider) {
-      throw new PermanentSendError({
-        code: "PROVIDER_NOT_SUPPORTED",
-        message: `Provider de mensageria nao suportado: ${command.provider}`
+  send,
+  withSendPermit: (claim, sendOperation) =>
+    sequelize.transaction(async transaction => {
+      const state = claim.command.externalTicketId
+        ? await ConversationAutomationState.findOne({
+            where: {
+              companyId: claim.command.companyId,
+              externalTicketId: claim.command.externalTicketId
+            },
+            transaction,
+            lock: transaction.LOCK.UPDATE
+          })
+        : null;
+      const command = await MessageCommand.findOne({
+        where: { id: claim.command.id },
+        transaction,
+        lock: transaction.LOCK.UPDATE
       });
-    }
-    return provider.send(command);
-  },
+      const event = await MessagingOutboxEvent.findOne({
+        where: { id: claim.eventId },
+        transaction,
+        lock: transaction.LOCK.UPDATE
+      });
+      const leaseValid =
+        command?.status === MESSAGE_COMMAND_STATUS.SENDING &&
+        command.leaseToken === claim.leaseToken &&
+        command.leaseExpiresAt?.getTime() > Date.now() &&
+        event?.status === OUTBOX_EVENT_STATUS.PROCESSING &&
+        event.leaseToken === claim.leaseToken;
+      if (!leaseValid) return { status: "fenced" as const };
+      if (
+        claim.command.externalTicketId &&
+        !automationCommandIsCurrent(
+          claim.command,
+          state?.toJSON() as any
+        )
+      ) {
+        const now = new Date();
+        await command.update(
+          {
+            status: MESSAGE_COMMAND_STATUS.CANCELLED,
+            errorCode: "STALE_AUTOMATION_EPOCH",
+            cancelledAt: now,
+            completedAt: now,
+            leaseToken: null,
+            leaseExpiresAt: null
+          },
+          { transaction }
+        );
+        await event.update(
+          {
+            status: OUTBOX_EVENT_STATUS.COMPLETED,
+            leaseToken: null,
+            leaseExpiresAt: null
+          },
+          { transaction }
+        );
+        await MessagingOutboxEvent.create(
+          buildMessageFailedEvent(
+            claim.command,
+            "STALE_AUTOMATION_EPOCH",
+            "Comando cancelado imediatamente antes do envio"
+          ) as any,
+          { transaction }
+        );
+        return { status: "cancelled" as const };
+      }
+      const refreshedLeaseExpiresAt = new Date(Date.now() + SEND_LEASE_MS);
+      await command.update(
+        { leaseExpiresAt: refreshedLeaseExpiresAt },
+        { transaction }
+      );
+      await event.update(
+        { leaseExpiresAt: refreshedLeaseExpiresAt },
+        { transaction }
+      );
+      const delivery = await sendOperation();
+      return { status: "permitted" as const, delivery };
+    }),
   markSent: (claim, providerMessageId) =>
     finalizePair(
       claim,
@@ -301,6 +471,9 @@ const createDefaultDependencies = (
       claim,
       {
         status: MESSAGE_COMMAND_STATUS.QUEUED,
+        ...(error.code === "BAILEYS_SOCKET_UNAVAILABLE"
+          ? { attemptCount: Math.max(0, claim.attemptCount - 1) }
+          : {}),
         errorCode: error.code,
         errorDetails: {
           classification: error.classification,
@@ -383,7 +556,8 @@ const createDefaultDependencies = (
       },
       buildMessageUnknownEvent(claim.command, reason)
     )
-});
+  };
+};
 
 export type DispatchOutcome =
   | "idle"
@@ -392,6 +566,7 @@ export type DispatchOutcome =
   | "failed"
   | "dead_letter"
   | "unknown"
+  | "cancelled"
   | "fenced";
 
 class MessageCommandDispatcher {
@@ -412,7 +587,17 @@ class MessageCommandDispatcher {
 
     let delivery: { providerMessageId?: string };
     try {
-      delivery = await this.dependencies.send(claimed.command);
+      if (this.dependencies.withSendPermit) {
+        const permit = await this.dependencies.withSendPermit(claimed, () =>
+          this.dependencies.send(claimed.command)
+        );
+        if (permit.status !== "permitted") {
+          return { status: permit.status };
+        }
+        delivery = permit.delivery || {};
+      } else {
+        delivery = await this.dependencies.send(claimed.command);
+      }
     } catch (error) {
       return { status: await this.handleSendError(claimed, error, now) };
     }
@@ -449,7 +634,13 @@ class MessageCommandDispatcher {
         });
 
     if (sendError.classification === "retryable") {
-      if (claimed.attemptCount >= MAX_SEND_ATTEMPTS) {
+      const waitingForBaileysConnection =
+        sendError.code === "BAILEYS_SOCKET_UNAVAILABLE";
+
+      if (
+        claimed.attemptCount >= MAX_SEND_ATTEMPTS &&
+        !waitingForBaileysConnection
+      ) {
         const finalized = await this.dependencies.markDeadLetter(
           claimed,
           sendError
@@ -470,11 +661,13 @@ class MessageCommandDispatcher {
         return finalized ? "dead_letter" : "fenced";
       }
 
-      const delayMs = computeRetryDelayMs({
-        attempt: claimed.attemptCount,
-        retryAfterMs: sendError.retryAfterMs,
-        random: this.dependencies.random
-      });
+      const delayMs = waitingForBaileysConnection
+        ? 30_000
+        : computeRetryDelayMs({
+            attempt: claimed.attemptCount,
+            retryAfterMs: sendError.retryAfterMs,
+            random: this.dependencies.random
+          });
       const availableAt = new Date(now.getTime() + delayMs);
       const finalized = await this.dependencies.scheduleRetry(
         claimed,

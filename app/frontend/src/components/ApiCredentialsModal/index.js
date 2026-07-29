@@ -46,7 +46,12 @@ const ApiCredentialsModal = ({ open, onClose, connections = [] }) => {
     try {
       const { data } = await api.post("/api/v1/credentials", {
         name,
-        scopes: ["messages:write"],
+        scopes: [
+          "messages:write",
+          "conversations:write",
+          "integration:read",
+          "transcript:read"
+        ],
         connectionIds
       });
       setCreatedKey(data.apiKey);
