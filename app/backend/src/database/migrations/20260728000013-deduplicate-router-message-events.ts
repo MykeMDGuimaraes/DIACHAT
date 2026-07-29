@@ -2,7 +2,10 @@ import { QueryInterface } from "sequelize";
 
 module.exports = {
   up: async (queryInterface: QueryInterface) => {
-    await queryInterface.sequelize.query(`
+    // DELETE + CREATE INDEX na mesma transação: evita janela em que duplicatas
+    // novas passariam entre os dois passos em ambiente com escrita ativa.
+    await queryInterface.sequelize.transaction(async transaction => {
+      await queryInterface.sequelize.query(`
       WITH ranked AS (
         SELECT
           "id",
@@ -29,8 +32,8 @@ module.exports = {
       USING ranked
       WHERE event."id" = ranked."id"
         AND ranked.duplicate_rank > 1
-    `);
-    await queryInterface.sequelize.query(`
+    `, { transaction });
+      await queryInterface.sequelize.query(`
       CREATE UNIQUE INDEX IF NOT EXISTS messaging_router_message_event_unique
       ON messaging."MessagingOutboxEvents" ("companyId", "eventType", "aggregateId")
       WHERE "eventType" IN (
@@ -38,7 +41,8 @@ module.exports = {
         'button.clicked',
         'conversation.created'
       )
-    `);
+    `, { transaction });
+    });
   },
 
   down: async (queryInterface: QueryInterface) => {

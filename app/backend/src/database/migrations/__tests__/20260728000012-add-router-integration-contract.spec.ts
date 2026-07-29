@@ -8,10 +8,14 @@ describe("Router integration contract migration", () => {
     const createTable = jest.fn();
     const addIndex = jest.fn();
 
+    // Simula banco limpo (sem drift): nenhuma coluna/tabela/índice existe,
+    // então todos os guards deixam as operações executarem.
     await migration.up({
       addColumn,
       createTable,
-      addIndex
+      addIndex,
+      describeTable: jest.fn().mockResolvedValue({}),
+      sequelize: { query: jest.fn().mockResolvedValue([[], undefined]) }
     });
 
     const messageCommands = {
