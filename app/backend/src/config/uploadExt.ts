@@ -9,10 +9,14 @@ export default {
     destination: publicFolder,
     filename(req, file, cb) {
       const fileName = new Date().getTime() + path.extname(file.originalname);
-      if(fileName.split('.')[1] === 'mp3' || fileName.split('.')[1] === 'ogg'|| fileName.split('.')[1] === 'opus'){
+      if (
+        fileName.split(".")[1] === "mp3" ||
+        fileName.split(".")[1] === "ogg" ||
+        fileName.split(".")[1] === "opus"
+      ) {
         return cb(null, fileName);
       }
-      return cb(null, fileName + '.' + file.mimetype.split('/')[1]);
+      return cb(null, `${fileName}.${file.mimetype.split("/")[1]}`);
     }
   })
 };

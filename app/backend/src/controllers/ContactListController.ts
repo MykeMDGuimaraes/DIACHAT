@@ -1,5 +1,6 @@
 import * as Yup from "yup";
 import { Request, Response } from "express";
+import { head } from "lodash";
 import { getIO } from "../libs/socket";
 
 import ListService from "../services/ContactListService/ListService";
@@ -8,7 +9,6 @@ import ShowService from "../services/ContactListService/ShowService";
 import UpdateService from "../services/ContactListService/UpdateService";
 import DeleteService from "../services/ContactListService/DeleteService";
 import FindService from "../services/ContactListService/FindService";
-import { head } from "lodash";
 
 import ContactList from "../models/ContactList";
 
@@ -63,10 +63,13 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
   });
 
   const io = getIO();
-  io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-ContactList`, {
-    action: "create",
-    record
-  });
+  io.to(`company-${companyId}-mainchannel`).emit(
+    `company-${companyId}-ContactList`,
+    {
+      action: "create",
+      record
+    }
+  );
 
   return res.status(200).json(record);
 };
@@ -105,10 +108,13 @@ export const update = async (
   });
 
   const io = getIO();
-  io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-ContactList`, {
-    action: "update",
-    record
-  });
+  io.to(`company-${companyId}-mainchannel`).emit(
+    `company-${companyId}-ContactList`,
+    {
+      action: "update",
+      record
+    }
+  );
 
   return res.status(200).json(record);
 };
@@ -123,10 +129,13 @@ export const remove = async (
   await DeleteService(id);
 
   const io = getIO();
-  io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-ContactList`, {
-    action: "delete",
-    id
-  });
+  io.to(`company-${companyId}-mainchannel`).emit(
+    `company-${companyId}-ContactList`,
+    {
+      action: "delete",
+      id
+    }
+  );
 
   return res.status(200).json({ message: "Contact list deleted" });
 };
@@ -151,10 +160,13 @@ export const upload = async (req: Request, res: Response) => {
 
   const io = getIO();
 
-  io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-ContactListItem-${+id}`, {
-    action: "reload",
-    records: response
-  });
+  io.to(`company-${companyId}-mainchannel`).emit(
+    `company-${companyId}-ContactListItem-${+id}`,
+    {
+      action: "reload",
+      records: response
+    }
+  );
 
   return res.status(200).json(response);
 };

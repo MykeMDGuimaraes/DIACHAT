@@ -85,8 +85,7 @@ export const getEventsAfter = async (
 
   // If the first buffered event after the cursor is not cursor+1, part of the
   // gap was evicted from the short retention window: consumer must resync.
-  const needsResync =
-    events.length === 0 || events[0].id !== cursor + 1;
+  const needsResync = events.length === 0 || events[0].id !== cursor + 1;
 
   return { events, needsResync, latestSeq };
 };

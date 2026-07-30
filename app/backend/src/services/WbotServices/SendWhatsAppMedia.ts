@@ -1,13 +1,14 @@
-import { WAMessage, AnyMessageContent } from "baileys";
+import { sendBaileysSocketMessage } from "../../messaging/public/baileys";
+import { WAMessage, AnyMessageContent } from "../../messaging/public/baileys";
 import * as Sentry from "@sentry/node";
 import fs from "fs";
 import { exec } from "child_process";
 import path from "path";
 import ffmpegPath from "@ffmpeg-installer/ffmpeg";
+import { lookup } from "mime-types";
 import AppError from "../../errors/AppError";
 import GetTicketWbot from "../../helpers/GetTicketWbot";
 import Ticket from "../../models/Ticket";
-import { lookup } from "mime-types";
 import formatBody from "../../helpers/Mustache";
 
 interface Request {
@@ -63,46 +64,46 @@ export const getMessageOptions = async (
     if (typeMessage === "video") {
       options = {
         video: fs.readFileSync(pathMedia),
-        caption: body ? body : "",
-        fileName: fileName
+        caption: body || "",
+        fileName
         // gifPlayback: true
       };
     } else if (typeMessage === "audio") {
-      const typeAudio = true; //fileName.includes("audio-record-site");
+      const typeAudio = true; // fileName.includes("audio-record-site");
       const convert = await processAudio(pathMedia);
       if (typeAudio) {
         options = {
           audio: fs.readFileSync(convert),
           mimetype: typeAudio ? "audio/mp4" : mimeType,
-          caption: body ? body : null,
+          caption: body || null,
           ptt: true
         };
       } else {
         options = {
           audio: fs.readFileSync(convert),
           mimetype: typeAudio ? "audio/mp4" : mimeType,
-          caption: body ? body : null,
+          caption: body || null,
           ptt: true
         };
       }
     } else if (typeMessage === "document") {
       options = {
         document: fs.readFileSync(pathMedia),
-        caption: body ? body : null,
-        fileName: fileName,
+        caption: body || null,
+        fileName,
         mimetype: mimeType
       };
     } else if (typeMessage === "application") {
       options = {
         document: fs.readFileSync(pathMedia),
-        caption: body ? body : null,
-        fileName: fileName,
+        caption: body || null,
+        fileName,
         mimetype: mimeType
       };
     } else {
       options = {
         image: fs.readFileSync(pathMedia),
-        caption: body ? body : null
+        caption: body || null
       };
     }
 
@@ -120,7 +121,7 @@ const SendWhatsAppMedia = async ({
   body
 }: Request): Promise<WAMessage> => {
   try {
-    const wbot = await GetTicketWbot(ticket);
+    const wbot = await GetTicketWbot(ticket, { waitForReconnectMs: 45000 });
 
     const pathMedia = media.path;
     const typeMessage = media.mimetype.split("/")[0];
@@ -171,7 +172,8 @@ const SendWhatsAppMedia = async ({
       };
     }
 
-    const sentMessage = await wbot.sendMessage(
+    const sentMessage = await sendBaileysSocketMessage(
+      wbot,
       `${ticket.contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`,
       {
         ...options
@@ -184,6 +186,9 @@ const SendWhatsAppMedia = async ({
   } catch (err) {
     Sentry.captureException(err);
     console.log(err);
+    if (err instanceof AppError) {
+      throw err;
+    }
     throw new AppError("ERR_SENDING_WAPP_MSG");
   }
 };

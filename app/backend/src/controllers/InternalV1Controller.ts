@@ -1,6 +1,5 @@
 import { Request, Response } from "express";
-import { Op } from "sequelize";
-import { UniqueConstraintError } from "sequelize";
+import { Op, UniqueConstraintError } from "sequelize";
 
 import AppError from "../errors/AppError";
 import Contact from "../models/Contact";
@@ -77,7 +76,8 @@ export const listContacts = async (
   const { companyId } = req.user;
   const limit = parseLimit(req.query.limit);
   const cursor = parseCursor<ContactCursor>(req.query.cursor);
-  const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
+  const search =
+    typeof req.query.search === "string" ? req.query.search.trim() : "";
 
   const where: any = { companyId };
   if (cursor) {

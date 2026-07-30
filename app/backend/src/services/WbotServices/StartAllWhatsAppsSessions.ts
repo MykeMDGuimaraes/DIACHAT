@@ -1,6 +1,6 @@
+import * as Sentry from "@sentry/node";
 import ListWhatsAppsService from "../WhatsappService/ListWhatsAppsService";
 import { StartWhatsAppSession } from "./StartWhatsAppSession";
-import * as Sentry from "@sentry/node";
 
 export const StartAllWhatsAppsSessions = async (
   companyId: number

@@ -66,10 +66,13 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
   });
 
   const io = getIO();
-  io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-quickmessage`, {
-    action: "create",
-    record
-  });
+  io.to(`company-${companyId}-mainchannel`).emit(
+    `company-${companyId}-quickmessage`,
+    {
+      action: "create",
+      record
+    }
+  );
 
   return res.status(200).json(record);
 };
@@ -107,14 +110,17 @@ export const update = async (
   const record = await UpdateService({
     ...data,
     userId: req.user.id,
-    id,
+    id
   });
 
   const io = getIO();
-  io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-quickmessage`, {
-    action: "update",
-    record
-  });
+  io.to(`company-${companyId}-mainchannel`).emit(
+    `company-${companyId}-quickmessage`,
+    {
+      action: "update",
+      record
+    }
+  );
 
   return res.status(200).json(record);
 };
@@ -129,10 +135,13 @@ export const remove = async (
   await DeleteService(id);
 
   const io = getIO();
-  io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-quickmessage`, {
-    action: "delete",
-    id
-  });
+  io.to(`company-${companyId}-mainchannel`).emit(
+    `company-${companyId}-quickmessage`,
+    {
+      action: "delete",
+      id
+    }
+  );
 
   return res.status(200).json({ message: "Contact deleted" });
 };

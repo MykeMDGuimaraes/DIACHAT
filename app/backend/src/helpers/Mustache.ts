@@ -10,10 +10,10 @@ export const greeting = (): string => {
 
 export const firstName = (contact?: Contact): string => {
   if (contact && contact?.name) {
-    const nameArr = contact?.name.split(' ');
+    const nameArr = contact?.name.split(" ");
     return nameArr[0];
   }
-  return '';
+  return "";
 };
 
 export default (body: string, contact: Contact): string => {

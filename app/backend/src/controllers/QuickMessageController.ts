@@ -1,5 +1,8 @@
 import * as Yup from "yup";
 import { Request, Response } from "express";
+import { head } from "lodash";
+import fs from "fs";
+import path from "path";
 import { getIO } from "../libs/socket";
 
 import ListService from "../services/QuickMessageService/ListService";
@@ -10,10 +13,6 @@ import DeleteService from "../services/QuickMessageService/DeleteService";
 import FindService from "../services/QuickMessageService/FindService";
 
 import QuickMessage from "../models/QuickMessage";
-
-import { head } from "lodash";
-import fs from "fs";
-import path from "path";
 
 import AppError from "../errors/AppError";
 
@@ -70,10 +69,13 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
   });
 
   const io = getIO();
-  io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-quickmessage`, {
-    action: "create",
-    record
-  });
+  io.to(`company-${companyId}-mainchannel`).emit(
+    `company-${companyId}-quickmessage`,
+    {
+      action: "create",
+      record
+    }
+  );
 
   return res.status(200).json(record);
 };
@@ -110,14 +112,17 @@ export const update = async (
   const record = await UpdateService({
     ...data,
     userId: req.user.id,
-    id,
+    id
   });
 
   const io = getIO();
-  io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-quickmessage`, {
-    action: "update",
-    record
-  });
+  io.to(`company-${companyId}-mainchannel`).emit(
+    `company-${companyId}-quickmessage`,
+    {
+      action: "update",
+      record
+    }
+  );
 
   return res.status(200).json(record);
 };
@@ -132,10 +137,13 @@ export const remove = async (
   await DeleteService(id);
 
   const io = getIO();
-  io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-quickmessage`, {
-    action: "delete",
-    id
-  });
+  io.to(`company-${companyId}-mainchannel`).emit(
+    `company-${companyId}-quickmessage`,
+    {
+      action: "delete",
+      id
+    }
+  );
 
   return res.status(200).json({ message: "Contact deleted" });
 };
@@ -160,15 +168,15 @@ export const mediaUpload = async (
 
   try {
     const quickmessage = await QuickMessage.findByPk(id);
-    
-    quickmessage.update ({
+
+    quickmessage.update({
       mediaPath: file.filename,
       mediaName: file.originalname
     });
 
     return res.send({ mensagem: "Arquivo Anexado" });
-    } catch (err: any) {
-      throw new AppError(err.message);
+  } catch (err: any) {
+    throw new AppError(err.message);
   }
 };
 
@@ -177,22 +185,26 @@ export const deleteMedia = async (
   res: Response
 ): Promise<Response> => {
   const { id } = req.params;
-  const { companyId } = req.user
+  const { companyId } = req.user;
 
   try {
     const quickmessage = await QuickMessage.findByPk(id);
-    const filePath = path.resolve("public","quickMessage",quickmessage.mediaName);
+    const filePath = path.resolve(
+      "public",
+      "quickMessage",
+      quickmessage.mediaName
+    );
     const fileExists = fs.existsSync(filePath);
     if (fileExists) {
       fs.unlinkSync(filePath);
     }
-    quickmessage.update ({
+    quickmessage.update({
       mediaPath: null,
       mediaName: null
     });
 
     return res.send({ mensagem: "Arquivo Excluído" });
-    } catch (err: any) {
-      throw new AppError(err.message);
+  } catch (err: any) {
+    throw new AppError(err.message);
   }
 };

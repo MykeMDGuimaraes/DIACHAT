@@ -1,0 +1,51 @@
+{
+  "generatedAt": "2026-07-29T22:50:33.235Z",
+  "mode": "dry-validation",
+  "liveGate": "not-run",
+  "fixtures": [
+    {
+      "name": "baileys-rich-v2",
+      "provider": "baileys",
+      "adapterInputs": 16
+    },
+    {
+      "name": "meta-rich-v2",
+      "provider": "meta_cloud",
+      "adapterInputs": 16
+    }
+  ],
+  "externalContractGate": {
+    "status": "blocked",
+    "compatible": false,
+    "activationBlocked": true,
+    "generatedEnvelopes": 36,
+    "generatedBy": "real-adapter-plus-WhatsAppMirrorProjectionService",
+    "reasons": [
+      "schema extra_forbidden",
+      "specialized event types literal_error"
+    ]
+  },
+  "replayCycle": {
+    "inputs": 32,
+    "selection": "cartesian-before-modulo",
+    "outboxEventsPerRequest": 1,
+    "identity": "deterministic-runId-runStartedAt-plus-sequence",
+    "timestampPolicy": "fixed-runStartedAt-at-150-per-second-never-future"
+  },
+  "scheduler": {
+    "offeredWindows": 1800,
+    "eventsPerWindow": 150,
+    "offeredEvents": 270000,
+    "clockTolerancePercent": 0.5,
+    "completionMeasuredSeparately": true,
+    "requestTimeoutUsesAbortController": true
+  },
+  "target": {
+    "requestsPerSecond": 150,
+    "durationSeconds": 1800,
+    "expectedEvents": 270000,
+    "drainDeadlineSeconds": 900
+  },
+  "fixtureValidationPassed": true,
+  "activationBlocked": true
+}

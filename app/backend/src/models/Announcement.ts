@@ -20,7 +20,7 @@ class Announcement extends Model<Announcement> {
   id: number;
 
   @Column
-  priority: number; //1 - alta, 2 - média, 3 - baixa
+  priority: number; // 1 - alta, 2 - média, 3 - baixa
 
   @Column
   title: string;

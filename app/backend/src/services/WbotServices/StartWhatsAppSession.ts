@@ -1,10 +1,10 @@
+import * as Sentry from "@sentry/node";
 import { initWASocket } from "../../libs/wbot";
 import Whatsapp from "../../models/Whatsapp";
 import { wbotMessageListener } from "./wbotMessageListener";
 import { getIO } from "../../libs/socket";
 import wbotMonitor from "./wbotMonitor";
 import { logger } from "../../utils/logger";
-import * as Sentry from "@sentry/node";
 
 export const StartWhatsAppSession = async (
   whatsapp: Whatsapp,

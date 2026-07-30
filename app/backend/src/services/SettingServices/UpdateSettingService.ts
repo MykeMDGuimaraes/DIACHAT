@@ -16,7 +16,7 @@ const UpdateSettingService = async ({
     where: {
       key,
       companyId
-    }, 
+    },
     defaults: {
       key,
       value,

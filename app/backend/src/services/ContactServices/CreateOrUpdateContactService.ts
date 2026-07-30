@@ -1,9 +1,10 @@
+import { isNil } from "lodash";
 import { getIO } from "../../libs/socket";
 import { publishTenantEvent } from "../../libs/tenantEvents";
 import { toContactDTO } from "../InternalV1Services/Dtos";
 import Contact from "../../models/Contact";
 import ContactCustomField from "../../models/ContactCustomField";
-import { isNil } from "lodash";
+
 interface ExtraInfo extends ContactCustomField {
   name: string;
   value: string;
@@ -44,16 +45,19 @@ const CreateOrUpdateContactService = async ({
 
   if (contact) {
     contact.update({ profilePicUrl });
-    console.log(contact.whatsappId)
+    console.log(contact.whatsappId);
     if (isNil(contact.whatsappId === null)) {
       contact.update({
         whatsappId
       });
     }
-    io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-contact`, {
-      action: "update",
-      contact
-    });
+    io.to(`company-${companyId}-mainchannel`).emit(
+      `company-${companyId}-contact`,
+      {
+        action: "update",
+        contact
+      }
+    );
   } else {
     contact = await Contact.create({
       name,
@@ -66,10 +70,13 @@ const CreateOrUpdateContactService = async ({
       whatsappId
     });
 
-    io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-contact`, {
-      action: "create",
-      contact
-    });
+    io.to(`company-${companyId}-mainchannel`).emit(
+      `company-${companyId}-contact`,
+      {
+        action: "create",
+        contact
+      }
+    );
   }
 
   publishTenantEvent(companyId, "contact.updated", {

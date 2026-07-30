@@ -49,11 +49,18 @@ const UpdateQueueIntegrationService = async ({
     typebotUnknownMessage,
     typebotDelayMessage,
     typebotKeywordRestart,
-    typebotRestartMessage 
+    typebotRestartMessage
   } = integrationData;
 
   try {
-    await schema.validate({ type, name, projectName, jsonContent, language, urlN8N });
+    await schema.validate({
+      type,
+      name,
+      projectName,
+      jsonContent,
+      language,
+      urlN8N
+    });
   } catch (err) {
     throw new AppError(err.message);
   }
@@ -74,7 +81,7 @@ const UpdateQueueIntegrationService = async ({
     typebotUnknownMessage,
     typebotDelayMessage,
     typebotKeywordRestart,
-    typebotRestartMessage 
+    typebotRestartMessage
   });
 
   return integration;

@@ -36,15 +36,16 @@ module.exports = {
   ...(process.env.DB_SSL === "true" || (urlConfig.ssl && !process.env.DB_HOST)
     ? { dialectOptions: { ssl: { require: true, rejectUnauthorized: false } } }
     : {}),
-  logging: process.env.DB_DEBUG === "true"
-    ? (msg) => console.log(`[Sequelize] ${new Date().toISOString()}: ${msg}`)
-    : false,
+  logging:
+    process.env.DB_DEBUG === "true"
+      ? msg => console.log(`[Sequelize] ${new Date().toISOString()}: ${msg}`)
+      : false,
   pool: {
     max: 20,
     min: 1,
     acquire: 0,
     idle: 30000,
-    evict: 1000 * 60 * 5,
+    evict: 1000 * 60 * 5
   },
   retry: {
     max: 3,
@@ -61,5 +62,5 @@ module.exports = {
       /Operation timeout/,
       /ETIMEDOUT/
     ]
-  },
+  }
 };

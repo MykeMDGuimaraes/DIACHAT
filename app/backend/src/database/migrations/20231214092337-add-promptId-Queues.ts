@@ -7,7 +7,7 @@ module.exports = {
       references: { model: "Prompts", key: "id" },
       onUpdate: "CASCADE",
       onDelete: "SET NULL"
-    })
+    });
   },
 
   down: (queryInterface: QueryInterface) => {

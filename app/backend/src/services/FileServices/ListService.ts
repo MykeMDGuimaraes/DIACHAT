@@ -28,7 +28,7 @@ const ListService = async ({
     };
   }
   const { count, rows: files } = await Files.findAndCountAll({
-    where: {companyId, ...whereCondition},
+    where: { companyId, ...whereCondition },
     limit,
     offset,
     order: [["name", "ASC"]]

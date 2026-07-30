@@ -1,7 +1,7 @@
 import Redis from "ioredis";
-import { REDIS_URI_CONNECTION } from "../config/redis";
 import util from "util";
 import * as crypto from "crypto";
+import { REDIS_URI_CONNECTION } from "../config/redis";
 
 const redis = new Redis(REDIS_URI_CONNECTION);
 
@@ -63,9 +63,13 @@ export function del(key: string) {
   return delPromisefy(key);
 }
 
+export function ping() {
+  return redis.ping();
+}
+
 export async function delFromPattern(pattern: string) {
   const all = await getKeys(pattern);
-  for (let item of all) {
+  for (const item of all) {
     del(item);
   }
 }
@@ -77,6 +81,7 @@ export const cacheLayer = {
   getFromParams,
   getKeys,
   del,
+  ping,
   delFromParams,
   delFromPattern
 };

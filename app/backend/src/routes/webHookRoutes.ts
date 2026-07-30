@@ -1,5 +1,6 @@
 import { Router } from "express";
 import * as WebHooksController from "../controllers/WebHookController";
+
 const webHooksRoutes = Router();
 
 webHooksRoutes.get("/", WebHooksController.index);

@@ -12,7 +12,7 @@ const GetDefaultWhatsApp = async (
     where: { isDefault: true, companyId }
   });
 
-  if (defaultWhatsapp?.status === 'CONNECTED') {
+  if (defaultWhatsapp?.status === "CONNECTED") {
     connection = defaultWhatsapp;
   } else {
     const whatsapp = await Whatsapp.findOne({
@@ -23,7 +23,7 @@ const GetDefaultWhatsApp = async (
 
   if (userId) {
     const whatsappByUser = await GetDefaultWhatsAppByUser(userId);
-    if (whatsappByUser?.status === 'CONNECTED') {
+    if (whatsappByUser?.status === "CONNECTED") {
       connection = whatsappByUser;
     } else {
       const whatsapp = await Whatsapp.findOne({
@@ -34,7 +34,9 @@ const GetDefaultWhatsApp = async (
   }
 
   if (!connection) {
-    throw new AppError(`Nenhum número de Whatsapp foi configurado para essa empresa`);
+    throw new AppError(
+      "Nenhum número de Whatsapp foi configurado para essa empresa"
+    );
   }
 
   return connection;

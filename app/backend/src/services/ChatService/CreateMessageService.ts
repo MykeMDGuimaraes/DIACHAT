@@ -40,7 +40,7 @@ export default async function CreateMessageService({
     where: { chatId }
   });
 
-  for (let chatUser of chatUsers) {
+  for (const chatUser of chatUsers) {
     if (chatUser.userId === senderId) {
       await chatUser.update({ unreads: 0 });
     } else {

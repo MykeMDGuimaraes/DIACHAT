@@ -1,6 +1,6 @@
 import { Op, fn, col, where } from "sequelize";
-import Campaign from "../../models/Campaign";
 import { isEmpty } from "lodash";
+import Campaign from "../../models/Campaign";
 import ContactList from "../../models/ContactList";
 import Whatsapp from "../../models/Whatsapp";
 import CampaignSetting from "../../models/CampaignSetting";
@@ -20,7 +20,7 @@ interface Response {
 const ListService = async ({
   companyId
 }: Request): Promise<CampaignSetting[]> => {
-  let whereCondition: any = {
+  const whereCondition: any = {
     companyId
   };
 

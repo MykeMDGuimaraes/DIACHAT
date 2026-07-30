@@ -12,6 +12,8 @@ interface CompanyData {
   campaignsEnabled?: boolean;
   dueDate?: string;
   recurrence?: string;
+  messagingRequestsPerMinute?: number;
+  messagingUploadMbPerMinute?: number;
 }
 
 const UpdateCompanyService = async (
@@ -26,7 +28,9 @@ const UpdateCompanyService = async (
     planId,
     campaignsEnabled,
     dueDate,
-    recurrence
+    recurrence,
+    messagingRequestsPerMinute,
+    messagingUploadMbPerMinute
   } = companyData;
 
   if (!company) {
@@ -40,7 +44,13 @@ const UpdateCompanyService = async (
     status,
     planId,
     dueDate,
-    recurrence
+    recurrence,
+    ...(messagingRequestsPerMinute !== undefined
+      ? { messagingRequestsPerMinute }
+      : {}),
+    ...(messagingUploadMbPerMinute !== undefined
+      ? { messagingUploadMbPerMinute }
+      : {})
   });
 
   if (companyData.campaignsEnabled !== undefined) {

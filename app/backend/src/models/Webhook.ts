@@ -1,4 +1,13 @@
-import { Model, Table, Column, PrimaryKey, AutoIncrement,DataType, CreatedAt, UpdatedAt } from 'sequelize-typescript';
+import {
+  Model,
+  Table,
+  Column,
+  PrimaryKey,
+  AutoIncrement,
+  DataType,
+  CreatedAt,
+  UpdatedAt
+} from "sequelize-typescript";
 
 @Table({
   tableName: "Webhooks"

@@ -18,7 +18,7 @@ parentPort.on("message", async data => {
   } = data;
 
   // Chame a função sendMail dentro do worker com as variáveis
-  if (typeof data === 'object') {
+  if (typeof data === "object") {
     await ActionsWebhookService(
       idFlowDb,
       companyId,

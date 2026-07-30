@@ -1,11 +1,14 @@
 import { subHours } from "date-fns";
 import { Op } from "sequelize";
+
+import sequelize from "../../database";
+import { persistBaileysConversationCreated } from "../../messaging/public/domainEvents";
 import Contact from "../../models/Contact";
 import Ticket from "../../models/Ticket";
-import ShowTicketService from "./ShowTicketService";
-import FindOrCreateATicketTrakingService from "./FindOrCreateATicketTrakingService";
 import Setting from "../../models/Setting";
 import Whatsapp from "../../models/Whatsapp";
+import FindOrCreateATicketTrakingService from "./FindOrCreateATicketTrakingService";
+import ShowTicketService from "./ShowTicketService";
 
 interface TicketData {
   status?: string;
@@ -18,7 +21,8 @@ const FindOrCreateTicketService = async (
   whatsappId: number,
   unreadMessages: number,
   companyId: number,
-  groupContact?: Contact
+  groupContact: Contact | undefined,
+  creationOrigin: "provider" | "api"
 ): Promise<Ticket> => {
   let ticket = await Ticket.findOne({
     where: {
@@ -100,19 +104,31 @@ const FindOrCreateTicketService = async (
     }
   }
 
-    const whatsapp = await Whatsapp.findOne({
+  const whatsapp = await Whatsapp.findOne({
     where: { id: whatsappId }
   });
 
   if (!ticket) {
-    ticket = await Ticket.create({
-      contactId: groupContact ? groupContact.id : contact.id,
-      status: "pending",
-      isGroup: !!groupContact,
-      unreadMessages,
-      whatsappId,
-      whatsapp,
-      companyId
+    ticket = await sequelize.transaction(async transaction => {
+      const createdTicket = await Ticket.create(
+        {
+          contactId: groupContact ? groupContact.id : contact.id,
+          status: "pending",
+          isGroup: !!groupContact,
+          unreadMessages,
+          whatsappId,
+          whatsapp,
+          companyId
+        },
+        { transaction }
+      );
+      await persistBaileysConversationCreated(
+        createdTicket,
+        companyId,
+        creationOrigin,
+        transaction
+      );
+      return createdTicket;
     });
     await FindOrCreateATicketTrakingService({
       ticketId: ticket.id,

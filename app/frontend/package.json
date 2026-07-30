@@ -25,7 +25,6 @@
     "chart.js": "^3.9.1",
     "chartjs-plugin-datalabels": "^2.1.0",
     "compressorjs": "^1.2.1",
-    "context": "^4.0.0",
     "date-fns": "^2.16.1",
     "emoji-mart": "^3.0.0",
     "formik": "^2.2.0",
@@ -75,7 +74,7 @@
   },
   "scripts": {
     "start": "react-scripts start",
-    "build": "GENERATE_SOURCEMAP=false react-scripts build",
+    "build": "node -e \"process.env.GENERATE_SOURCEMAP='false';require('react-scripts/scripts/build')\"",
     "builddev": "react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject"
@@ -135,7 +134,6 @@
     "svgo": "^2.8.3",
     "tmp": "^0.2.3",
     "underscore": "^1.13.8",
-    "uuid": "^11.1.1",
     "webpack-dev-middleware": "^5.3.4",
     "webpack-dev-server": "^4.15.2",
     "ws": "^8.18.0",

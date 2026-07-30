@@ -26,7 +26,7 @@ export const webHook = async (
 ): Promise<Response> => {
   try {
     const { body } = req;
-    console.log(30, "WebHookController", { body })
+    console.log(30, "WebHookController", { body });
 
     if (body.object === "page" || body.object === "instagram") {
       let channel: string;
@@ -47,7 +47,7 @@ export const webHook = async (
 
         if (getTokenPage) {
           entry.messaging?.forEach((data: any) => {
-            //handleMessage(getTokenPage, data, channel, getTokenPage.companyId); TODO: Check Facebook Services
+            // handleMessage(getTokenPage, data, channel, getTokenPage.companyId); TODO: Check Facebook Services
           });
         }
       });

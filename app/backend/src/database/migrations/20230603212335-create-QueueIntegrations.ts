@@ -25,11 +25,11 @@ module.exports = {
       },
       jsonContent: {
         type: DataTypes.TEXT,
-        allowNull: false,
+        allowNull: false
       },
       language: {
         type: DataTypes.STRING,
-        allowNull: false,
+        allowNull: false
       },
       createdAt: {
         type: DataTypes.DATE,

@@ -26,10 +26,8 @@ const ListPromptsService = async ({
 
   if (searchParam) {
     whereCondition = {
-      [Op.or]: [
-        { name: { [Op.like]: `%${searchParam}%` } }
-      ]
-    }
+      [Op.or]: [{ name: { [Op.like]: `%${searchParam}%` } }]
+    };
   }
 
   logger.info(whereCondition);
@@ -45,7 +43,7 @@ const ListPromptsService = async ({
     ],
     limit,
     offset,
-    order: [["name", "ASC"]],
+    order: [["name", "ASC"]]
   });
   const hasMore = count > offset + prompts.length;
 

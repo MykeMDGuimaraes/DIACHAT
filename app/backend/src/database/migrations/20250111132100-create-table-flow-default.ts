@@ -11,19 +11,19 @@ module.exports = {
       },
       companyId: {
         type: DataTypes.INTEGER,
-        allowNull: false,
+        allowNull: false
       },
       userId: {
         type: DataTypes.INTEGER,
-        allowNull: false,
+        allowNull: false
       },
       flowIdWelcome: {
         type: DataTypes.INTEGER,
-        allowNull: true,
+        allowNull: true
       },
       flowIdNotPhrase: {
         type: DataTypes.INTEGER,
-        allowNull: true,
+        allowNull: true
       },
       createdAt: {
         type: DataTypes.DATE,

@@ -1,8 +1,8 @@
+import { FindOptions } from "sequelize/types";
 import Whatsapp from "../../models/Whatsapp";
 import AppError from "../../errors/AppError";
 import Queue from "../../models/Queue";
 import QueueOption from "../../models/QueueOption";
-import { FindOptions } from "sequelize/types";
 import Prompt from "../../models/Prompt";
 
 const ShowWhatsAppService = async (
@@ -15,12 +15,19 @@ const ShowWhatsAppService = async (
       {
         model: Queue,
         as: "queues",
-        attributes: ["id", "name", "color", "greetingMessage", "integrationId", "promptId"],
+        attributes: [
+          "id",
+          "name",
+          "color",
+          "greetingMessage",
+          "integrationId",
+          "promptId"
+        ],
         include: [{ model: QueueOption, as: "options" }]
       },
       {
         model: Prompt,
-        as: "prompt",
+        as: "prompt"
       }
     ],
     order: [["queues", "orderQueue", "ASC"]]

@@ -1,10 +1,11 @@
 import AppError from "../../errors/AppError";
 import { FlowBuilderModel } from "../../models/FlowBuilder";
 
-const DeleteFlowBuilderService = async (id: number): Promise<FlowBuilderModel> => {
-  
+const DeleteFlowBuilderService = async (
+  id: number
+): Promise<FlowBuilderModel> => {
   const flow = await FlowBuilderModel.findOne({
-    where: { id: id }
+    where: { id }
   });
 
   if (!flow) {
@@ -17,4 +18,3 @@ const DeleteFlowBuilderService = async (id: number): Promise<FlowBuilderModel> =
 };
 
 export default DeleteFlowBuilderService;
-

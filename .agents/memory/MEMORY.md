@@ -3,4 +3,13 @@
 - [uuid v1/v4 subpath under CRA5](uuid-subpath-cra-pitfalls.md) — exposing uuid ./v1 and ./v4 for react-trello: never use .cjs shim (file-loader → URL string) nor dist/cjs (node crypto); point exports at dist/esm-browser.
 - [Atendechat frontend patches](atendechat-frontend-patches.md) — `npm install` in app/frontend wipes uuid/eslint-scope/schema-utils patches; replit-start.sh only re-applies them when node_modules is missing.
 - [Isolamento multi-tenant](multi-tenant-isolation.md) — todo Show*/mutação por id precisa de companyId do JWT com 404 em cross-tenant; socket CORS vem de FRONTEND_URL.
+- [Push de branch em worktree](worktree-branch-push.md) — shell push falha sem token; use gitPush após liberar a branch do worktree e fazer switch temporário no workspace.
+- [Banco de teste do backend](backend-test-db.md) — crie `diachat_test` e reescreva DATABASE_URL; FKs de migrações em schema messaging precisam qualificar schema public.
+- [Backend ESLint vs ajv override](backend-eslint-ajv.md) — override global de ajv deve ficar em ^6 no backend; ajv 8 quebra o eslintrc do ESLint 8.
+- [Envio aguarda reconexão do wbot](wbot-send-reconnect-wait.md) — sends esperam sessão Baileys voltar (45s→503); jest exige mock de baileys (crypto.subtle).
+- [Backend clean install vs firewall](backend-clean-install.md) — override→graceful-fs; baileys vendorado em vendor/; após merge que muda package.json, regenerar lock (rm + install --package-lock-only) ou o npm ci do deploy falha.
+- [ESLint --fix hazards no backend](eslint-autofix-hazards.md) — fix em massa quebrou sequelize/types, dot-notation e @ts-ignore; sempre rodar tsc + reiniciar Backend depois.
 - [Build CRA de produção sem OOM](cra-build-oom.md) — só compila com GENERATE_SOURCEMAP=false + heap ~2560MB e dev server parado; processos em background do bash morrem, use workflow temporário.
+- [Preflight de produção](deploy-preflight-env.md) — publish "waiting for ready" sem logs = preflight falhou; vars novas vão no app/backend/.env (embarcado na imagem), validar preflight local antes.
+- [Drift de schema no publish](publish-schema-sync-drift.md) — sync dev→prod adiciona colunas em tabelas existentes sem SequelizeMeta; migrações precisam ser idempotentes (guards describeTable/to_regclass/pg_indexes).
+- [Custom DNS lookup no Node >=18](node-lookup-all-true.md) — https.request chama lookup com all=true esperando array; retorno único quebra com "Invalid IP address: undefined"; validar rede com disparo real, não só mocks.

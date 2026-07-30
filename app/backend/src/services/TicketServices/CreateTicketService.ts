@@ -26,17 +26,16 @@ const CreateTicketService = async ({
 }: Request): Promise<Ticket> => {
   let whatsapp;
 
-  if (whatsappId !== undefined && whatsappId !== null && whatsappId !==  "") {
-    whatsapp = await ShowWhatsAppService(whatsappId, companyId)
+  if (whatsappId !== undefined && whatsappId !== null && whatsappId !== "") {
+    whatsapp = await ShowWhatsAppService(whatsappId, companyId);
   }
-  
+
   let defaultWhatsapp = await GetDefaultWhatsAppByUser(userId);
 
   if (whatsapp) {
     defaultWhatsapp = whatsapp;
   }
-  if (!defaultWhatsapp)
-    defaultWhatsapp = await GetDefaultWhatsApp(companyId);
+  if (!defaultWhatsapp) defaultWhatsapp = await GetDefaultWhatsApp(companyId);
 
   await CheckContactOpenTickets(contactId, whatsappId);
 
@@ -59,7 +58,13 @@ const CreateTicketService = async ({
   });
 
   await Ticket.update(
-    { companyId, queueId, userId, whatsappId: defaultWhatsapp.id, status: "open" },
+    {
+      companyId,
+      queueId,
+      userId,
+      whatsappId: defaultWhatsapp.id,
+      status: "open"
+    },
     { where: { id } }
   );
 

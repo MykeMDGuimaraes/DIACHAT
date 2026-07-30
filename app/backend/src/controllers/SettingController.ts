@@ -36,10 +36,13 @@ export const update = async (
   });
 
   const io = getIO();
-  io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-settings`, {
-    action: "update",
-    setting
-  });
+  io.to(`company-${companyId}-mainchannel`).emit(
+    `company-${companyId}-settings`,
+    {
+      action: "update",
+      setting
+    }
+  );
 
   return res.status(200).json(setting);
 };

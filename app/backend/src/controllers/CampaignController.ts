@@ -1,9 +1,9 @@
 import * as Yup from "yup";
 import { Request, Response } from "express";
-import { getIO } from "../libs/socket";
 import { head } from "lodash";
 import fs from "fs";
 import path from "path";
+import { getIO } from "../libs/socket";
 
 import ListService from "../services/CampaignService/ListService";
 import CreateService from "../services/CampaignService/CreateService";
@@ -70,56 +70,77 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
     throw new AppError(err.message);
   }
 
-  if (typeof data.tagListId === 'number' && typeof data.contactListId !== 'number') {
+  if (
+    typeof data.tagListId === "number" &&
+    typeof data.contactListId !== "number"
+  ) {
     const tagId = data.tagListId;
     const campanhaNome = data.name;
 
     try {
-      const contactListId = await createContactListFromTag(tagId, companyId, campanhaNome);
+      const contactListId = await createContactListFromTag(
+        tagId,
+        companyId,
+        campanhaNome
+      );
 
       const record = await CreateService({
         ...data,
         tagId: Number(data.tagListId),
         companyId,
-        contactListId: contactListId,
+        contactListId
       });
       const io = getIO();
-      io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-campaign`, {
-        action: "create",
-        record
-      });
+      io.to(`company-${companyId}-mainchannel`).emit(
+        `company-${companyId}-campaign`,
+        {
+          action: "create",
+          record
+        }
+      );
       return res.status(200).json(record);
     } catch (error) {
-      console.error('Error:', error);
-      return res.status(500).json({ error: 'Error creating contact list' });
+      console.error("Error:", error);
+      return res.status(500).json({ error: "Error creating contact list" });
     }
   }
 
-  if (typeof data.tagListId === 'number' && typeof data.contactListId === 'number') {
+  if (
+    typeof data.tagListId === "number" &&
+    typeof data.contactListId === "number"
+  ) {
     const tagId = data.tagListId;
     const campanhaNome = data.name;
 
     try {
-      const contactListId = await createContactListFromTagAndContactList(tagId, data.contactListId, companyId, campanhaNome);
+      const contactListId = await createContactListFromTagAndContactList(
+        tagId,
+        data.contactListId,
+        companyId,
+        campanhaNome
+      );
 
       const record = await CreateService({
         ...data,
         tagId: Number(data.tagListId),
         companyId,
-        contactListId: contactListId,
+        contactListId
       });
 
       const io = getIO();
 
-      io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-campaign`, {
-        action: "create",
-        record
-      });
+      io.to(`company-${companyId}-mainchannel`).emit(
+        `company-${companyId}-campaign`,
+        {
+          action: "create",
+          record
+        }
+      );
 
       return res.status(200).json(record);
     } catch (error) {
-      console.error('Error:', error);
-      return res.status(500).json({ error: 'Error creating contact list' });
+      console.error("Error:", error);
+      return res.status(500).json({ error: "Error creating contact list" });
     }
   }
 
@@ -130,10 +151,13 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
   });
 
   const io = getIO();
-  io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-campaign`, {
-    action: "create",
-    record
-  });
+  io.to(`company-${companyId}-mainchannel`).emit(
+    `company-${companyId}-campaign`,
+    {
+      action: "create",
+      record
+    }
+  );
 
   return res.status(200).json(record);
 };
@@ -166,17 +190,23 @@ export const update = async (
 
   const { id } = req.params;
 
-  const record = await UpdateService({
-    ...data,
-    tagId: typeof data.tagListId === 'number' ? Number(data.tagListId) : null,
-    id
-  }, companyId);
+  const record = await UpdateService(
+    {
+      ...data,
+      tagId: typeof data.tagListId === "number" ? Number(data.tagListId) : null,
+      id
+    },
+    companyId
+  );
 
   const io = getIO();
-  io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-campaign`, {
-    action: "update",
-    record
-  });
+  io.to(`company-${companyId}-mainchannel`).emit(
+    `company-${companyId}-campaign`,
+    {
+      action: "update",
+      record
+    }
+  );
 
   return res.status(200).json(record);
 };
@@ -215,10 +245,13 @@ export const remove = async (
   await DeleteService(id, companyId);
 
   const io = getIO();
-  io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-campaign`, {
-    action: "delete",
-    id
-  });
+  io.to(`company-${companyId}-mainchannel`).emit(
+    `company-${companyId}-campaign`,
+    {
+      action: "delete",
+      id
+    }
+  );
 
   return res.status(200).json({ message: "Campaign deleted" });
 };
@@ -289,91 +322,126 @@ export const deleteMedia = async (
   }
 };
 
-export async function createContactListFromTag(tagId: number, companyId: number, campanhaNome: string) : Promise<number> {
+export async function createContactListFromTag(
+  tagId: number,
+  companyId: number,
+  campanhaNome: string
+): Promise<number> {
   const currentDate = new Date();
   const formattedDate = currentDate.toISOString();
 
   try {
     const ticketTags = await TicketTag.findAll({ where: { tagId } });
-    const ticketIds = ticketTags.map((ticketTag) => ticketTag.ticketId);
+    const ticketIds = ticketTags.map(ticketTag => ticketTag.ticketId);
 
-    const tickets = await Ticket.findAll({ where: { id: ticketIds, companyId } });
-    const contactIds = tickets.map((ticket) => ticket.contactId);
+    const tickets = await Ticket.findAll({
+      where: { id: ticketIds, companyId }
+    });
+    const contactIds = tickets.map(ticket => ticket.contactId);
 
-    const selectedContacts = await Contact.findAll({ where: { id: contactIds, companyId } });
+    const selectedContacts = await Contact.findAll({
+      where: { id: contactIds, companyId }
+    });
 
-    const randomName = `${campanhaNome} | TAG: ${tagId} - ${formattedDate}`
-    const contactList = await ContactList.create({ name: randomName, companyId: companyId });
+    const randomName = `${campanhaNome} | TAG: ${tagId} - ${formattedDate}`;
+    const contactList = await ContactList.create({
+      name: randomName,
+      companyId
+    });
 
     const { id: contactListId } = contactList;
 
     const setContacts = new Set(selectedContacts);
     const contacts = Array.from(setContacts);
 
-    const contactListItems = contacts.map((contact) => ({
+    const contactListItems = contacts.map(contact => ({
       name: contact.name,
       number: contact.number,
       email: contact.email,
       contactListId,
       companyId,
-      isWhatsappValid: true,
+      isWhatsappValid: true
     }));
 
     await ContactListItem.bulkCreate(contactListItems);
 
     return contactListId;
   } catch (error) {
-    console.error('Error creating contact list:', error);
+    console.error("Error creating contact list:", error);
     throw error;
   }
 }
 
-export async function createContactListFromTagAndContactList(tagId: number, contactListId: number, companyId: number, campanhaNome: string) : Promise<number> {
+export async function createContactListFromTagAndContactList(
+  tagId: number,
+  contactListId: number,
+  companyId: number,
+  campanhaNome: string
+): Promise<number> {
   const currentDate = new Date();
   const formattedDate = currentDate.toISOString();
 
   try {
     const ticketTags = await TicketTag.findAll({ where: { tagId } });
-    const ticketIds = ticketTags.map((ticketTag) => ticketTag.ticketId);
+    const ticketIds = ticketTags.map(ticketTag => ticketTag.ticketId);
 
-    const tickets = await Ticket.findAll({ where: { id: ticketIds, companyId } });
-    const contactIds = tickets.map((ticket) => ticket.contactId);
+    const tickets = await Ticket.findAll({
+      where: { id: ticketIds, companyId }
+    });
+    const contactIds = tickets.map(ticket => ticket.contactId);
 
-    const selectedContactListItems = await ContactListItem.findAll({ where: { contactListId, companyId } })
-    const ticketContacts = await Contact.findAll({ where: { id: contactIds, companyId } });
+    const selectedContactListItems = await ContactListItem.findAll({
+      where: { contactListId, companyId }
+    });
+    const ticketContacts = await Contact.findAll({
+      where: { id: contactIds, companyId }
+    });
 
-    const contactMap = new Map<string, {email: string, name: string, number: string}>();
+    const contactMap = new Map<
+      string,
+      { email: string; name: string; number: string }
+    >();
 
     selectedContactListItems.forEach(contact => {
-      contactMap.set(contact.number, {email: contact.email, name: contact.name, number: contact.number});
+      contactMap.set(contact.number, {
+        email: contact.email,
+        name: contact.name,
+        number: contact.number
+      });
     });
 
     ticketContacts.forEach(contact => {
-      contactMap.set(contact.number, {email: contact.email, name: contact.name, number: contact.number});
+      contactMap.set(contact.number, {
+        email: contact.email,
+        name: contact.name,
+        number: contact.number
+      });
     });
 
     const mergedContacts = Array.from(contactMap.values());
 
-    const randomName = `${campanhaNome} | TAG: ${tagId} - ${formattedDate}`
-    const contactList = await ContactList.create({ name: randomName, companyId: companyId });
+    const randomName = `${campanhaNome} | TAG: ${tagId} - ${formattedDate}`;
+    const contactList = await ContactList.create({
+      name: randomName,
+      companyId
+    });
 
     const { id } = contactList;
 
-    const contactLists = mergedContacts.map((contact) => ({
+    const contactLists = mergedContacts.map(contact => ({
       name: contact.name,
       number: contact.number,
       email: contact.email,
       contactListId: id,
       companyId,
-      isWhatsappValid: true,
-
+      isWhatsappValid: true
     }));
 
     await ContactListItem.bulkCreate(contactLists);
 
     return id;
   } catch (error) {
-    console.error('Error creating contact list:', error);
+    console.error("Error creating contact list:", error);
     throw error;
   }
 }

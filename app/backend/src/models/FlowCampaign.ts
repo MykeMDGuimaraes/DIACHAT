@@ -41,7 +41,7 @@ export class FlowCampaignModel extends Model<FlowCampaignModel> {
   whatsappId: number;
 
   @BelongsTo(() => Whatsapp)
-  whatsapp: Whatsapp
+  whatsapp: Whatsapp;
 
   @Column
   status: boolean;

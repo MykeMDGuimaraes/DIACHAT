@@ -21,7 +21,7 @@ import WhatsappQueue from "./WhatsappQueue";
 import Company from "./Company";
 import Prompt from "./Prompt";
 import QueueIntegrations from "./QueueIntegrations";
-import {FlowBuilderModel} from "./FlowBuilder";
+import { FlowBuilderModel } from "./FlowBuilder";
 
 @Table
 class Whatsapp extends Model<Whatsapp> {
@@ -76,6 +76,13 @@ class Whatsapp extends Model<Whatsapp> {
   @Column({ defaultValue: "stable" })
   provider: string;
 
+  @Default("baileys")
+  @Column
+  channelType: string;
+
+  @Column
+  baileysMode: string;
+
   @Default(false)
   @AllowNull
   @Column
@@ -106,12 +113,12 @@ class Whatsapp extends Model<Whatsapp> {
   @Column
   token: string;
 
-  //@Default(0)
-  //@Column
-  //timeSendQueue: number;
+  // @Default(0)
+  // @Column
+  // timeSendQueue: number;
 
-  //@Column
-  //sendIdQueue: number;
+  // @Column
+  // sendIdQueue: number;
 
   @Column
   transferQueueId: number;
@@ -154,7 +161,7 @@ class Whatsapp extends Model<Whatsapp> {
   flowIdWelcome: number;
 
   @BelongsTo(() => FlowBuilderModel)
-  flowBuilder: FlowBuilderModel
+  flowBuilder: FlowBuilderModel;
 }
 
 export default Whatsapp;

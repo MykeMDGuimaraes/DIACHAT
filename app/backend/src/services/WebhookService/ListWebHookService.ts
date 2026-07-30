@@ -12,31 +12,29 @@ interface Response {
 }
 
 const ListWebHookService = async ({
-  companyId,
+  companyId
 }: Request): Promise<Response> => {
-  
-    try {
-    
-        // Realiza a consulta com paginação usando findAndCountAll
-        const { count, rows } = await WebhookModel.findAndCountAll({
-          where: {
-            company_id: companyId
-          }
-        });
-    
-        const hooks = []
-        rows.forEach((usuario) => {
-            hooks.push(usuario.toJSON());
-        });
-
-        return {
-            webhooks: hooks,
-            hasMore: true,
-            count: count
-        }
-      } catch (error) {
-        console.error('Erro ao consultar usuários:', error);
+  try {
+    // Realiza a consulta com paginação usando findAndCountAll
+    const { count, rows } = await WebhookModel.findAndCountAll({
+      where: {
+        company_id: companyId
       }
+    });
+
+    const hooks = [];
+    rows.forEach(usuario => {
+      hooks.push(usuario.toJSON());
+    });
+
+    return {
+      webhooks: hooks,
+      hasMore: true,
+      count
+    };
+  } catch (error) {
+    console.error("Erro ao consultar usuários:", error);
+  }
 };
 
 export default ListWebHookService;

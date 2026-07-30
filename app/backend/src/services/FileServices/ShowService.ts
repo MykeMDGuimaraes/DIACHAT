@@ -2,7 +2,10 @@ import Files from "../../models/Files";
 import AppError from "../../errors/AppError";
 import FilesOptions from "../../models/FilesOptions";
 
-const ShowFileService = async (id: string | number, companyId: number): Promise<Files> => {
+const ShowFileService = async (
+  id: string | number,
+  companyId: number
+): Promise<Files> => {
   const fileList = await Files.findOne({
     where: { id, companyId },
     include: [
@@ -10,7 +13,7 @@ const ShowFileService = async (id: string | number, companyId: number): Promise<
       {
         model: FilesOptions,
         as: "options",
-        order: [["id","ASC"]]
+        order: [["id", "ASC"]]
       }
     ]
   });

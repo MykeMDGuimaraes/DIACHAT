@@ -19,21 +19,20 @@ const UploadAllFlowBuilderService = async ({
     let itemsNewNames: string[] = [];
     for (let i = 0; medias.length > i; i++) {
       let nameFile = medias[i].filename;
-      //if (medias[i].filename.split(".").length === 1) {
+      // if (medias[i].filename.split(".").length === 1) {
       //  nameFile = medias[i].filename + "." + medias[i].mimetype.split("/")[1];
-      //}
-      itemsNewNames = [...itemsNewNames, nameFile]
+      // }
+      itemsNewNames = [...itemsNewNames, nameFile];
       if (
         medias[i].mimetype.split("/")[1] === "png" ||
         medias[i].mimetype.split("/")[1] === "jpg" ||
         medias[i].mimetype.split("/")[1] === "jpeg"
       ) {
         await FlowImgModel.create({
-          userId: userId,
-          companyId: companyId,
+          userId,
+          companyId,
           name: nameFile
         });
-        
       }
       if (
         medias[i].mimetype.split("/")[1] === "mp3" ||
@@ -41,17 +40,15 @@ const UploadAllFlowBuilderService = async ({
         medias[i].mimetype.split("/")[1] === "mp4" ||
         medias[i].mimetype.split("/")[1] === "mpeg"
       ) {
-        
-        if(medias[i].mimetype.split("/")[1] === "mpeg"){
-          nameFile = nameFile.split('.')[0] + '.mp3'
+        if (medias[i].mimetype.split("/")[1] === "mpeg") {
+          nameFile = `${nameFile.split(".")[0]}.mp3`;
         }
 
         await FlowAudioModel.create({
-          userId: userId,
-          companyId: companyId,
+          userId,
+          companyId,
           name: nameFile
         });
-        
       }
     }
 

@@ -13,7 +13,7 @@ const ShowService = async (
     include: [
       {
         model: QueueOption,
-        as: 'parent',
+        as: "parent",
         where: { parentId: queueOptionId },
         required: false
       },

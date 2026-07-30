@@ -7,6 +7,7 @@ import {
 import Message from "../../models/Message";
 import Ticket from "../../models/Ticket";
 import Whatsapp from "../../models/Whatsapp";
+import { publishPersistedBaileysMessageEvents } from "../../messaging/public/domainEvents";
 
 export interface MessageData {
   id: string;
@@ -19,11 +20,37 @@ export interface MessageData {
   mediaUrl?: string;
   ack?: number;
   queueId?: number;
+  remoteJid?: string;
+  participant?: string;
+  dataJson?: string;
 }
 interface Request {
   messageData: MessageData;
   companyId: number;
 }
+
+export const notifyCreatedMessage = (
+  message: Message,
+  companyId: number
+): void => {
+  const io = getIO();
+  io.to(message.ticketId.toString())
+    .to(`company-${companyId}-${message.ticket.status}`)
+    .to(`company-${companyId}-notification`)
+    .to(`queue-${message.ticket.queueId}-${message.ticket.status}`)
+    .to(`queue-${message.ticket.queueId}-notification`)
+    .emit(`company-${companyId}-appMessage`, {
+      action: "create",
+      message,
+      ticket: message.ticket,
+      contact: message.ticket.contact
+    });
+
+  publishTenantEvent(companyId, "message.created", {
+    message: toConversationMessageDTO(message),
+    conversation: toConversationSummaryDTO(message.ticket)
+  });
+};
 
 const CreateMessageService = async ({
   messageData,
@@ -55,31 +82,20 @@ const CreateMessageService = async ({
     ]
   });
 
-  if (message.ticket.queueId !== null && message.queueId === null) {
-    await message.update({ queueId: message.ticket.queueId });
-  }
-
   if (!message) {
     throw new Error("ERR_CREATING_MESSAGE");
   }
 
-  const io = getIO();
-  io.to(message.ticketId.toString())
-    .to(`company-${companyId}-${message.ticket.status}`)
-    .to(`company-${companyId}-notification`)
-    .to(`queue-${message.ticket.queueId}-${message.ticket.status}`)
-    .to(`queue-${message.ticket.queueId}-notification`)
-    .emit(`company-${companyId}-appMessage`, {
-      action: "create",
-      message,
-      ticket: message.ticket,
-      contact: message.ticket.contact
-    });
+  if (message.ticket.queueId !== null && message.queueId === null) {
+    await message.update({ queueId: message.ticket.queueId });
+  }
 
-  publishTenantEvent(companyId, "message.created", {
-    message: toConversationMessageDTO(message),
-    conversation: toConversationSummaryDTO(message.ticket)
-  });
+  await publishPersistedBaileysMessageEvents(
+    message,
+    message.ticket,
+    companyId
+  );
+  notifyCreatedMessage(message, companyId);
 
   return message;
 };

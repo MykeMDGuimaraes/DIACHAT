@@ -11,11 +11,11 @@ module.exports = {
       },
       companyId: {
         type: DataTypes.INTEGER,
-        allowNull: false,
+        allowNull: false
       },
       userId: {
         type: DataTypes.INTEGER,
-        allowNull: false,
+        allowNull: false
       },
       name: {
         type: DataTypes.STRING,

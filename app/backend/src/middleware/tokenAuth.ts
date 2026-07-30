@@ -14,7 +14,12 @@ const tokenAuth = async (req: Request, res: Response, next: NextFunction): Promi
     if (whatsapp) {
       req.params = {
         whatsappId: whatsapp.id.toString()
-      }
+      };
+      req.user = {
+        id: `legacy:${whatsapp.id}`,
+        profile: "legacy_api",
+        companyId: whatsapp.companyId
+      };
     } else {
       throw new Error();
     }

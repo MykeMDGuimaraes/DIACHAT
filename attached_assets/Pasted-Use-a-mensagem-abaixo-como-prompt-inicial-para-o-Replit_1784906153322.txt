@@ -1,0 +1,191 @@
+Use a mensagem abaixo como prompt inicial para o Replit Agent:
+
+```text
+Contexto do projeto DiaChat
+
+Repositório:
+https://github.com/MykeMDGuimaraes/DIACHAT
+
+O código ativo do sistema está na pasta `app/`. A pasta `codatendechat-main/` deve ser tratada apenas como referência, salvo confirmação em contrário.
+
+O DiaChat é uma plataforma de atendimento baseada no AtendeChat e utiliza:
+
+- Backend Node.js, Express, TypeScript e Sequelize;
+- PostgreSQL;
+- Redis e Bull;
+- Baileys para integração não oficial com o WhatsApp;
+- Socket.IO;
+- Frontend React com Material UI;
+- Desenvolvimento e produção integralmente no Replit.
+
+Problema atual
+
+O DiaChat depende diretamente do Baileys para enviar e receber mensagens. Existem chamadas de envio espalhadas por diferentes serviços, como inbox, filas, campanhas, Flow Builder, bots e integrações.
+
+O Baileys funciona como biblioteca de conexão com o WhatsApp Web, mas o DiaChat ainda não possui uma camada própria e confiável de mensageria com recursos semelhantes aos encontrados no UAZAPI e no Chatwoot.
+
+Atualmente faltam principalmente:
+
+1. Uma API pública moderna para clientes, n8n e outras automações;
+2. Webhooks externos configuráveis por empresa ou conexão;
+3. Entrega durável de webhooks com tentativas, histórico, replay e dead-letter;
+4. Assinatura HMAC dos webhooks;
+5. Idempotência para impedir mensagens duplicadas;
+6. Uma abstração de providers que retire a dependência direta do Baileys do restante do sistema;
+7. Suporte oficial ao WhatsApp Cloud API da Meta;
+8. Sincronização e uso de templates aprovados pela Meta;
+9. Gestão segura de credenciais e sessões;
+10. Observabilidade adequada para mensagens, conexões, filas e webhooks.
+
+Objetivo do projeto
+
+Construir uma nova camada de mensageria para o DiaChat que:
+
+- Preserve o funcionamento atual do Baileys;
+- Adicione WhatsApp Cloud API da Meta;
+- Funcione em toda a plataforma: inbox, contatos, tickets, filas, campanhas, Flow Builder, API e webhooks;
+- Disponibilize uma API pública assíncrona;
+- Disponibilize múltiplos webhooks por empresa ou conexão;
+- Seja segura, auditável, idempotente e resistente a reinícios;
+- Seja otimizada para publicação em uma Reserved VM do Replit.
+
+Direção arquitetural aprovada
+
+Criar um novo serviço dentro do mesmo repositório:
+
+`app/messaging-gateway`
+
+Tecnologias previstas:
+
+- NestJS;
+- TypeScript;
+- Prisma;
+- PostgreSQL em schema separado chamado `messaging`;
+- BullMQ e Redis;
+- Zod/OpenAPI;
+- Pino e Sentry.
+
+O backend Express atual continuará sendo o sistema de registro de empresas, contatos, tickets, mensagens, filas, campanhas e Flow Builder.
+
+O gateway será responsável por:
+
+- Baileys;
+- Meta Cloud API;
+- API pública `/api/v1`;
+- credenciais de API;
+- sessões e credenciais cifradas;
+- templates Meta;
+- normalização de eventos;
+- webhooks externos e suas tentativas de entrega.
+
+Requisitos obrigatórios
+
+- PostgreSQL deve ser a fonte de verdade de comandos, eventos, filas e tentativas.
+- Redis não pode ser considerado persistente.
+- Nenhuma sessão, mídia ou fila pode depender do filesystem do Replit.
+- O gateway deve rodar internamente em `127.0.0.1:3002`.
+- Apenas o backend atual deve expor a porta pública.
+- Core e gateway devem trocar eventos usando Outbox/Inbox e comunicação interna assinada.
+- Todo comando aceito deve sobreviver à reinicialização do Redis, gateway ou backend.
+- Não pode haver envio duplicado entre o core e o gateway.
+- Nunca manter duas sessões Baileys ativas para o mesmo número.
+- Credenciais Meta e sessões Baileys devem ser cifradas com AES-256-GCM.
+- Logs nunca podem conter tokens, segredos, cookies ou conteúdo integral de mensagens.
+- Todas as operações devem respeitar `companyId` e isolamento multiempresa.
+
+API pública esperada
+
+- `POST /api/v1/messages/text`
+- `POST /api/v1/messages/media`
+- `POST /api/v1/messages/templates`
+- `POST /api/v1/messages/location`
+- `POST /api/v1/messages/contacts`
+- `POST /api/v1/messages/{messageId}/read`
+- `GET /api/v1/messages/{commandId}`
+- `GET /api/v1/connections`
+- `GET /api/v1/templates`
+
+Os envios devem:
+
+- Retornar `202 Accepted`;
+- Exigir `Idempotency-Key`;
+- Gerar um comando persistente;
+- Ser processados em background;
+- Permitir consulta posterior de status;
+- Usar API keys com empresa, escopos e conexões permitidas.
+
+Webhooks esperados
+
+Permitir múltiplos destinos por empresa ou conexão, com:
+
+- URL HTTPS;
+- ativação/desativação;
+- seleção de eventos;
+- filtros por origem, direção, grupo e tipo de mensagem;
+- exclusão padrão de mensagens originadas pela API para evitar loops;
+- assinatura HMAC-SHA256;
+- histórico persistente;
+- tentativas automáticas;
+- replay manual;
+- dead-letter;
+- teste de webhook;
+- rotação de segredo.
+
+Eventos iniciais:
+
+- `message.created`;
+- `message.status_changed`;
+- `conversation.created`;
+- `conversation.updated`;
+- `contact.created`;
+- `contact.updated`;
+- `connection.status_changed`;
+- `template.status_changed`;
+- `campaign.status_changed`.
+
+WhatsApp Cloud API
+
+A configuração será manual e cada cliente utilizará seu próprio app Meta.
+
+Campos necessários:
+
+- nome da caixa;
+- telefone;
+- Phone Number ID;
+- WABA ID;
+- App ID;
+- App Secret;
+- token permanente.
+
+O sistema deve validar as credenciais na Graph API, gerar callback/verify token, verificar `X-Hub-Signature-256`, deduplicar eventos e sincronizar templates aprovados.
+
+Limites da primeira versão
+
+Não implementar agora:
+
+- Twilio;
+- Embedded Signup da Meta;
+- criação ou aprovação de templates;
+- API pública para grupos, chamadas, presence ou newsletters;
+- substituição do Express/Sequelize;
+- atualização geral do frontend;
+- compatibilidade com o endpoint legado `/api/messages/send`.
+
+Instrução inicial
+
+Antes de escrever código:
+
+1. Analise o repositório e confirme os pontos descritos;
+2. Mapeie todas as chamadas diretas ao Baileys;
+3. Identifique modelos, migrations e rotas relacionados a mensagens, conexões e webhooks;
+4. Inspecione os scripts de desenvolvimento e publicação do Replit;
+5. Apresente os arquivos afetados, riscos e ordem recomendada de implementação;
+6. Não altere arquivos até que essa análise seja revisada e aprovada.
+
+Referências de benchmark:
+
+- https://docs.uazapi.com/
+- https://developers.chatwoot.com/
+- https://developers.facebook.com/docs/whatsapp/cloud-api/
+- https://api.atendechat.com.br/swagger/v2/swagger.json
+```

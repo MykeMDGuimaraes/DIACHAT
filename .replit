@@ -1,4 +1,4 @@
-modules = ["nodejs-20", "python-3.11"]
+modules = ["nodejs-20", "python-3.11", "postgresql-16"]
 [nix]
 channel = "stable-25_05"
 
@@ -68,6 +68,14 @@ externalPort = 3001
 localPort = 5000
 externalPort = 80
 
+[[ports]]
+localPort = 5001
+externalPort = 3002
+
+[[ports]]
+localPort = 5099
+externalPort = 3000
+
 [postMerge]
 path = "scripts/post-merge.sh"
 timeoutMs = 600000
@@ -76,3 +84,10 @@ timeoutMs = 600000
 deploymentTarget = "vm"
 run = ["bash", "scripts/deploy-run.sh"]
 build = ["bash", "scripts/deploy-build.sh"]
+
+[userenv]
+
+[userenv.production]
+DB_SSL = "true"
+MESSAGING_ENCRYPTION_ACTIVE_KEY_ID = "k1"
+META_GRAPH_VERSION = "v23.0"

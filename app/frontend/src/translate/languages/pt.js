@@ -1610,6 +1610,8 @@ const messages = {
             "Erro de autenticação. Por favor, tente novamente.",
         ERR_USER_DONT_EXISTS:
             "Usuário não encontrado. Verifique o e-mail informado.",
+        ERR_WAPP_NOT_AVAILABLE:
+            "A conexão do WhatsApp está indisponível no momento. Aguarde alguns instantes e tente novamente — sua mensagem não foi enviada.",
         ERR_SENDING_WAPP_MSG:
             "Erro ao enviar mensagem do WhatsApp. Verifique a página de conexões.",
         ERR_DELETE_WAPP_MSG: "Não foi possível excluir a mensagem do WhatsApp.",

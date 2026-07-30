@@ -5,8 +5,7 @@ module.exports = {
     return queryInterface.addColumn("Tickets", "typebotStatus", {
       type: DataTypes.BOOLEAN,
       defaultValue: false,
-      allowNull: false,
-
+      allowNull: false
     });
   },
 

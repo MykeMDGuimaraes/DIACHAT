@@ -64,16 +64,13 @@ const UpdateService = async ({
     );
   }
 
-
-  
-  
   await file.update({
     name,
     message
   });
 
   await file.reload({
-    attributes: ["id", "name", "message","companyId"],
+    attributes: ["id", "name", "message", "companyId"],
     include: ["options"]
   });
   return file;

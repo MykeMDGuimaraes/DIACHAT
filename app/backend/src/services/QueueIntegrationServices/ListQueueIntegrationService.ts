@@ -26,7 +26,7 @@ const ListQueueIntegrationService = async ({
           "LIKE",
           `%${searchParam.toLowerCase()}%`
         )
-      }     
+      }
     ]
   };
 
@@ -38,12 +38,13 @@ const ListQueueIntegrationService = async ({
   const limit = 20;
   const offset = limit * (+pageNumber - 1);
 
-  const { count, rows: queueIntegrations } = await QueueIntegrations.findAndCountAll({
-    where: whereCondition,    
-    limit,
-    offset,
-    order: [["createdAt", "DESC"]],    
-  });
+  const { count, rows: queueIntegrations } =
+    await QueueIntegrations.findAndCountAll({
+      where: whereCondition,
+      limit,
+      offset,
+      order: [["createdAt", "DESC"]]
+    });
 
   const hasMore = count > offset + queueIntegrations.length;
 

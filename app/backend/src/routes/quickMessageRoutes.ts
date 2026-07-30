@@ -1,8 +1,8 @@
 import express from "express";
+import multer from "multer";
 import isAuth from "../middleware/isAuth";
 
 import * as QuickMessageController from "../controllers/QuickMessageController";
-import multer from "multer";
 import uploadConfig from "../config/upload";
 
 const upload = multer(uploadConfig);
@@ -22,16 +22,16 @@ routes.put("/quick-messages/:id", isAuth, QuickMessageController.update);
 routes.delete("/quick-messages/:id", isAuth, QuickMessageController.remove);
 
 routes.post(
-    "/quick-messages/:id/media-upload",
-    isAuth,
-    upload.array("file"),
-    QuickMessageController.mediaUpload
-  );
-  
-  routes.delete(
-    "/quick-messages/:id/media-upload",
-    isAuth,
-    QuickMessageController.deleteMedia
-  );
-  
+  "/quick-messages/:id/media-upload",
+  isAuth,
+  upload.array("file"),
+  QuickMessageController.mediaUpload
+);
+
+routes.delete(
+  "/quick-messages/:id/media-upload",
+  isAuth,
+  QuickMessageController.deleteMedia
+);
+
 export default routes;

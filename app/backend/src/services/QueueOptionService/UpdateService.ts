@@ -14,7 +14,6 @@ const UpdateService = async (
   queueOptionData: QueueData,
   companyId: number
 ): Promise<QueueOption> => {
-
   const queueOption = await ShowService(queueOptionId, companyId);
 
   await queueOption.update(queueOptionData as any);

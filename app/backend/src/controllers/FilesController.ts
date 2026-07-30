@@ -1,8 +1,8 @@
 import { Request, Response } from "express";
+import { head } from "lodash";
 import { getIO } from "../libs/socket";
 
 import AppError from "../errors/AppError";
-import { head } from "lodash";
 
 import CreateService from "../services/FileServices/CreateService";
 import ListService from "../services/FileServices/ListService";
@@ -60,31 +60,32 @@ export const show = async (req: Request, res: Response): Promise<Response> => {
   return res.status(200).json(file);
 };
 
-export const uploadMedias = async (req: Request, res: Response): Promise<Response> => {
+export const uploadMedias = async (
+  req: Request,
+  res: Response
+): Promise<Response> => {
   const { fileId, id, mediaType } = req.body;
   const files = req.files as Express.Multer.File[];
   const file = head(files);
 
   try {
-    
-    let fileOpt
+    let fileOpt;
     if (files.length > 0) {
-
       for (const [index, file] of files.entries()) {
         fileOpt = await FilesOptions.findOne({
           where: {
             fileId,
-            id: Array.isArray(id)? id[index] : id
+            id: Array.isArray(id) ? id[index] : id
           }
         });
 
         fileOpt.update({
-          path: file.filename.replace('/','-'),
-          mediaType: Array.isArray(mediaType)? mediaType[index] : mediaType
-        }) ;
+          path: file.filename.replace("/", "-"),
+          mediaType: Array.isArray(mediaType) ? mediaType[index] : mediaType
+        });
       }
     }
-    
+
     return res.send({ mensagem: "Arquivos atualizados" });
   } catch (err: any) {
     throw new AppError(err.message);
@@ -113,7 +114,6 @@ export const update = async (
 
   return res.status(200).json(fileList);
 };
-    
 
 export const remove = async (
   req: Request,

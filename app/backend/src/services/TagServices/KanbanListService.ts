@@ -7,16 +7,14 @@ interface Request {
   companyId: number;
 }
 
-const KanbanListService = async ({
-  companyId
-}: Request): Promise<Tag[]> => {
+const KanbanListService = async ({ companyId }: Request): Promise<Tag[]> => {
   const tags = await Tag.findAll({
     where: {
       kanban: 1,
-      companyId: companyId,
+      companyId
     },
     order: [["id", "ASC"]],
-    raw: true,
+    raw: true
   });
   return tags;
 };

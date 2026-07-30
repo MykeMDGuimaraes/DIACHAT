@@ -6,7 +6,9 @@ interface InvoiceData {
   id?: number | string;
 }
 
-const UpdateInvoiceService = async (InvoiceData: InvoiceData): Promise<Invoice> => {
+const UpdateInvoiceService = async (
+  InvoiceData: InvoiceData
+): Promise<Invoice> => {
   const { id, status } = InvoiceData;
 
   const invoice = await Invoice.findByPk(id);
@@ -16,7 +18,7 @@ const UpdateInvoiceService = async (InvoiceData: InvoiceData): Promise<Invoice> 
   }
 
   await invoice.update({
-    status,
+    status
   });
 
   return invoice;

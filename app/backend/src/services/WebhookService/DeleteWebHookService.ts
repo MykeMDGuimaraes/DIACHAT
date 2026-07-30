@@ -16,4 +16,3 @@ const DeleteWebHookService = async (id: string): Promise<WebhookModel> => {
 };
 
 export default DeleteWebHookService;
-

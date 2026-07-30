@@ -7,6 +7,11 @@ import AppError from "../errors/AppError";
 import * as InternalV1Controller from "../controllers/InternalV1Controller";
 import { streamEvents } from "../controllers/InternalV1EventsController";
 import { ApiV1Error } from "../controllers/InternalV1Controller";
+import {
+  messagingCapacityProbe,
+  messagingCapacityReplay,
+  messagingMetrics
+} from "../messaging/public/http";
 
 const upload = multer(uploadConfig);
 
@@ -14,6 +19,9 @@ const internalV1Routes = Router();
 
 internalV1Routes.use(isServiceAuth);
 
+internalV1Routes.get("/messaging/metrics", messagingMetrics);
+internalV1Routes.post("/messaging/capacity-probe", messagingCapacityProbe);
+internalV1Routes.post("/messaging/capacity-replay", messagingCapacityReplay);
 internalV1Routes.get("/events", streamEvents);
 internalV1Routes.get("/contacts", InternalV1Controller.listContacts);
 internalV1Routes.get("/conversations", InternalV1Controller.listConversations);

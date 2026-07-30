@@ -1,0 +1,22 @@
+{
+  "name": "meta-rich-v2",
+  "provider": "meta_cloud",
+  "events": [
+    {"adapter":"message","raw":{"id":"m-text","from":"000000000000","lid":"000000000000000@lid","timestamp":"1767225600","type":"text","text":{"body":"Synthetic text"}}},
+    {"adapter":"message","raw":{"id":"m-image","from":"000000000000","timestamp":"1767225601","type":"image","image":{"mime_type":"image/png","caption":"Synthetic image","sha256":"synthetic-digest"}}},
+    {"adapter":"message","raw":{"id":"m-audio","from":"000000000000","timestamp":"1767225602","type":"audio","audio":{"mime_type":"audio/ogg"}}},
+    {"adapter":"message","raw":{"id":"m-video","from":"000000000000","timestamp":"1767225603","type":"video","video":{"mime_type":"video/mp4","caption":"Synthetic video"}}},
+    {"adapter":"message","raw":{"id":"m-doc","from":"000000000000","timestamp":"1767225604","type":"document","document":{"mime_type":"application/pdf","filename":"synthetic.pdf"}}},
+    {"adapter":"message","raw":{"id":"m-location","from":"000000000000","timestamp":"1767225605","type":"location","location":{"latitude":0,"longitude":0,"name":"Synthetic place","address":"Synthetic address"}}},
+    {"adapter":"message","raw":{"id":"m-contact","from":"000000000000","timestamp":"1767225606","type":"contacts","contacts":[{"name":{"formatted_name":"Synthetic contact"},"phones":[{"phone":"000000000000"}]}]}},
+    {"adapter":"message","raw":{"id":"m-poll","from":"000000000000","timestamp":"1767225607","type":"poll","poll":{"name":"Synthetic poll","options":[{"title":"A"},{"title":"B"}],"multiple_answers":false}}},
+    {"adapter":"message","raw":{"id":"m-button","from":"000000000000","timestamp":"1767225608","type":"button","button":{"payload":"synthetic-button","text":"Synthetic option"}}},
+    {"adapter":"message","raw":{"id":"m-list","from":"000000000000","timestamp":"1767225609","type":"interactive","interactive":{"list_reply":{"id":"synthetic-row","title":"Synthetic row"}}}},
+    {"adapter":"message","raw":{"id":"m-reaction","from":"000000000000","timestamp":"1767225610","type":"reaction","reaction":{"emoji":"OK","message_id":"m-target"}}},
+    {"adapter":"message","raw":{"id":"m-quote","from":"000000000000","timestamp":"1767225611","type":"text","text":{"body":"Synthetic reply"},"context":{"id":"m-target","from":"000000000000"}}},
+    {"adapter":"message","raw":{"id":"m-edit","from":"000000000000","timestamp":"1767225612","type":"edited","edit":{"message_id":"m-target","text":"Synthetic edited"}}},
+    {"adapter":"message","raw":{"id":"m-delete","from":"000000000000","timestamp":"1767225613","type":"deleted","delete":{"message_id":"m-target","for_everyone":true}}},
+    {"adapter":"chat","raw":{"source_id":"m-chat","jid":"000000000000-0000000000@g.us","lid":"000000000000000@lid","timestamp":"1767225614","name":"Synthetic group","archived":false,"pinned":true,"unread_count":2}},
+    {"adapter":"connection","raw":{"source_id":"m-connection","state":"open","timestamp":"1767225615"}}
+  ]
+}

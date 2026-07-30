@@ -79,15 +79,14 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
     userId,
     queueIds,
     withUnreadMessages,
-    companyId,
-
-
+    companyId
   });
   return res.status(200).json({ tickets, count, hasMore });
 };
 
 export const store = async (req: Request, res: Response): Promise<Response> => {
-  const { contactId, status, userId, queueId, whatsappId }: TicketData = req.body;
+  const { contactId, status, userId, queueId, whatsappId }: TicketData =
+    req.body;
   const { companyId } = req.user;
 
   const ticket = await CreateTicketService({
@@ -107,7 +106,10 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
   return res.status(200).json(ticket);
 };
 
-export const kanban = async (req: Request, res: Response): Promise<Response> => {
+export const kanban = async (
+  req: Request,
+  res: Response
+): Promise<Response> => {
   const {
     pageNumber,
     status,
@@ -120,7 +122,6 @@ export const kanban = async (req: Request, res: Response): Promise<Response> => 
     users: userIdsStringified,
     withUnreadMessages
   } = req.query as IndexQuery;
-
 
   const userId = req.user.id;
   const { companyId } = req.user;
@@ -154,7 +155,6 @@ export const kanban = async (req: Request, res: Response): Promise<Response> => 
     queueIds,
     withUnreadMessages,
     companyId
-
   });
 
   return res.status(200).json({ tickets, count, hasMore });
@@ -186,7 +186,7 @@ export const update = async (
 ): Promise<Response> => {
   const { ticketId } = req.params;
   const ticketData: TicketData = req.body;
-  const { companyId, id} = req.user;
+  const { companyId, id } = req.user;
 
   const { ticket } = await UpdateTicketService({
     ticketData,
@@ -194,7 +194,6 @@ export const update = async (
     companyId,
     actionUserId: id
   });
-
 
   return res.status(200).json(ticket);
 };

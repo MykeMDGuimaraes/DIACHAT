@@ -41,6 +41,8 @@ type CompanyData = {
   campaignsEnabled?: boolean;
   dueDate?: string;
   recurrence?: string;
+  messagingRequestsPerMinute?: number;
+  messagingUploadMbPerMinute?: number;
   password: string;
 };
 
@@ -98,7 +100,9 @@ export const update = async (
   const companyData: CompanyData = req.body;
 
   const schema = Yup.object().shape({
-    name: Yup.string()
+    name: Yup.string(),
+    messagingRequestsPerMinute: Yup.number().integer().min(1).max(10000),
+    messagingUploadMbPerMinute: Yup.number().integer().min(1).max(100000)
   });
 
   try {

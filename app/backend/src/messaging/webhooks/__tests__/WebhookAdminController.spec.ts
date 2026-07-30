@@ -1,0 +1,287 @@
+import { Request, Response } from "express";
+import { Op } from "sequelize";
+import {
+  createWebhookAdminHandlers,
+  retryWebhookDelivery
+} from "../WebhookAdminController";
+
+describe("WebhookAdminController", () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  const response = () => {
+    const json = jest.fn();
+    const sendStatus = jest.fn();
+    const status = jest.fn().mockReturnValue({ json });
+    return {
+      value: { json, sendStatus, status } as unknown as Response,
+      json,
+      sendStatus,
+      status
+    };
+  };
+
+  it("creates a company-scoped subscription and returns its one-time secret", async () => {
+    const create = jest.fn().mockResolvedValue({
+      id: "sub_1",
+      signingSecret: "secret-once",
+      secretCiphertext: "must-not-leak",
+      keyVersion: "key-v1"
+    });
+    const handlers = createWebhookAdminHandlers({
+      create,
+      list: jest.fn(),
+      update: jest.fn(),
+      remove: jest.fn(),
+      listDeliveries: jest.fn(),
+      retryDelivery: jest.fn()
+    });
+    const res = response();
+    await handlers.create(
+      { user: { companyId: 7 }, body: { name: "n8n" } } as unknown as Request,
+      res.value
+    );
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({ companyId: 7, name: "n8n" })
+    );
+    expect(res.status).toHaveBeenCalledWith(201);
+    expect(res.json).toHaveBeenCalledWith({
+      id: "sub_1",
+      signingSecret: "secret-once"
+    });
+  });
+
+  it("lists subscriptions without stored secret material", async () => {
+    const list = jest.fn().mockResolvedValue([
+      {
+        id: "sub_1",
+        companyId: 7,
+        name: "n8n",
+        url: "https://n8n.example.test/webhook",
+        enabled: true,
+        events: ["message.received"],
+        connectionIds: [],
+        messageKinds: [],
+        includeApiOrigin: false,
+        secretCiphertext: "must-not-leak",
+        keyVersion: "key-v1"
+      }
+    ]);
+    const handlers = createWebhookAdminHandlers({
+      create: jest.fn(),
+      list,
+      update: jest.fn(),
+      remove: jest.fn(),
+      listDeliveries: jest.fn(),
+      retryDelivery: jest.fn()
+    });
+    const res = response();
+
+    await handlers.list(
+      { user: { companyId: 7 } } as unknown as Request,
+      res.value
+    );
+
+    expect(res.json).toHaveBeenCalledWith([
+      {
+        id: "sub_1",
+        companyId: 7,
+        name: "n8n",
+        url: "https://n8n.example.test/webhook",
+        enabled: true,
+        events: ["message.received"],
+        connectionIds: [],
+        messageKinds: [],
+        includeApiOrigin: false
+      }
+    ]);
+  });
+
+  it("lists deliveries without encryption metadata or stored response bodies", async () => {
+    const listDeliveries = jest.fn().mockResolvedValue([
+      {
+        id: "del_1",
+        subscriptionId: "sub_1",
+        companyId: 7,
+        eventId: "evt_1",
+        eventType: "message.received",
+        urlSnapshot: "https://n8n.example.test/webhook",
+        payload: {
+          messageId: "msg_1",
+          whatsappId: 42,
+          text: "must-not-leak",
+          data: {
+            messageId: "legacy-msg",
+            text: "legacy-body-must-not-leak"
+          }
+        },
+        status: "dead_letter",
+        attemptCount: 6,
+        responseStatus: 401,
+        responseBody: "token=must-not-leak",
+        secretCiphertextSnapshot: "must-not-leak",
+        keyVersion: "key-v1",
+        lastError: "HTTP 401"
+      }
+    ]);
+    const handlers = createWebhookAdminHandlers({
+      create: jest.fn(),
+      list: jest.fn(),
+      update: jest.fn(),
+      remove: jest.fn(),
+      listDeliveries,
+      retryDelivery: jest.fn()
+    });
+    const res = response();
+
+    await handlers.listDeliveries(
+      { user: { companyId: 7 }, query: {} } as unknown as Request,
+      res.value
+    );
+
+    expect(res.json).toHaveBeenCalledWith([
+      {
+        id: "del_1",
+        subscriptionId: "sub_1",
+        companyId: 7,
+        eventId: "evt_1",
+        eventType: "message.received",
+        urlSnapshot: "https://n8n.example.test/webhook",
+        payload: { messageId: "msg_1", whatsappId: 42 },
+        status: "dead_letter",
+        attemptCount: 6,
+        responseStatus: 401,
+        lastError: "HTTP 401"
+      }
+    ]);
+  });
+
+  it("requeues only a delivery belonging to the authenticated company", async () => {
+    const retryDelivery = jest.fn();
+    const handlers = createWebhookAdminHandlers({
+      create: jest.fn(),
+      list: jest.fn(),
+      update: jest.fn(),
+      remove: jest.fn(),
+      listDeliveries: jest.fn(),
+      retryDelivery
+    });
+    const res = response();
+    await handlers.retryDelivery(
+      {
+        user: { companyId: 7 },
+        params: { deliveryId: "del_1" }
+      } as unknown as Request,
+      res.value
+    );
+    expect(retryDelivery).toHaveBeenCalledWith(7, "del_1");
+    expect(res.sendStatus).toHaveBeenCalledWith(202);
+  });
+
+  it("atomically requeues only an eligible dead-letter body", async () => {
+    const transaction = {};
+    const update = jest.fn().mockResolvedValue([1]);
+    const findOne = jest.fn();
+    const now = new Date("2026-07-29T12:00:00.000Z");
+
+    await retryWebhookDelivery(7, "del_1", now, {
+      transaction: callback => callback(transaction),
+      update,
+      findOne
+    } as any);
+
+    expect(update).toHaveBeenCalledWith(
+      {
+        status: "ready",
+        attemptCount: 0,
+        availableAt: now,
+        leaseExpiresAt: null,
+        leaseToken: null,
+        lastError: null,
+        bodyExpiresAt: null
+      },
+      {
+        where: {
+          companyId: 7,
+          id: "del_1",
+          status: "dead_letter",
+          bodyCiphertext: { [Op.ne]: null },
+          bodyPurgedAt: null,
+          bodyExpiresAt: { [Op.gt]: now }
+        },
+        transaction
+      }
+    );
+    expect(findOne).not.toHaveBeenCalled();
+  });
+
+  it("never overwrites a processing lease when the conditional retry loses a race", async () => {
+    const leaseOwnerUpdate = jest.fn();
+    const update = jest.fn().mockResolvedValue([0]);
+    const findOne = jest.fn().mockResolvedValue({
+      status: "processing",
+      leaseToken: "new-dispatch-lease",
+      update: leaseOwnerUpdate
+    });
+
+    await expect(
+      retryWebhookDelivery(
+        7,
+        "del_1",
+        new Date("2026-07-29T12:00:00.000Z"),
+        {
+          transaction: callback => callback({}),
+          update,
+          findOne
+        } as any
+      )
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(leaseOwnerUpdate).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      name: "purged",
+      bodyCiphertext: null,
+      bodyPurgedAt: new Date("2026-07-29T11:00:00.000Z"),
+      bodyExpiresAt: null
+    },
+    {
+      name: "expired",
+      bodyCiphertext: "encrypted-body",
+      bodyPurgedAt: null,
+      bodyExpiresAt: new Date("2020-01-01T00:00:00.000Z")
+    }
+  ])("returns 410 when retrying a $name delivery body", async bodyState => {
+    await expect(
+      retryWebhookDelivery(
+        7,
+        "del_1",
+        new Date("2026-07-29T12:00:00.000Z"),
+        {
+          transaction: callback => callback({}),
+          update: jest.fn().mockResolvedValue([0]),
+          findOne: jest.fn().mockResolvedValue({
+            status: "dead_letter",
+            ...bodyState
+          })
+        } as any
+      )
+    ).rejects.toMatchObject({ statusCode: 410 });
+  });
+
+  it("returns 404 when the conditional retry cannot refetch the delivery", async () => {
+    await expect(
+      retryWebhookDelivery(
+        7,
+        "missing",
+        new Date("2026-07-29T12:00:00.000Z"),
+        {
+          transaction: callback => callback({}),
+          update: jest.fn().mockResolvedValue([0]),
+          findOne: jest.fn().mockResolvedValue(null)
+        } as any
+      )
+    ).rejects.toMatchObject({ statusCode: 404 });
+  });
+});

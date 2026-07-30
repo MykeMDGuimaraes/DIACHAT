@@ -39,19 +39,21 @@ const ListService = async ({
     offset,
     order: [["name", "ASC"]],
     subQuery: false,
-    include: [{
-      model: TicketTag,
-      as: 'ticketTags',
-      attributes: [],
-      required: false
-    }],
-    attributes: [
-      'id',
-      'name',
-      'color',
-      [fn('count', col('ticketTags.tagId')), 'ticketsCount']
+    include: [
+      {
+        model: TicketTag,
+        as: "ticketTags",
+        attributes: [],
+        required: false
+      }
     ],
-    group: ['Tag.id']
+    attributes: [
+      "id",
+      "name",
+      "color",
+      [fn("count", col("ticketTags.tagId")), "ticketsCount"]
+    ],
+    group: ["Tag.id"]
   });
 
   const hasMore = (count as any as number) > offset + tags.length;

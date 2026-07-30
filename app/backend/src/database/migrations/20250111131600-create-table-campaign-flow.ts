@@ -11,11 +11,11 @@ module.exports = {
       },
       companyId: {
         type: DataTypes.INTEGER,
-        allowNull: false,
+        allowNull: false
       },
       userId: {
         type: DataTypes.INTEGER,
-        allowNull: false,
+        allowNull: false
       },
       name: {
         type: DataTypes.STRING,
@@ -23,11 +23,11 @@ module.exports = {
       },
       flowId: {
         type: DataTypes.INTEGER,
-        allowNull: false,
+        allowNull: false
       },
       phrase: {
         type: DataTypes.STRING,
-        allowNull: false,
+        allowNull: false
       },
       status: {
         type: DataTypes.BOOLEAN,
