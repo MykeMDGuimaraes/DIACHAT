@@ -241,35 +241,22 @@ class WebhookFanoutService {
         : legacyDeliverableEvents
     );
     if (!event) return { status: "idle", deliveries: 0 };
-    const subscriptions = (
-      await this.dependencies.findSubscriptions(event.companyId)
-    ).filter(item => matches(item, event));
-    const prepared: Array<Record<string, unknown>> = [];
-    if (subscriptions.length) {
-      let snapshot;
-      try {
-        snapshot = mirrorEnabled
+    let failureCode = "WHATSAPP_MIRROR_FANOUT_FAILED";
+    try {
+      const subscriptions = (
+        await this.dependencies.findSubscriptions(event.companyId)
+      ).filter(item => matches(item, event));
+      const prepared: Array<Record<string, unknown>> = [];
+      if (subscriptions.length) {
+        failureCode = "WHATSAPP_MIRROR_PROJECTION_FAILED";
+        const snapshot = mirrorEnabled
           ? await this.dependencies.buildSnapshot(event)
           : await this.dependencies.buildLegacySnapshot(event);
-      } catch (error) {
-        recordWhatsAppMirrorMetric("projectionFailure");
-        await this.dependencies.failEvent(
-          event.id,
-          event.leaseToken,
-          buildFanoutFailureState(
-            event.attemptCount ?? 1,
-            "WHATSAPP_MIRROR_PROJECTION_FAILED",
-            this.dependencies.now()
-          )
-        );
-        throw error;
-      }
-      const keyring = this.dependencies.getKeyring();
-      for (const subscription of subscriptions) {
-        const id = this.dependencies.newId();
-        let encrypted;
-        try {
-          encrypted = this.dependencies.encryptBody(
+        failureCode = "WHATSAPP_MIRROR_CRYPTO_FAILED";
+        const keyring = this.dependencies.getKeyring();
+        for (const subscription of subscriptions) {
+          const id = this.dependencies.newId();
+          const encrypted = this.dependencies.encryptBody(
             Buffer.from(snapshot.rawBody, "utf8"),
             {
               companyId: event.companyId,
@@ -279,65 +266,74 @@ class WebhookFanoutService {
             },
             keyring
           );
-        } catch (error) {
-          recordWhatsAppMirrorMetric("cryptoFailure");
-          await this.dependencies.failEvent(
+          if (encrypted.bodySha256 !== snapshot.bodySha256) {
+            failureCode = "WHATSAPP_MIRROR_DIGEST_MISMATCH";
+            throw new Error("Digest do snapshot de webhook divergente");
+          }
+          prepared.push({
+            id,
+            subscriptionId: subscription.id,
+            companyId: event.companyId,
+            eventId: event.id,
+            eventType: event.eventType,
+            urlSnapshot: subscription.url,
+            methodSnapshot: subscription.method || "POST",
+            secretCiphertextSnapshot: subscription.secretCiphertext,
+            keyVersion: subscription.keyVersion,
+            ...encrypted,
+            bodyExpiresAt: null,
+            bodyPurgedAt: null,
+            payload: correlationOnlyPayload(event),
+            status: "ready",
+            attemptCount: 0,
+            availableAt: new Date(),
+            leaseToken: null
+          });
+        }
+      }
+      failureCode = "WHATSAPP_MIRROR_FANOUT_FAILED";
+      const deliveries = await this.dependencies.transaction(
+        async transaction => {
+          let created = 0;
+          for (const delivery of prepared) {
+            await this.dependencies.createDelivery(delivery, transaction);
+            created += 1;
+          }
+          const completion = await this.dependencies.completeEvent(
             event.id,
             event.leaseToken,
-            buildFanoutFailureState(
-              event.attemptCount ?? 1,
-              "WHATSAPP_MIRROR_CRYPTO_FAILED",
-              this.dependencies.now()
-            )
+            transaction
           );
-          throw error;
+          if (
+            completion === 0 ||
+            (Array.isArray(completion) && completion[0] === 0)
+          ) {
+            throw new Error("Lease do fanout de webhook perdida");
+          }
+          return created;
         }
-        if (encrypted.bodySha256 !== snapshot.bodySha256) {
-          throw new Error("Digest do snapshot de webhook divergente");
-        }
-        prepared.push({
-          id,
-          subscriptionId: subscription.id,
-          companyId: event.companyId,
-          eventId: event.id,
-          eventType: event.eventType,
-          urlSnapshot: subscription.url,
-          methodSnapshot: subscription.method || "POST",
-          secretCiphertextSnapshot: subscription.secretCiphertext,
-          keyVersion: subscription.keyVersion,
-          ...encrypted,
-          bodyExpiresAt: null,
-          bodyPurgedAt: null,
-          payload: correlationOnlyPayload(event),
-          status: "ready",
-          attemptCount: 0,
-          availableAt: new Date(),
-          leaseToken: null
-        });
+      );
+      return { status: "created", deliveries };
+    } catch (error) {
+      if (failureCode === "WHATSAPP_MIRROR_PROJECTION_FAILED") {
+        recordWhatsAppMirrorMetric("projectionFailure");
+      } else if (
+        failureCode === "WHATSAPP_MIRROR_CRYPTO_FAILED" ||
+        failureCode === "WHATSAPP_MIRROR_DIGEST_MISMATCH"
+      ) {
+        recordWhatsAppMirrorMetric("cryptoFailure");
       }
+      await this.dependencies.failEvent(
+        event.id,
+        event.leaseToken,
+        buildFanoutFailureState(
+          event.attemptCount ?? 1,
+          failureCode,
+          this.dependencies.now()
+        )
+      );
+      throw error;
     }
-    const deliveries = await this.dependencies.transaction(
-      async transaction => {
-        let created = 0;
-        for (const delivery of prepared) {
-          await this.dependencies.createDelivery(delivery, transaction);
-          created += 1;
-        }
-        const completion = await this.dependencies.completeEvent(
-          event.id,
-          event.leaseToken,
-          transaction
-        );
-        if (
-          completion === 0 ||
-          (Array.isArray(completion) && completion[0] === 0)
-        ) {
-          throw new Error("Lease do fanout de webhook perdida");
-        }
-        return created;
-      }
-    );
-    return { status: "created", deliveries };
   }
 }
 

@@ -349,4 +349,74 @@ describe("WebhookFanoutService", () => {
       )
     ).toBe(true);
   });
+
+  it("fences digest mismatch through backoff and DLQ instead of leaving processing", async () => {
+    const now = new Date("2026-07-29T12:00:00.000Z");
+    const failEvent = jest.fn().mockResolvedValue([1]);
+    for (const attemptCount of [1, 6]) {
+      const service = new WebhookFanoutService({
+        claimEvent: jest.fn().mockResolvedValue({
+          id: "evt-digest",
+          companyId: 7,
+          eventType: "message.received",
+          aggregateId: "msg-digest",
+          payload: { messageId: "msg-digest" },
+          createdAt: now,
+          attemptCount,
+          leaseToken: `digest-lease-${attemptCount}`
+        }),
+        findSubscriptions: jest.fn().mockResolvedValue([
+          {
+            id: "sub_1",
+            events: ["message.received"],
+            includeApiOrigin: true
+          }
+        ]),
+        buildSnapshot: jest.fn().mockResolvedValue({
+          rawBody: "{}",
+          bodySha256: "snapshot-digest"
+        }),
+        encryptBody: jest.fn().mockReturnValue({
+          bodyCiphertext: "encrypted",
+          bodyKeyVersion: "v1",
+          bodySha256: "different-digest"
+        }),
+        getKeyring: jest.fn().mockReturnValue({
+          activeKeyId: "v1",
+          keys: {}
+        }),
+        newId: jest.fn().mockReturnValue("del_1"),
+        failEvent,
+        mirrorEnabled: jest.fn().mockReturnValue(true),
+        now: () => now
+      });
+
+      await expect(service.fanoutOne()).rejects.toThrow(
+        "Digest do snapshot de webhook divergente"
+      );
+    }
+
+    expect(failEvent).toHaveBeenNthCalledWith(
+      1,
+      "evt-digest",
+      "digest-lease-1",
+      {
+        status: "ready",
+        availableAt: new Date("2026-07-29T12:00:05.000Z"),
+        attemptCount: 1,
+        lastError: "WHATSAPP_MIRROR_DIGEST_MISMATCH"
+      }
+    );
+    expect(failEvent).toHaveBeenNthCalledWith(
+      2,
+      "evt-digest",
+      "digest-lease-6",
+      {
+        status: "dead_letter",
+        availableAt: now,
+        attemptCount: 6,
+        lastError: "WHATSAPP_MIRROR_DIGEST_MISMATCH"
+      }
+    );
+  });
 });
