@@ -21,14 +21,16 @@ const WHATSAPP_ID = /(?:@s\.whatsapp\.net|@g\.us|@lid|@c\.us)$/i;
 const SYNTHETIC_WHATSAPP_ID =
   /^(?:0{12,18}(?:-0{10})?)@(?:s\.whatsapp\.net|g\.us|lid|c\.us)$/i;
 const ADAPTERS = ["message", "chat", "connection"] as const;
-const REPLAY_EPOCH_SECONDS = 1_767_225_600;
+const REPLAY_EVENTS_PER_SECOND = 150;
 
 interface ReplayDependencies {
   publish(events: readonly WhatsAppProviderEvent[]): Promise<void>;
+  now(): Date;
 }
 
 interface ReplayRequest {
   runId: string;
+  runStartedAt: string;
   sequence: number;
   whatsappId: number;
   fixture: {
@@ -40,7 +42,8 @@ interface ReplayRequest {
 
 const defaultPublisher = new WhatsAppProviderEventPublisher();
 const defaults: ReplayDependencies = {
-  publish: events => defaultPublisher.publish(events)
+  publish: events => defaultPublisher.publish(events),
+  now: () => new Date()
 };
 
 const validateSyntheticValue = (value: unknown, location: string): void => {
@@ -67,14 +70,17 @@ const validateSyntheticValue = (value: unknown, location: string): void => {
   });
 };
 
-const replayIdentity = (runId: string, sequence: number) => {
+const replayIdentity = (
+  runId: string,
+  runStartedAt: Date,
+  sequence: number
+) => {
   const digest = createHash("sha256")
     .update(`${runId}:${sequence}`)
     .digest("hex");
-  const runOffsetSeconds =
-    parseInt(createHash("sha256").update(runId).digest("hex").slice(0, 8), 16) %
-    31_536_000;
-  const timestampSeconds = REPLAY_EPOCH_SECONDS + runOffsetSeconds + sequence;
+  const timestampSeconds =
+    Math.floor(runStartedAt.getTime() / 1000) +
+    Math.floor(sequence / REPLAY_EVENTS_PER_SECOND);
   return {
     sourceEventId: `capacity-${digest.slice(0, 32)}`,
     timestampSeconds,
@@ -87,10 +93,11 @@ const materializeReplayRaw = (
   adapter: (typeof ADAPTERS)[number],
   rawInput: Record<string, unknown>,
   runId: string,
+  runStartedAt: Date,
   sequence: number
 ): { raw: Record<string, unknown>; observedAt: Date } => {
   const raw = JSON.parse(JSON.stringify(rawInput)) as Record<string, any>;
-  const identity = replayIdentity(runId, sequence);
+  const identity = replayIdentity(runId, runStartedAt, sequence);
   if (provider === "baileys") {
     raw.eventId = identity.sourceEventId;
     raw.timestamp = identity.timestampSeconds;
@@ -123,6 +130,13 @@ class WhatsAppMirrorReplayService {
     }
     if (!RUN_ID.test(request?.runId || "")) {
       throw new Error("Replay runId invalido");
+    }
+    const runStartedAt = new Date(request?.runStartedAt || "");
+    if (
+      Number.isNaN(runStartedAt.getTime()) ||
+      runStartedAt.getTime() > this.dependencies.now().getTime()
+    ) {
+      throw new Error("Replay runStartedAt invalido");
     }
     if (!Number.isSafeInteger(request?.sequence) || request.sequence < 0) {
       throw new Error("Replay sequence invalida");
@@ -162,6 +176,7 @@ class WhatsAppMirrorReplayService {
       adapter,
       rawInput,
       request.runId,
+      runStartedAt,
       request.sequence
     );
     let events: WhatsAppProviderEvent[];

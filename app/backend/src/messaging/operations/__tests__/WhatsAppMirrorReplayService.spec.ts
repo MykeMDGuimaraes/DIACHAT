@@ -2,10 +2,12 @@ import WhatsAppMirrorReplayService from "../WhatsAppMirrorReplayService";
 
 describe("WhatsAppMirrorReplayService", () => {
   const runId = "11111111-1111-4111-8111-111111111111";
+  const runStartedAt = "2026-07-29T12:00:00.000Z";
 
   it("routes a synthetic Baileys raw fixture through the real adapter", async () => {
     const published: any[] = [];
     const service = new WhatsAppMirrorReplayService({
+      now: () => new Date("2026-07-29T12:01:00.000Z"),
       publish: async events => {
         published.push(...events);
       }
@@ -14,6 +16,7 @@ describe("WhatsAppMirrorReplayService", () => {
     await expect(
       service.replay(7, {
         runId,
+        runStartedAt,
         sequence: 12,
         whatsappId: 3,
         fixture: {
@@ -76,12 +79,14 @@ describe("WhatsAppMirrorReplayService", () => {
 
   it("rejects free-form identity, URL and secret fields at the server trust boundary", async () => {
     const service = new WhatsAppMirrorReplayService({
+      now: () => new Date("2026-07-29T12:01:00.000Z"),
       publish: async () => undefined
     });
 
     await expect(
       service.replay(7, {
         runId,
+        runStartedAt,
         sequence: 1,
         whatsappId: 3,
         fixture: {
@@ -106,12 +111,14 @@ describe("WhatsAppMirrorReplayService", () => {
   it("derives a unique aggregate per run and sequence while deduplicating an identical retry", async () => {
     const published: any[] = [];
     const service = new WhatsAppMirrorReplayService({
+      now: () => new Date("2026-07-29T12:01:00.000Z"),
       publish: async events => {
         published.push(events[0]);
       }
     });
     const request = (currentRunId: string, sequence: number) => ({
       runId: currentRunId,
+      runStartedAt,
       sequence,
       whatsappId: 3,
       fixture: {
@@ -141,5 +148,34 @@ describe("WhatsAppMirrorReplayService", () => {
     expect(published[0].payload.provider.eventId).toBe(
       published[3].payload.provider.eventId
     );
+    published.forEach(event => {
+      expect(event.occurredAt.getTime()).toBeLessThanOrEqual(
+        new Date("2026-07-29T12:01:00.000Z").getTime()
+      );
+    });
+  });
+
+  it("rejects a future run start even for a UUID whose old hash offset was future", async () => {
+    const service = new WhatsAppMirrorReplayService({
+      now: () => new Date("2026-07-29T12:00:00.000Z"),
+      publish: async () => undefined
+    });
+
+    await expect(
+      service.replay(7, {
+        runId: "ffffffff-ffff-4fff-8fff-ffffffffffff",
+        runStartedAt: "2026-07-29T12:00:00.001Z",
+        sequence: 0,
+        whatsappId: 3,
+        fixture: {
+          name: "future-uuid",
+          provider: "baileys",
+          event: {
+            adapter: "chat",
+            raw: { id: "synthetic", archived: true }
+          }
+        }
+      })
+    ).rejects.toThrow("runStartedAt");
   });
 });

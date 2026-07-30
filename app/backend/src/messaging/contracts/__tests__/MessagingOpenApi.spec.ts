@@ -161,9 +161,12 @@ describe("MessagingOpenApi 1.2", () => {
     });
     expect(snapshot.properties.bodySha256.pattern).toBe("^[0-9a-f]{64}$");
     expect(snapshot.description).toContain("bodySha256 não integra o rawBody");
-    expect(messagingOpenApi["x-webhook-events"].payloadSchema).toEqual({
-      $ref: "#/components/schemas/WhatsAppMirrorEnvelope"
-    });
+    expect(messagingOpenApi["x-webhook-events"].payloadSchema.oneOf).toEqual([
+      { $ref: "#/components/schemas/LegacyWebhookEnvelope" },
+      { $ref: "#/components/schemas/WhatsAppMirrorEnvelope" }
+    ]);
+    expect(schemas.LegacyWebhookEnvelope.required).not.toContain("schema");
+    expect(schemas.WhatsAppMirrorEnvelope.required).toContain("schema");
     expect(messagingOpenApi["x-whatsapp-mirror-projection"]).toEqual({
       envelopeSchema: "#/components/schemas/WhatsAppMirrorEnvelope",
       serializedSnapshotSchema:

@@ -5,9 +5,90 @@ import {
   resetWhatsAppMirrorMetricsForTests,
   snapshotWhatsAppMirrorMetrics
 } from "../../operations/WhatsAppMirrorMetrics";
+import { encryptWhatsAppOutboxBody } from "../WhatsAppOutboxBodyCipher";
 
 describe("WebhookFanoutService", () => {
   afterEach(() => resetWhatsAppMirrorMetricsForTests());
+  it("authenticates and decrypts the outbox body before projection", async () => {
+    const keyring = {
+      activeKeyId: "body-v2",
+      keys: { "body-v2": Buffer.alloc(32, 9).toString("base64") }
+    };
+    const richPayload = {
+      messageId: "msg_1",
+      whatsappId: 42,
+      kind: "text",
+      origin: "provider",
+      text: "mensagem privada",
+      jid: "5511999999999@s.whatsapp.net",
+      phone: "+55 11 99999-9999",
+      vcard: "BEGIN:VCARD\nFN:Motorista Particular\nEND:VCARD"
+    };
+    const encrypted = encryptWhatsAppOutboxBody(
+      richPayload,
+      7,
+      "evt_1",
+      keyring
+    );
+    const buildSnapshot = jest.fn().mockResolvedValue({
+      rawBody: "{}",
+      bodySha256:
+        "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+    });
+    const service = new WebhookFanoutService({
+      transaction: callback => callback({}),
+      claimEvent: jest.fn().mockResolvedValue({
+        id: "evt_1",
+        companyId: 7,
+        eventType: "message.received",
+        aggregateId: "msg_1",
+        payload: { messageId: "msg_1", whatsappId: 42 },
+        ...encrypted,
+        createdAt: new Date("2026-07-29T12:00:00.000Z"),
+        leaseToken: "event-lease-1"
+      }),
+      findSubscriptions: jest.fn().mockResolvedValue([]),
+      createDelivery: jest.fn(),
+      completeEvent: jest.fn(),
+      buildSnapshot,
+      getKeyring: () => keyring,
+      mirrorEnabled: () => true
+    });
+
+    await service.fanoutOne();
+
+    expect(buildSnapshot).not.toHaveBeenCalled();
+    // A subscription forces projection and must see the authenticated rich DTO,
+    // never the correlation-only JSONB payload.
+    (service as any).dependencies.findSubscriptions = jest
+      .fn()
+      .mockResolvedValue([
+        {
+          id: "sub_1",
+          events: ["message.received"],
+          connectionIds: [42],
+          messageKinds: ["text"],
+          includeApiOrigin: false
+        }
+      ]);
+    (service as any).dependencies.claimEvent = jest.fn().mockResolvedValue({
+      id: "evt_1",
+      companyId: 7,
+      eventType: "message.received",
+      aggregateId: "msg_1",
+      payload: { messageId: "msg_1", whatsappId: 42 },
+      ...encrypted,
+      createdAt: new Date("2026-07-29T12:00:00.000Z"),
+      leaseToken: "event-lease-1"
+    });
+
+    await service.fanoutOne();
+
+    expect(buildSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({ payload: richPayload })
+    );
+  });
+
   it("increments the durable attempt while assigning a fenced lease", () => {
     expect(
       buildFanoutClaimState(2, "lease-3", new Date("2026-07-29T12:00:00.000Z"))
@@ -341,7 +422,8 @@ describe("WebhookFanoutService", () => {
       status: "dead_letter",
       availableAt: now,
       attemptCount: 6,
-      lastError: "WHATSAPP_MIRROR_PROJECTION_FAILED"
+      lastError: "WHATSAPP_MIRROR_PROJECTION_FAILED",
+      bodyExpiresAt: new Date("2026-08-05T12:00:00.000Z")
     });
     expect(
       failEvent.mock.calls.every(
@@ -415,7 +497,8 @@ describe("WebhookFanoutService", () => {
         status: "dead_letter",
         availableAt: now,
         attemptCount: 6,
-        lastError: "WHATSAPP_MIRROR_DIGEST_MISMATCH"
+        lastError: "WHATSAPP_MIRROR_DIGEST_MISMATCH",
+        bodyExpiresAt: new Date("2026-08-05T12:00:00.000Z")
       }
     );
   });

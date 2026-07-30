@@ -8,6 +8,7 @@ const {
   loadReplayConfig,
   loadReplayFixtures,
   percentile,
+  scheduleOfferedLoad,
   selectReplayInput,
   validateReplayFixture
 } = require("../../../../scripts/messagingCapacityGate.js");
@@ -101,8 +102,9 @@ describe("messagingCapacityGate", () => {
           durableCryptoFailures: 0,
           deadLettersDelta: 1
         },
+        offeredEvents: 270000,
         injectionElapsedSeconds: 1801,
-        achievedRps: 149.92,
+        offeredRps: 149.92,
         drainSeconds: 901
       }
     );
@@ -122,12 +124,41 @@ describe("messagingCapacityGate", () => {
 
   it("measures the sustained injection rate with a monotonic clock", () => {
     expect(buildInjectionMeasurements(270000, 10_000, 1_810_000)).toEqual({
+      offeredEvents: 270000,
       injectionElapsedSeconds: 1800,
-      achievedRps: 150
+      offeredRps: 150
     });
     expect(
-      buildInjectionMeasurements(270000, 10_000, 1_811_000).achievedRps
+      buildInjectionMeasurements(270000, 10_000, 1_811_000).offeredRps
     ).toBeLessThan(150);
+  });
+
+  it("offers every window independently of slow completions", async () => {
+    let clock = 0;
+    const releases: Array<() => void> = [];
+    const resultPromise = scheduleOfferedLoad({
+      durationSeconds: 2,
+      requestsPerSecond: 3,
+      now: () => clock,
+      sleep: async (milliseconds: number) => {
+        clock += milliseconds;
+      },
+      offer: () =>
+        new Promise<void>(resolve => {
+          releases.push(resolve);
+        })
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(releases).toHaveLength(6);
+    releases.forEach(release => release());
+
+    await expect(resultPromise).resolves.toMatchObject({
+      offeredEvents: 6,
+      accepted: 6,
+      injectionElapsedSeconds: 2,
+      offeredRps: 3
+    });
   });
 
   it("aborts a hung request at the configured timeout", async () => {

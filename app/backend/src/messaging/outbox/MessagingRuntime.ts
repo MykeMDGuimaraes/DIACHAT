@@ -56,6 +56,7 @@ export interface WebhookRuntimeConcurrency {
 type WebhookPoolName = "fanout" | "delivery";
 
 const MAX_WEBHOOK_RUNTIME_CONCURRENCY = 128;
+const MAX_ADAPTIVE_WEBHOOK_ROUNDS = 8;
 
 const boundedConcurrency = (
   value: string | undefined,
@@ -117,57 +118,81 @@ class MessagingRuntime {
   ) {}
 
   private async drainWebhookFanout(): Promise<number> {
-    const lanes = Array.from(
-      { length: this.webhookConcurrency.fanout },
-      async () => {
-        let deliveries = 0;
-        for (let index = 0; index < this.batchSize; index += 1) {
-          const result = await this.webhookFanout.fanoutOne();
-          if (result.status === "idle") break;
-          deliveries += result.deliveries;
+    let totalDeliveries = 0;
+    for (let round = 0; round < MAX_ADAPTIVE_WEBHOOK_ROUNDS; round += 1) {
+      const lanes = Array.from(
+        { length: this.webhookConcurrency.fanout },
+        async () => {
+          let deliveries = 0;
+          let processed = 0;
+          for (let index = 0; index < this.batchSize; index += 1) {
+            const result = await this.webhookFanout.fanoutOne();
+            if (result.status === "idle") break;
+            processed += 1;
+            deliveries += result.deliveries;
+          }
+          return { deliveries, saturated: processed === this.batchSize };
         }
-        return deliveries;
+      );
+      const settled = await Promise.allSettled(lanes);
+      const failedLanes = settled.filter(
+        result => result.status === "rejected"
+      ).length;
+      if (failedLanes) {
+        this.reportWebhookPoolFailure("fanout", failedLanes);
       }
-    );
-    const settled = await Promise.allSettled(lanes);
-    const failedLanes = settled.filter(
-      result => result.status === "rejected"
-    ).length;
-    if (failedLanes) {
-      this.reportWebhookPoolFailure("fanout", failedLanes);
+      totalDeliveries += settled.reduce(
+        (total, result) =>
+          total + (result.status === "fulfilled" ? result.value.deliveries : 0),
+        0
+      );
+      const saturated =
+        failedLanes === 0 &&
+        settled.every(
+          result => result.status === "fulfilled" && result.value.saturated
+        );
+      if (!saturated) break;
     }
-    return settled.reduce(
-      (total, result) =>
-        total + (result.status === "fulfilled" ? result.value : 0),
-      0
-    );
+    return totalDeliveries;
   }
 
   private async drainWebhookDelivery(): Promise<number> {
-    const lanes = Array.from(
-      { length: this.webhookConcurrency.delivery },
-      async () => {
-        let dispatched = 0;
-        for (let index = 0; index < this.batchSize; index += 1) {
-          const result = await this.webhookDispatcher.dispatchOne();
-          if (result.status === "idle") break;
-          dispatched += 1;
+    let totalDispatched = 0;
+    for (let round = 0; round < MAX_ADAPTIVE_WEBHOOK_ROUNDS; round += 1) {
+      const lanes = Array.from(
+        { length: this.webhookConcurrency.delivery },
+        async () => {
+          let dispatched = 0;
+          let processed = 0;
+          for (let index = 0; index < this.batchSize; index += 1) {
+            const result = await this.webhookDispatcher.dispatchOne();
+            if (result.status === "idle") break;
+            processed += 1;
+            dispatched += 1;
+          }
+          return { dispatched, saturated: processed === this.batchSize };
         }
-        return dispatched;
+      );
+      const settled = await Promise.allSettled(lanes);
+      const failedLanes = settled.filter(
+        result => result.status === "rejected"
+      ).length;
+      if (failedLanes) {
+        this.reportWebhookPoolFailure("delivery", failedLanes);
       }
-    );
-    const settled = await Promise.allSettled(lanes);
-    const failedLanes = settled.filter(
-      result => result.status === "rejected"
-    ).length;
-    if (failedLanes) {
-      this.reportWebhookPoolFailure("delivery", failedLanes);
+      totalDispatched += settled.reduce(
+        (total, result) =>
+          total + (result.status === "fulfilled" ? result.value.dispatched : 0),
+        0
+      );
+      const saturated =
+        failedLanes === 0 &&
+        settled.every(
+          result => result.status === "fulfilled" && result.value.saturated
+        );
+      if (!saturated) break;
     }
-    return settled.reduce(
-      (total, result) =>
-        total + (result.status === "fulfilled" ? result.value : 0),
-      0
-    );
+    return totalDispatched;
   }
 
   async runOnce(): Promise<{

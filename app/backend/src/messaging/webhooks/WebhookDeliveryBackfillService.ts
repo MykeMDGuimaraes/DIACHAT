@@ -196,9 +196,7 @@ const wasFenced = (result: unknown): boolean =>
 class WebhookDeliveryBackfillService {
   private readonly dependencies: WebhookDeliveryBackfillDependencies;
 
-  constructor(
-    dependencies: Partial<WebhookDeliveryBackfillDependencies> = {}
-  ) {
+  constructor(dependencies: Partial<WebhookDeliveryBackfillDependencies> = {}) {
     this.dependencies = { ...defaults, ...dependencies };
   }
 
@@ -221,7 +219,9 @@ class WebhookDeliveryBackfillService {
       }
       const legacyPayload = delivery.payload || {};
       const occurredAt =
-        legacyPayload.createdAt || delivery.createdAt || this.dependencies.now();
+        legacyPayload.createdAt ||
+        delivery.createdAt ||
+        this.dependencies.now();
       const snapshot = await this.dependencies.buildLegacySnapshot(
         {
           id: delivery.eventId,
@@ -260,7 +260,10 @@ class WebhookDeliveryBackfillService {
         {
           ...encrypted,
           bodyExpiresAt,
-          payload
+          payload,
+          ...(delivery.status === "processing"
+            ? { status: "ready", availableAt: this.dependencies.now() }
+            : {})
         }
       );
       if (!wasFenced(persisted)) throw new Error("Backfill lease lost");

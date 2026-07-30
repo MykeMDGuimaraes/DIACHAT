@@ -34,23 +34,15 @@ export const createLifecycleEventIdentity = (input: {
   content: unknown;
 }): { providerEventId: string; revision: string } => {
   const digest = createHash("sha256")
-    .update(
-      JSON.stringify([
-        input.kind,
-        stableValue(input.content)
-      ])
-    )
+    .update(JSON.stringify([input.kind, stableValue(input.content)]))
     .digest("hex");
   const timestampMillis = providerTimestampMillis(input.providerTimestamp) || 0;
-  const suffix = Number.parseInt(digest.slice(0, 5), 16);
-  const revision =
-    BigInt(timestampMillis) * 1_048_576n + BigInt(suffix);
   const sourceId =
     typeof input.sourceId === "string" && input.sourceId.trim()
       ? `source:${input.sourceId.trim()}`
       : "content";
   return {
     providerEventId: `${input.provider}:${input.kind}:${sourceId}:${digest}`,
-    revision: revision.toString()
+    revision: String(timestampMillis)
   };
 };

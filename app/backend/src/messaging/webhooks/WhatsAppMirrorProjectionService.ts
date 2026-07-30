@@ -13,6 +13,11 @@ export interface WhatsAppMirrorSourceEvent {
   eventType: string;
   aggregateId: string;
   payload: Record<string, any>;
+  bodyCiphertext?: string | null;
+  bodyKeyVersion?: string | null;
+  bodySha256?: string | null;
+  bodyExpiresAt?: Date | null;
+  bodyPurgedAt?: Date | null;
   createdAt: Date;
   leaseToken: string;
   attemptCount?: number;

@@ -40,10 +40,7 @@ describe("MessagingRuntime", () => {
       return jest.fn(async () => {
         started += 1;
         activeState.active += 1;
-        activeState.maximum = Math.max(
-          activeState.maximum,
-          activeState.active
-        );
+        activeState.maximum = Math.max(activeState.maximum, activeState.active);
         if (started === concurrency) release?.();
         await barrier;
         activeState.active -= 1;
@@ -74,8 +71,8 @@ describe("MessagingRuntime", () => {
 
     await expect(runtime.runOnce()).resolves.toEqual(
       expect.objectContaining({
-        webhookDeliveriesCreated: 2,
-        webhooksDispatched: 3
+        webhookDeliveriesCreated: 16,
+        webhooksDispatched: 24
       })
     );
     expect(fanoutState.maximum).toBe(2);
@@ -108,14 +105,39 @@ describe("MessagingRuntime", () => {
     await expect(runtime.runOnce()).resolves.toEqual(
       expect.objectContaining({
         webhookDeliveriesCreated: 2,
-        webhooksDispatched: 1
+        webhooksDispatched: 8
       })
     );
-    expect(dispatchWebhook).toHaveBeenCalledTimes(1);
+    expect(dispatchWebhook).toHaveBeenCalledTimes(8);
     expect(reportPoolFailure).toHaveBeenCalledWith("fanout", 1);
     expect(JSON.stringify(reportPoolFailure.mock.calls)).not.toContain(
       "private data"
     );
+  });
+
+  it("adaptively drains backlog beyond one batch without waiting for the next tick", async () => {
+    const fanoutOne = jest.fn();
+    for (let index = 0; index < 30; index += 1) {
+      fanoutOne.mockResolvedValueOnce({ status: "created", deliveries: 1 });
+    }
+    fanoutOne.mockResolvedValue({ status: "idle", deliveries: 0 });
+    const runtime = new MessagingRuntime(
+      { recover: jest.fn().mockResolvedValue({ recovered: 0 }) },
+      { dispatchOne: jest.fn().mockResolvedValue({ status: "idle" }) },
+      25,
+      undefined,
+      { fanoutOne },
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { fanout: 1, delivery: 1 }
+    );
+
+    await expect(runtime.runOnce()).resolves.toEqual(
+      expect.objectContaining({ webhookDeliveriesCreated: 30 })
+    );
+    expect(fanoutOne).toHaveBeenCalledTimes(31);
   });
 
   it("recovers expired sends before draining ready outbox events", async () => {

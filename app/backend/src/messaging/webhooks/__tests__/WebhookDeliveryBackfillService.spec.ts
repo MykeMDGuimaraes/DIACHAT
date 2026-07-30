@@ -28,11 +28,11 @@ const dependencies = (overrides: Record<string, unknown> = {}) =>
     claimLegacy: jest.fn().mockResolvedValue(legacy),
     buildLegacySnapshot: jest.fn().mockResolvedValue({
       rawBody:
-        "{\"id\":\"legacy-envelope-id\",\"type\":\"message.received\",\"createdAt\":\"2026-07-24T12:00:00.000Z\",\"data\":{\"messageId\":\"msg_1\",\"whatsappId\":42,\"conversationId\":\"conv_1\",\"text\":\"hydrated-persisted-text\"}}",
+        '{"id":"legacy-envelope-id","type":"message.received","createdAt":"2026-07-24T12:00:00.000Z","data":{"messageId":"msg_1","whatsappId":42,"conversationId":"conv_1","text":"hydrated-persisted-text"}}',
       bodySha256: "legacy-digest"
     }),
     buildSnapshot: jest.fn().mockResolvedValue({
-      rawBody: "{\"schema\":\"whatsapp-mirror/1\"}",
+      rawBody: '{"schema":"whatsapp-mirror/1"}',
       bodySha256: "snapshot-digest"
     }),
     encryptBody: jest.fn().mockReturnValue({
@@ -40,9 +40,7 @@ const dependencies = (overrides: Record<string, unknown> = {}) =>
       bodyKeyVersion: "v2",
       bodySha256: "legacy-digest"
     }),
-    getKeyring: jest
-      .fn()
-      .mockReturnValue({ activeKeyId: "v2", keys: {} }),
+    getKeyring: jest.fn().mockReturnValue({ activeKeyId: "v2", keys: {} }),
     persistEncrypted: jest.fn(),
     scrubDelivered: jest.fn(),
     releaseClaim: jest.fn(),
@@ -73,7 +71,7 @@ describe("WebhookDeliveryBackfillService", () => {
     expect(deps.buildSnapshot).not.toHaveBeenCalled();
     expect(deps.encryptBody).toHaveBeenCalledWith(
       Buffer.from(
-        "{\"id\":\"legacy-envelope-id\",\"type\":\"message.received\",\"createdAt\":\"2026-07-24T12:00:00.000Z\",\"data\":{\"messageId\":\"msg_1\",\"whatsappId\":42,\"conversationId\":\"conv_1\",\"text\":\"hydrated-persisted-text\"}}",
+        '{"id":"legacy-envelope-id","type":"message.received","createdAt":"2026-07-24T12:00:00.000Z","data":{"messageId":"msg_1","whatsappId":42,"conversationId":"conv_1","text":"hydrated-persisted-text"}}',
         "utf8"
       ),
       {
@@ -126,6 +124,29 @@ describe("WebhookDeliveryBackfillService", () => {
     );
   });
 
+  it("returns a legacy processing row to ready after encrypting it", async () => {
+    const persistEncrypted = jest.fn();
+    const service = new WebhookDeliveryBackfillService(
+      dependencies({
+        claimLegacy: jest
+          .fn()
+          .mockResolvedValue({ ...legacy, status: "processing" }),
+        persistEncrypted
+      })
+    );
+
+    await service.processOne();
+
+    expect(persistEncrypted).toHaveBeenCalledWith(
+      "del_1",
+      "backfill-lease-1",
+      expect.objectContaining({
+        status: "ready",
+        availableAt: now
+      })
+    );
+  });
+
   it("scrubs delivered plaintext without rebuilding a body", async () => {
     const buildLegacySnapshot = jest.fn();
     const scrubDelivered = jest.fn();
@@ -173,10 +194,7 @@ describe("WebhookDeliveryBackfillService", () => {
 
     await expect(service.processOne()).rejects.toThrow("projection failed");
     expect(persistEncrypted).not.toHaveBeenCalled();
-    expect(releaseClaim).toHaveBeenCalledWith(
-      "del_1",
-      "backfill-lease-1"
-    );
+    expect(releaseClaim).toHaveBeenCalledWith("del_1", "backfill-lease-1");
   });
 
   it("reports startup unsafe while active plaintext remains after a batch", async () => {

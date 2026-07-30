@@ -10,10 +10,14 @@ describe("WebhookBodyPurgeService", () => {
 
   it("purges expired ciphertext while preserving its digest", async () => {
     const purgeExpired = jest.fn().mockResolvedValue([3]);
+    const purgeExpiredOutbox = jest.fn().mockResolvedValue([2]);
     const now = new Date("2026-07-29T12:00:00.000Z");
-    const service = new WebhookBodyPurgeService({ purgeExpired });
+    const service = new WebhookBodyPurgeService({
+      purgeExpired,
+      purgeExpiredOutbox
+    });
 
-    await expect(service.purge(now)).resolves.toEqual({ purged: 3 });
+    await expect(service.purge(now)).resolves.toEqual({ purged: 5 });
     expect(purgeExpired).toHaveBeenCalledWith(
       {
         bodyCiphertext: null,
@@ -29,8 +33,12 @@ describe("WebhookBodyPurgeService", () => {
         silent: true
       }
     );
+    expect(purgeExpiredOutbox).toHaveBeenCalledWith(
+      expect.objectContaining({ bodyPurgedAt: now }),
+      expect.objectContaining({ silent: true })
+    );
     expect(snapshotWhatsAppMirrorMetrics()).toMatchObject({
-      purge: { encryptedBodies: 3 }
+      purge: { encryptedBodies: 5 }
     });
   });
 });

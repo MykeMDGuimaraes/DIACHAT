@@ -99,10 +99,18 @@ deadline de drain de 900 s. Ele falha se houver perda, duplicata inesperada,
 falha HMAC, plaintext at rest/logado ou drain acima de 15 minutos. Tokens,
 URLs internas, bodies e PII não entram no relatório.
 
-O relatório mede `injectionElapsedSeconds` e `achievedRps` por relógio
-monotônico e falha abaixo de 150 eventos/s sustentados pelos 1.800 s
-aprovados. Requests de injeção e polls usam `AbortController` com timeout para
-que um endpoint travado não suspenda o gate indefinidamente.
+O scheduler oferece exatamente 150 eventos em cada uma das 1.800 janelas,
+independentemente do tempo de conclusão das requests. O relatório separa
+`offeredEvents`, `offeredRps`, `injectionElapsedSeconds` e
+`completionElapsedSeconds`; a tolerância explícita do relógio é 0,5% e não
+permite aprovar uma oferta incompleta. Requests de injeção e polls usam
+`AbortController` com timeout para que um endpoint travado não suspenda o gate
+indefinidamente. Cada request leva o mesmo `runStartedAt`, e seu timestamp
+sintético é derivado da sequência a 150/s sem ultrapassar o instante aceito.
+
+Enquanto houver backlog, o runtime executa até oito rodadas imediatas por pool
+antes de devolver controle ao intervalo principal; lanes continuam isoladas e
+uma falha não interrompe as demais.
 
 Falhas de projeção/crypto incrementam `MessagingOutboxEvent.attemptCount`
 duravelmente no claim. O evento retorna com backoff de 5, 15, 30, 60 e 120 s e

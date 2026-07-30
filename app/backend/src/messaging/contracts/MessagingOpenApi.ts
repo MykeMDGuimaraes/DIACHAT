@@ -439,6 +439,18 @@ export const messagingOpenApi = {
           }
         }
       },
+      LegacyWebhookEnvelope: {
+        type: "object",
+        description:
+          "Envelope 1.1 emitido quando MESSAGING_WEBHOOK_MIRROR_V1_ENABLED=false; o campo schema nÃ£o Ã© exigido.",
+        required: ["id", "type", "createdAt", "data"],
+        properties: {
+          id: { type: "string" },
+          type: { type: "string" },
+          createdAt: { type: "string", format: "date-time" },
+          data: { type: "object", additionalProperties: true }
+        }
+      },
       WhatsAppMirrorEnvelope: {
         type: "object",
         additionalProperties: false,
@@ -717,7 +729,13 @@ export const messagingOpenApi = {
   ],
   "x-webhook-events": {
     payloadSchema: {
-      $ref: "#/components/schemas/WhatsAppMirrorEnvelope"
+      oneOf: [
+        { $ref: "#/components/schemas/LegacyWebhookEnvelope" },
+        { $ref: "#/components/schemas/WhatsAppMirrorEnvelope" }
+      ],
+      "x-feature-flag": "MESSAGING_WEBHOOK_MIRROR_V1_ENABLED",
+      description:
+        "Flag desligada: legado 1.1 sem schema obrigatÃ³rio. Flag ligada: mirror 1.2 com schema=whatsapp-mirror/1."
     },
     events: [
       "button.clicked",

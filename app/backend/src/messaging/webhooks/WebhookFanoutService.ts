@@ -18,9 +18,11 @@ import WhatsAppMirrorProjectionService, {
 } from "./WhatsAppMirrorProjectionService";
 import { WhatsAppMirrorSerializedSnapshot } from "./WhatsAppMirrorPayloadBuilder";
 import { recordWhatsAppMirrorMetric } from "../operations/WhatsAppMirrorMetrics";
+import { decryptWhatsAppOutboxBody } from "./WhatsAppOutboxBodyCipher";
 
 type DomainEvent = WhatsAppMirrorSourceEvent;
 const FANOUT_MAX_ATTEMPTS = 6;
+const OUTBOX_DEAD_LETTER_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 const FANOUT_BACKOFF_SECONDS = [5, 15, 30, 60, 120] as const;
 
 interface FanoutFailureState {
@@ -28,6 +30,7 @@ interface FanoutFailureState {
   availableAt: Date;
   attemptCount: number;
   lastError: string;
+  bodyExpiresAt?: Date;
 }
 
 interface WebhookFanoutDependencies {
@@ -63,6 +66,10 @@ interface WebhookFanoutDependencies {
   newId(): string;
   mirrorEnabled(): boolean;
   now(): Date;
+  decryptOutboxPayload(
+    event: DomainEvent,
+    keyring: MessagingKeyring
+  ): Record<string, unknown>;
 }
 
 const legacyDeliverableEvents = [
@@ -132,7 +139,15 @@ const defaultDependencies: WebhookFanoutDependencies = {
     WebhookDelivery.create(data as any, { transaction }),
   completeEvent: (id, leaseToken, transaction) =>
     MessagingOutboxEvent.update(
-      { status: "completed", leaseExpiresAt: null, leaseToken: null },
+      {
+        status: "completed",
+        leaseExpiresAt: null,
+        leaseToken: null,
+        bodyCiphertext: null,
+        bodyKeyVersion: null,
+        bodyExpiresAt: null,
+        bodyPurgedAt: new Date()
+      },
       { where: { id, status: "processing", leaseToken }, transaction }
     ),
   failEvent: (id, leaseToken, state) =>
@@ -153,7 +168,22 @@ const defaultDependencies: WebhookFanoutDependencies = {
   newId: randomUUID,
   mirrorEnabled: () =>
     process.env.MESSAGING_WEBHOOK_MIRROR_V1_ENABLED === "true",
-  now: () => new Date()
+  now: () => new Date(),
+  decryptOutboxPayload: (event, keyring) => {
+    if (!event.bodyCiphertext || !event.bodyKeyVersion || !event.bodySha256) {
+      return event.payload;
+    }
+    return decryptWhatsAppOutboxBody(
+      {
+        bodyCiphertext: event.bodyCiphertext,
+        bodyKeyVersion: event.bodyKeyVersion,
+        bodySha256: event.bodySha256
+      },
+      event.companyId,
+      event.id,
+      keyring
+    );
+  }
 };
 
 export const buildFanoutFailureState = (
@@ -167,7 +197,8 @@ export const buildFanoutFailureState = (
       status: "dead_letter",
       availableAt: now,
       attemptCount: durableAttemptCount,
-      lastError: failureCode
+      lastError: failureCode,
+      bodyExpiresAt: new Date(now.getTime() + OUTBOX_DEAD_LETTER_RETENTION_MS)
     };
   }
   const delaySeconds =
@@ -243,15 +274,25 @@ class WebhookFanoutService {
     if (!event) return { status: "idle", deliveries: 0 };
     let failureCode = "WHATSAPP_MIRROR_FANOUT_FAILED";
     try {
+      failureCode = "WHATSAPP_MIRROR_CRYPTO_FAILED";
+      const hydratedEvent: DomainEvent = {
+        ...event,
+        payload: event.bodyCiphertext
+          ? this.dependencies.decryptOutboxPayload(
+              event,
+              this.dependencies.getKeyring()
+            )
+          : event.payload
+      };
       const subscriptions = (
-        await this.dependencies.findSubscriptions(event.companyId)
-      ).filter(item => matches(item, event));
+        await this.dependencies.findSubscriptions(hydratedEvent.companyId)
+      ).filter(item => matches(item, hydratedEvent));
       const prepared: Array<Record<string, unknown>> = [];
       if (subscriptions.length) {
         failureCode = "WHATSAPP_MIRROR_PROJECTION_FAILED";
         const snapshot = mirrorEnabled
-          ? await this.dependencies.buildSnapshot(event)
-          : await this.dependencies.buildLegacySnapshot(event);
+          ? await this.dependencies.buildSnapshot(hydratedEvent)
+          : await this.dependencies.buildLegacySnapshot(hydratedEvent);
         failureCode = "WHATSAPP_MIRROR_CRYPTO_FAILED";
         const keyring = this.dependencies.getKeyring();
         for (const subscription of subscriptions) {
@@ -259,7 +300,7 @@ class WebhookFanoutService {
           const encrypted = this.dependencies.encryptBody(
             Buffer.from(snapshot.rawBody, "utf8"),
             {
-              companyId: event.companyId,
+              companyId: hydratedEvent.companyId,
               subscriptionId: subscription.id,
               deliveryId: id,
               eventId: event.id
@@ -273,7 +314,7 @@ class WebhookFanoutService {
           prepared.push({
             id,
             subscriptionId: subscription.id,
-            companyId: event.companyId,
+            companyId: hydratedEvent.companyId,
             eventId: event.id,
             eventType: event.eventType,
             urlSnapshot: subscription.url,
@@ -283,7 +324,7 @@ class WebhookFanoutService {
             ...encrypted,
             bodyExpiresAt: null,
             bodyPurgedAt: null,
-            payload: correlationOnlyPayload(event),
+            payload: correlationOnlyPayload(hydratedEvent),
             status: "ready",
             attemptCount: 0,
             availableAt: new Date(),

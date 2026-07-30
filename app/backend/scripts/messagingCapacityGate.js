@@ -220,8 +220,12 @@ const buildReplayReport = (config, measurements) => {
     drainedWithinDeadline:
       Number(measurements.drainSeconds) <= config.drainDeadlineSeconds,
     sustainedInjectionRate:
-      Number(measurements.injectionElapsedSeconds) >= config.durationSeconds &&
-      Number(measurements.achievedRps) >= config.requestsPerSecond,
+      Number(measurements.offeredEvents) === config.expectedEvents &&
+      Number(measurements.injectionElapsedSeconds) >=
+        config.durationSeconds * 0.995 &&
+      Number(measurements.injectionElapsedSeconds) <=
+        config.durationSeconds * 1.005 &&
+      Number(measurements.offeredRps) >= config.requestsPerSecond * 0.995,
     pipelineHealthy:
       Number(pipeline.durableProjectionFailures || 0) === 0 &&
       Number(pipeline.durableCryptoFailures || 0) === 0 &&
@@ -262,8 +266,10 @@ const buildReplayReport = (config, measurements) => {
         purge: pipeline.purge || null,
         media: pipeline.media || null
       },
+      offeredEvents: Number(measurements.offeredEvents),
       injectionElapsedSeconds: Number(measurements.injectionElapsedSeconds),
-      achievedRps: Number(measurements.achievedRps),
+      offeredRps: Number(measurements.offeredRps),
+      completionElapsedSeconds: Number(measurements.completionElapsedSeconds),
       drainSeconds: Number(measurements.drainSeconds)
     },
     gates,
@@ -309,16 +315,54 @@ const fetchJsonWithTimeout = async (
 const requestJson = (url, options) =>
   fetchJsonWithTimeout(url, options, REQUEST_TIMEOUT_MS);
 
-const buildInjectionMeasurements = (accepted, startedAt, finishedAt) => {
+const buildInjectionMeasurements = (offered, startedAt, finishedAt) => {
   const injectionElapsedSeconds = Math.max(0, (finishedAt - startedAt) / 1000);
   return {
+    offeredEvents: offered,
     injectionElapsedSeconds,
-    achievedRps:
-      injectionElapsedSeconds > 0 ? accepted / injectionElapsedSeconds : 0
+    offeredRps:
+      injectionElapsedSeconds > 0 ? offered / injectionElapsedSeconds : 0
   };
 };
 
-const replayOne = (config, runId, sequence, fixture, event) =>
+const scheduleOfferedLoad = async ({
+  durationSeconds,
+  requestsPerSecond,
+  offer,
+  now = () => performance.now(),
+  sleep = milliseconds =>
+    new Promise(resolve => setTimeout(resolve, milliseconds))
+}) => {
+  const startedAt = now();
+  let offered = 0;
+  let accepted = 0;
+  const pending = new Set();
+  for (let second = 0; second < durationSeconds; second += 1) {
+    for (let index = 0; index < requestsPerSecond; index += 1) {
+      const sequence = second * requestsPerSecond + index;
+      offered += 1;
+      const request = Promise.resolve()
+        .then(() => offer(sequence))
+        .then(() => {
+          accepted += 1;
+        })
+        .catch(() => undefined)
+        .finally(() => pending.delete(request));
+      pending.add(request);
+    }
+    const remaining = startedAt + (second + 1) * 1000 - now();
+    if (remaining > 0) await sleep(remaining);
+  }
+  const offeredFinishedAt = now();
+  await Promise.all([...pending]);
+  return {
+    accepted,
+    ...buildInjectionMeasurements(offered, startedAt, offeredFinishedAt),
+    completionElapsedSeconds: Math.max(0, (now() - startedAt) / 1000)
+  };
+};
+
+const replayOne = (config, runId, runStartedAt, sequence, fixture, event) =>
   requestJson(
     new URL("/internal/v1/messaging/capacity-replay", `${config.targetUrl}/`),
     {
@@ -329,6 +373,7 @@ const replayOne = (config, runId, sequence, fixture, event) =>
       },
       body: JSON.stringify({
         runId,
+        runStartedAt,
         sequence,
         whatsappId: config.whatsappId,
         fixture: {
@@ -403,29 +448,17 @@ const replayFixtures = async config => {
   }
 
   const runId = crypto.randomUUID();
+  const runStartedAt = new Date().toISOString();
   const initialMetrics = await readDiaChatMetrics(config);
-  let accepted = 0;
-  const injectionStartedAt = performance.now();
-  for (let second = 0; second < config.durationSeconds; second += 1) {
-    const tickStartedAt = performance.now();
-    const results = await Promise.allSettled(
-      Array.from({ length: config.requestsPerSecond }, (_unused, index) => {
-        const sequence = second * config.requestsPerSecond + index;
-        const { fixture, event } = selectReplayInput(fixtures, sequence);
-        return replayOne(config, runId, sequence, fixture, event);
-      })
-    );
-    accepted += results.filter(result => result.status === "fulfilled").length;
-    const remaining = 1000 - (performance.now() - tickStartedAt);
-    if (remaining > 0) {
-      await new Promise(resolve => setTimeout(resolve, remaining));
+  const injection = await scheduleOfferedLoad({
+    durationSeconds: config.durationSeconds,
+    requestsPerSecond: config.requestsPerSecond,
+    offer: sequence => {
+      const { fixture, event } = selectReplayInput(fixtures, sequence);
+      return replayOne(config, runId, runStartedAt, sequence, fixture, event);
     }
-  }
-  const injection = buildInjectionMeasurements(
-    accepted,
-    injectionStartedAt,
-    performance.now()
-  );
+  });
+  const { accepted } = injection;
 
   const drainStartedAt = performance.now();
   let diaChatMetrics;
@@ -622,6 +655,7 @@ module.exports = {
   loadReplayFixtures,
   percentile,
   replayFixtures,
+  scheduleOfferedLoad,
   requestProbe,
   run,
   selectReplayInput,
