@@ -441,6 +441,7 @@ export const messagingOpenApi = {
       },
       LegacyWebhookEnvelope: {
         type: "object",
+        not: { required: ["schema"] },
         description:
           "Envelope 1.1 emitido quando MESSAGING_WEBHOOK_MIRROR_V1_ENABLED=false; o campo schema nÃ£o Ã© exigido.",
         required: ["id", "type", "createdAt", "data"],

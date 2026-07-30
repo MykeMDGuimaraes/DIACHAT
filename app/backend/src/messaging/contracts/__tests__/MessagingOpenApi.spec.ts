@@ -1,4 +1,23 @@
+// Ajv is already pinned by the repository toolchain and probes the emitted
+// JSON Schema branches without introducing a production dependency.
+// eslint-disable-next-line import/no-extraneous-dependencies
+import Ajv from "ajv";
 import messagingOpenApi from "../MessagingOpenApi";
+
+const webhookBranchesMatched = (payload: Record<string, unknown>): number => {
+  const ajv = new Ajv({ allErrors: true, schemaId: "auto" });
+  const schemas = messagingOpenApi.components.schemas;
+  return messagingOpenApi["x-webhook-events"].payloadSchema.oneOf.filter(
+    branch =>
+      ajv.validate(
+        {
+          components: { schemas },
+          allOf: [branch]
+        },
+        payload
+      )
+  ).length;
+};
 
 describe("MessagingOpenApi 1.2", () => {
   it("publishes every Router P0 path as an authenticated full API path", () => {
@@ -173,5 +192,92 @@ describe("MessagingOpenApi 1.2", () => {
         "#/components/schemas/WhatsAppMirrorSerializedSnapshot",
       digestScope: "SHA-256 dos bytes UTF-8 exatos de rawBody"
     });
+  });
+
+  it("keeps legacy and mirror webhook branches mutually exclusive in a real schema probe", () => {
+    const nullableMessage = {
+      id: null,
+      providerMessageId: null,
+      direction: null,
+      fromMe: null,
+      type: null,
+      text: null,
+      timestamp: null,
+      status: null,
+      quoted: null,
+      reaction: null,
+      interactive: null,
+      media: null,
+      location: null,
+      contacts: null,
+      poll: null,
+      edit: null,
+      delete: null
+    };
+    const legacy = {
+      id: "legacy-event",
+      type: "message.received",
+      createdAt: "2026-07-29T12:00:00.000Z",
+      data: { messageId: "legacy-message" }
+    };
+    const mirror = {
+      schema: "whatsapp-mirror/1",
+      id: "11111111-1111-4111-8111-111111111111",
+      type: "message.received",
+      createdAt: "2026-07-29T12:00:00.000Z",
+      data: {
+        messageId: null,
+        whatsappId: 42,
+        conversationId: null,
+        contactId: null,
+        externalTicketId: null,
+        automationEpoch: null,
+        actorType: null,
+        kind: null,
+        origin: null,
+        provider: {
+          name: null,
+          eventId: null,
+          messageId: null,
+          timestamp: null
+        },
+        connection: {
+          id: 42,
+          publicId: null,
+          state: null,
+          phoneNumber: null
+        },
+        contact: {
+          id: null,
+          jid: null,
+          lid: null,
+          phoneNumber: null,
+          name: null,
+          pushName: null,
+          isBusiness: null
+        },
+        conversation: {
+          id: null,
+          externalTicketId: null,
+          automationEpoch: null,
+          status: null
+        },
+        chat: {
+          jid: null,
+          lid: null,
+          type: null,
+          name: null,
+          archived: null,
+          pinned: null,
+          mutedUntil: null,
+          unreadCount: null
+        },
+        message: nullableMessage,
+        truncated: false
+      }
+    };
+
+    expect(webhookBranchesMatched(legacy)).toBe(1);
+    expect(webhookBranchesMatched(mirror)).toBe(1);
   });
 });

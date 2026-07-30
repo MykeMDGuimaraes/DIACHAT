@@ -22,6 +22,7 @@ const SYNTHETIC_WHATSAPP_ID =
   /^(?:0{12,18}(?:-0{10})?)@(?:s\.whatsapp\.net|g\.us|lid|c\.us)$/i;
 const ADAPTERS = ["message", "chat", "connection"] as const;
 const REPLAY_EVENTS_PER_SECOND = 150;
+const REPLAY_EXPECTED_EVENTS = 270_000;
 
 interface ReplayDependencies {
   publish(events: readonly WhatsAppProviderEvent[]): Promise<void>;
@@ -125,6 +126,7 @@ class WhatsAppMirrorReplayService {
     companyId: number,
     request: ReplayRequest
   ): Promise<{ accepted: true; sequence: number }> {
+    const acceptedAt = this.dependencies.now();
     if (!Number.isSafeInteger(companyId) || companyId < 1) {
       throw new Error("Replay exige companyId autenticado");
     }
@@ -134,11 +136,15 @@ class WhatsAppMirrorReplayService {
     const runStartedAt = new Date(request?.runStartedAt || "");
     if (
       Number.isNaN(runStartedAt.getTime()) ||
-      runStartedAt.getTime() > this.dependencies.now().getTime()
+      runStartedAt.getTime() > acceptedAt.getTime()
     ) {
       throw new Error("Replay runStartedAt invalido");
     }
-    if (!Number.isSafeInteger(request?.sequence) || request.sequence < 0) {
+    if (
+      !Number.isSafeInteger(request?.sequence) ||
+      request.sequence < 0 ||
+      request.sequence >= REPLAY_EXPECTED_EVENTS
+    ) {
       throw new Error("Replay sequence invalida");
     }
     if (!Number.isSafeInteger(request?.whatsappId) || request.whatsappId < 1) {
@@ -179,6 +185,9 @@ class WhatsAppMirrorReplayService {
       runStartedAt,
       request.sequence
     );
+    if (observedAt.getTime() > acceptedAt.getTime()) {
+      throw new Error("Replay timestamp futuro");
+    }
     let events: WhatsAppProviderEvent[];
     if (request.fixture.provider === "baileys") {
       events =

@@ -178,4 +178,46 @@ describe("WhatsAppMirrorReplayService", () => {
       })
     ).rejects.toThrow("runStartedAt");
   });
+
+  it("bounds sequences and rejects a valid sequence before its deterministic slot", async () => {
+    const request = (sequence: number) => ({
+      runId,
+      runStartedAt,
+      sequence,
+      whatsappId: 3,
+      fixture: {
+        name: "slot-bounds",
+        provider: "baileys" as const,
+        event: {
+          adapter: "chat",
+          raw: { id: "synthetic", archived: true }
+        }
+      }
+    });
+    const early = new WhatsAppMirrorReplayService({
+      now: () => new Date("2026-07-29T12:00:00.000Z"),
+      publish: async () => undefined
+    });
+
+    await expect(early.replay(7, request(270000))).rejects.toThrow("sequence");
+    await expect(early.replay(7, request(150))).rejects.toThrow("timestamp");
+
+    const published: any[] = [];
+    const onSlot = new WhatsAppMirrorReplayService({
+      now: () => new Date("2026-07-29T12:00:01.000Z"),
+      publish: async events => {
+        published.push(events[0]);
+      }
+    });
+    await onSlot.replay(7, request(150));
+    await onSlot.replay(7, request(150));
+
+    expect(published[0].occurredAt).toEqual(
+      new Date("2026-07-29T12:00:01.000Z")
+    );
+    expect(published[0].aggregateId).toBe(published[1].aggregateId);
+    expect(published[0].payload.provider.eventId).toBe(
+      published[1].payload.provider.eventId
+    );
+  });
 });
