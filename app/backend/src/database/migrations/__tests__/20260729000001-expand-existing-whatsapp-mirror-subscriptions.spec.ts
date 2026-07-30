@@ -34,6 +34,17 @@ const createHarness = (seed: Record<string, string[]>) => {
       operations.push(`backup:insert:${subscriptionId}`);
       return [];
     }
+    if (sql.includes("to_regclass")) {
+      // Verificação de existência da tabela de backup no down(): não gera
+      // operação rastreada, apenas libera o fluxo de restauração.
+      return [{ regclass: "messaging.WebhookSubscriptionMirrorEventBackups" }];
+    }
+    if (sql.includes("UPDATE")) {
+      const { events, id } = options.replacements;
+      subscriptions.set(id, JSON.parse(events));
+      operations.push(`${readingBackups ? "restore" : "expand"}:${id}`);
+      return [];
+    }
     if (sql.includes("WebhookSubscriptionMirrorEventBackups")) {
       readingBackups = true;
       operations.push("backup:read");
@@ -46,14 +57,6 @@ const createHarness = (seed: Record<string, string[]>) => {
       .filter(([, events]) => events.includes("message.received"))
       .map(([id, events]) => ({ id, events: [...events] }));
   });
-  const bulkUpdate = jest.fn(
-    async (_table, values: { events: string[] }, where: { id: string }) => {
-      subscriptions.set(where.id, [...values.events]);
-      operations.push(
-        `${readingBackups ? "restore" : "expand"}:${where.id}`
-      );
-    }
-  );
   const dropTable = jest.fn(async table => {
     operations.push("backup:drop");
     expect(table).toEqual(backupTable);
@@ -62,7 +65,6 @@ const createHarness = (seed: Record<string, string[]>) => {
   return {
     queryInterface: {
       sequelize: { query, transaction },
-      bulkUpdate,
       dropTable
     },
     subscriptions,

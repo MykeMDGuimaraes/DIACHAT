@@ -8,10 +8,14 @@ describe("WhatsApp mirror snapshot migration", () => {
     const createTable = jest.fn();
     const addIndex = jest.fn();
 
+    // Simula banco limpo (sem drift): nenhuma coluna/tabela/índice existe,
+    // então todos os guards deixam as operações executarem.
     await migration.up({
       addColumn,
       createTable,
-      addIndex
+      addIndex,
+      describeTable: jest.fn().mockResolvedValue({}),
+      sequelize: { query: jest.fn().mockResolvedValue([]) }
     });
 
     const outbox = {
@@ -91,15 +95,83 @@ describe("WhatsApp mirror snapshot migration", () => {
     );
   });
 
+  it("repairs missing columns when the chat state table already exists (partial drift)", async () => {
+    const addColumn = jest.fn();
+    const createTable = jest.fn();
+    const addIndex = jest.fn();
+    // Tabela WhatsAppChatStates existe mas vazia de colunas (drift parcial);
+    // outbox/deliveries já têm todas as colunas; nenhum índice existe.
+    const describeTable = jest.fn(async (table: { tableName: string }) =>
+      table.tableName === "WhatsAppChatStates"
+        ? {}
+        : {
+            leaseToken: {},
+            bodyCiphertext: {},
+            bodyKeyVersion: {},
+            bodySha256: {},
+            bodyExpiresAt: {},
+            bodyPurgedAt: {}
+          }
+    );
+    const query = jest.fn(async (sql: string) =>
+      sql.includes("to_regclass")
+        ? [{ regclass: "messaging.WhatsAppChatStates" }]
+        : []
+    );
+
+    await migration.up({
+      addColumn,
+      createTable,
+      addIndex,
+      describeTable,
+      sequelize: { query }
+    });
+
+    expect(createTable).not.toHaveBeenCalled();
+    expect(addColumn).toHaveBeenCalledWith(
+      { tableName: "WhatsAppChatStates", schema: "messaging" },
+      "jid",
+      expect.any(Object)
+    );
+    expect(addColumn).toHaveBeenCalledWith(
+      { tableName: "WhatsAppChatStates", schema: "messaging" },
+      "revision",
+      expect.any(Object)
+    );
+    expect(addIndex).toHaveBeenCalledWith(
+      { tableName: "WhatsAppChatStates", schema: "messaging" },
+      ["companyId", "whatsappId", "jid"],
+      expect.objectContaining({
+        name: "whatsapp_chat_states_company_connection_jid_unique"
+      })
+    );
+  });
+
   it("reverses only the additive Task 2 schema", async () => {
     const removeIndex = jest.fn();
     const dropTable = jest.fn();
     const removeColumn = jest.fn();
 
+    // Simula banco no estado pós-up: tabela e colunas existem, então os
+    // guards do down() deixam a reversão executar por completo.
+    const existingColumns = {
+      leaseToken: {},
+      bodyCiphertext: {},
+      bodyKeyVersion: {},
+      bodySha256: {},
+      bodyExpiresAt: {},
+      bodyPurgedAt: {}
+    };
     await migration.down({
       removeIndex,
       dropTable,
-      removeColumn
+      removeColumn,
+      describeTable: jest.fn().mockResolvedValue(existingColumns),
+      sequelize: {
+        query: jest.fn().mockResolvedValue([
+          { regclass: "messaging.WhatsAppChatStates", found: 1 }
+        ])
+      }
     });
 
     expect(dropTable).toHaveBeenCalledWith({

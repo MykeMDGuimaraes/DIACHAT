@@ -1,9 +1,5 @@
 import { QueryInterface, QueryTypes } from "sequelize";
 
-const subscriptions = {
-  tableName: "WebhookSubscriptions",
-  schema: "messaging"
-};
 const backups = {
   tableName: "WebhookSubscriptionMirrorEventBackups",
   schema: "messaging"
@@ -84,11 +80,24 @@ module.exports = {
               transaction
             }
           );
-          await queryInterface.bulkUpdate(
-            subscriptions,
-            { events, updatedAt },
-            { id: row.id },
-            { transaction }
+          // bulkUpdate serializa arrays JS como literal ARRAY do Postgres
+          // ("{a,b}"), que uma coluna JSONB rejeita ("Expected ':'") — por
+          // isso o UPDATE usa SQL parametrizado com CAST explícito.
+          await queryInterface.sequelize.query(
+            `
+              UPDATE "messaging"."WebhookSubscriptions"
+              SET "events" = CAST(:events AS JSONB),
+                  "updatedAt" = :updatedAt
+              WHERE "id" = :id
+            `,
+            {
+              replacements: {
+                events: JSON.stringify(events),
+                updatedAt,
+                id: row.id
+              },
+              transaction
+            }
           );
         })
       );
@@ -97,6 +106,11 @@ module.exports = {
 
   down: async (queryInterface: QueryInterface): Promise<void> => {
     await queryInterface.sequelize.transaction(async transaction => {
+      const backupTable = (await queryInterface.sequelize.query(
+        `SELECT to_regclass('messaging."WebhookSubscriptionMirrorEventBackups"') AS "regclass"`,
+        { type: QueryTypes.SELECT, transaction }
+      )) as Array<{ regclass: string | null }>;
+      if (!backupTable.length || !backupTable[0].regclass) return;
       const rows = (await queryInterface.sequelize.query(
         `
           SELECT "subscriptionId", "originalEvents"
@@ -107,11 +121,21 @@ module.exports = {
       const updatedAt = new Date();
       await Promise.all(
         rows.map(row =>
-          queryInterface.bulkUpdate(
-            subscriptions,
-            { events: row.originalEvents, updatedAt },
-            { id: row.subscriptionId },
-            { transaction }
+          queryInterface.sequelize.query(
+            `
+              UPDATE "messaging"."WebhookSubscriptions"
+              SET "events" = CAST(:events AS JSONB),
+                  "updatedAt" = :updatedAt
+              WHERE "id" = :id
+            `,
+            {
+              replacements: {
+                events: JSON.stringify(row.originalEvents),
+                updatedAt,
+                id: row.subscriptionId
+              },
+              transaction
+            }
           )
         )
       );
