@@ -118,6 +118,14 @@ const loadReplayFixtures = (
     )
   );
 
+const selectReplayInput = (fixtures, sequence) => {
+  const cycle = fixtures.flatMap(fixture =>
+    fixture.events.map(event => ({ fixture, event }))
+  );
+  if (!cycle.length) throw new Error("Replay cycle requires fixture inputs");
+  return cycle[sequence % cycle.length];
+};
+
 const requireHttpsUrl = (value, name) => {
   let parsed;
   try {
@@ -403,8 +411,7 @@ const replayFixtures = async config => {
     const results = await Promise.allSettled(
       Array.from({ length: config.requestsPerSecond }, (_unused, index) => {
         const sequence = second * config.requestsPerSecond + index;
-        const fixture = fixtures[sequence % fixtures.length];
-        const event = fixture.events[sequence % fixture.events.length];
+        const { fixture, event } = selectReplayInput(fixtures, sequence);
         return replayOne(config, runId, sequence, fixture, event);
       })
     );
@@ -617,5 +624,6 @@ module.exports = {
   replayFixtures,
   requestProbe,
   run,
+  selectReplayInput,
   validateReplayFixture
 };

@@ -1,4 +1,6 @@
-import WebhookFanoutService from "../WebhookFanoutService";
+import WebhookFanoutService, {
+  buildFanoutClaimState
+} from "../WebhookFanoutService";
 import {
   resetWhatsAppMirrorMetricsForTests,
   snapshotWhatsAppMirrorMetrics
@@ -6,6 +8,16 @@ import {
 
 describe("WebhookFanoutService", () => {
   afterEach(() => resetWhatsAppMirrorMetricsForTests());
+  it("increments the durable attempt while assigning a fenced lease", () => {
+    expect(
+      buildFanoutClaimState(2, "lease-3", new Date("2026-07-29T12:00:00.000Z"))
+    ).toEqual({
+      status: "processing",
+      attemptCount: 3,
+      leaseToken: "lease-3",
+      leaseExpiresAt: new Date("2026-07-29T12:02:00.000Z")
+    });
+  });
   it("uses the rich mirror snapshot only when the feature flag is enabled", async () => {
     const createDelivery = jest.fn();
     const completeEvent = jest.fn();
@@ -216,7 +228,8 @@ describe("WebhookFanoutService", () => {
     "does not complete the claimed event after %s failure",
     async failure => {
       const completeEvent = jest.fn();
-      const releaseEvent = jest.fn().mockResolvedValue([1]);
+      const failEvent = jest.fn().mockResolvedValue([1]);
+      const now = new Date("2026-07-29T12:00:00.000Z");
       const transaction = jest.fn(async callback => callback({}));
       const service = new WebhookFanoutService({
         transaction,
@@ -227,6 +240,7 @@ describe("WebhookFanoutService", () => {
           aggregateId: "msg_1",
           payload: { messageId: "msg_1" },
           createdAt: new Date("2026-07-29T12:00:00.000Z"),
+          attemptCount: 1,
           leaseToken: "event-lease-1"
         }),
         findSubscriptions: jest.fn().mockResolvedValue([
@@ -240,7 +254,7 @@ describe("WebhookFanoutService", () => {
         ]),
         createDelivery: jest.fn(),
         completeEvent,
-        releaseEvent,
+        failEvent,
         buildSnapshot:
           failure === "projection"
             ? jest.fn().mockRejectedValue(new Error("projection failed"))
@@ -256,22 +270,83 @@ describe("WebhookFanoutService", () => {
             : jest.fn(),
         getKeyring: jest.fn().mockReturnValue({ activeKeyId: "v1", keys: {} }),
         newId: jest.fn().mockReturnValue("del_1"),
-        mirrorEnabled: jest.fn().mockReturnValue(true)
+        mirrorEnabled: jest.fn().mockReturnValue(true),
+        now: () => now
       });
 
       await expect(service.fanoutOne()).rejects.toThrow(`${failure} failed`);
       expect(completeEvent).not.toHaveBeenCalled();
-      expect(releaseEvent).toHaveBeenCalledWith(
-        "evt_1",
-        "event-lease-1",
-        failure === "projection"
-          ? "WHATSAPP_MIRROR_PROJECTION_FAILED"
-          : "WHATSAPP_MIRROR_CRYPTO_FAILED"
-      );
+      expect(failEvent).toHaveBeenCalledWith("evt_1", "event-lease-1", {
+        status: "ready",
+        availableAt: new Date("2026-07-29T12:00:05.000Z"),
+        attemptCount: 1,
+        lastError:
+          failure === "projection"
+            ? "WHATSAPP_MIRROR_PROJECTION_FAILED"
+            : "WHATSAPP_MIRROR_CRYPTO_FAILED"
+      });
       expect(snapshotWhatsAppMirrorMetrics()).toMatchObject({
         projectionFailures: failure === "projection" ? 1 : 0,
         cryptoFailures: failure === "encryption" ? 1 : 0
       });
     }
   );
+
+  it("persists exponential backoff and sends a permanent projection failure to DLQ", async () => {
+    const now = new Date("2026-07-29T12:00:00.000Z");
+    const failEvent = jest.fn().mockResolvedValue([1]);
+    const attempts = [1, 2, 3, 4, 5, 6];
+    for (const attemptCount of attempts) {
+      const service = new WebhookFanoutService({
+        claimEvent: jest.fn().mockResolvedValue({
+          id: "evt_1",
+          companyId: 7,
+          eventType: "message.received",
+          aggregateId: "msg_1",
+          payload: { messageId: "msg_1" },
+          createdAt: now,
+          attemptCount,
+          leaseToken: `lease-${attemptCount}`
+        }),
+        findSubscriptions: jest.fn().mockResolvedValue([
+          {
+            id: "sub_1",
+            events: ["message.received"],
+            includeApiOrigin: true
+          }
+        ]),
+        buildSnapshot: jest
+          .fn()
+          .mockRejectedValue(new Error("projection failed")),
+        failEvent,
+        mirrorEnabled: jest.fn().mockReturnValue(true),
+        now: () => now
+      } as any);
+
+      await expect(service.fanoutOne()).rejects.toThrow("projection failed");
+    }
+
+    const retryStates = failEvent.mock.calls.slice(0, 5).map(call => call[2]);
+    expect(retryStates.map(state => state.status)).toEqual(
+      Array(5).fill("ready")
+    );
+    expect(retryStates.map(state => state.availableAt.getTime())).toEqual([
+      now.getTime() + 5_000,
+      now.getTime() + 15_000,
+      now.getTime() + 30_000,
+      now.getTime() + 60_000,
+      now.getTime() + 120_000
+    ]);
+    expect(failEvent.mock.calls[5][2]).toEqual({
+      status: "dead_letter",
+      availableAt: now,
+      attemptCount: 6,
+      lastError: "WHATSAPP_MIRROR_PROJECTION_FAILED"
+    });
+    expect(
+      failEvent.mock.calls.every(
+        call => call[1] === `lease-${call[2].attemptCount}`
+      )
+    ).toBe(true);
+  });
 });

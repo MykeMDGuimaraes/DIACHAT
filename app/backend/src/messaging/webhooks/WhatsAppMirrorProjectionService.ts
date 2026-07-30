@@ -15,6 +15,7 @@ export interface WhatsAppMirrorSourceEvent {
   payload: Record<string, any>;
   createdAt: Date;
   leaseToken: string;
+  attemptCount?: number;
 }
 
 interface ProjectionDependencies {
@@ -126,12 +127,12 @@ class WhatsAppMirrorProjectionService {
     const protectedMedia =
       messageId &&
       (nestedMessage.media || hasPersistedMedia(persistedMessage?.mediaType))
-      ? await this.dependencies.projectMedia(
-          event.companyId,
-          messageId,
-          this.dependencies.now()
-        )
-      : null;
+        ? await this.dependencies.projectMedia(
+            event.companyId,
+            messageId,
+            this.dependencies.now()
+          )
+        : null;
     const fromMe =
       nestedMessage.fromMe ??
       source.fromMe ??
@@ -184,9 +185,7 @@ class WhatsAppMirrorProjectionService {
           source.externalTicketId ??
           null,
         automationEpoch:
-          source.conversation?.automationEpoch ??
-          source.automationEpoch ??
-          null
+          source.conversation?.automationEpoch ?? source.automationEpoch ?? null
       },
       chat: source.chat,
       message: {
@@ -204,10 +203,7 @@ class WhatsAppMirrorProjectionService {
           persistedMessage?.mediaType ??
           null,
         text:
-          nestedMessage.text ??
-          source.text ??
-          persistedMessage?.body ??
-          null,
+          nestedMessage.text ?? source.text ?? persistedMessage?.body ?? null,
         timestamp:
           nestedMessage.timestamp ??
           dateOrNull(source.timestamp) ??

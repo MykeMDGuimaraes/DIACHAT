@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import WhatsAppProviderEventPublisher from "../application/WhatsAppProviderEventPublisher";
 import { WhatsAppProviderEvent } from "../domain/WhatsAppProviderEvent";
 import {
@@ -20,10 +21,10 @@ const WHATSAPP_ID = /(?:@s\.whatsapp\.net|@g\.us|@lid|@c\.us)$/i;
 const SYNTHETIC_WHATSAPP_ID =
   /^(?:0{12,18}(?:-0{10})?)@(?:s\.whatsapp\.net|g\.us|lid|c\.us)$/i;
 const ADAPTERS = ["message", "chat", "connection"] as const;
+const REPLAY_EPOCH_SECONDS = 1_767_225_600;
 
 interface ReplayDependencies {
   publish(events: readonly WhatsAppProviderEvent[]): Promise<void>;
-  now(): Date;
 }
 
 interface ReplayRequest {
@@ -39,8 +40,7 @@ interface ReplayRequest {
 
 const defaultPublisher = new WhatsAppProviderEventPublisher();
 const defaults: ReplayDependencies = {
-  publish: events => defaultPublisher.publish(events),
-  now: () => new Date()
+  publish: events => defaultPublisher.publish(events)
 };
 
 const validateSyntheticValue = (value: unknown, location: string): void => {
@@ -65,6 +65,46 @@ const validateSyntheticValue = (value: unknown, location: string): void => {
     }
     validateSyntheticValue(item, `${location}.${key}`);
   });
+};
+
+const replayIdentity = (runId: string, sequence: number) => {
+  const digest = createHash("sha256")
+    .update(`${runId}:${sequence}`)
+    .digest("hex");
+  const runOffsetSeconds =
+    parseInt(createHash("sha256").update(runId).digest("hex").slice(0, 8), 16) %
+    31_536_000;
+  const timestampSeconds = REPLAY_EPOCH_SECONDS + runOffsetSeconds + sequence;
+  return {
+    sourceEventId: `capacity-${digest.slice(0, 32)}`,
+    timestampSeconds,
+    observedAt: new Date(timestampSeconds * 1000)
+  };
+};
+
+const materializeReplayRaw = (
+  provider: ReplayRequest["fixture"]["provider"],
+  adapter: (typeof ADAPTERS)[number],
+  rawInput: Record<string, unknown>,
+  runId: string,
+  sequence: number
+): { raw: Record<string, unknown>; observedAt: Date } => {
+  const raw = JSON.parse(JSON.stringify(rawInput)) as Record<string, any>;
+  const identity = replayIdentity(runId, sequence);
+  if (provider === "baileys") {
+    raw.eventId = identity.sourceEventId;
+    raw.timestamp = identity.timestampSeconds;
+    raw.conversationTimestamp = identity.timestampSeconds;
+    if (adapter === "message") {
+      raw.key = { ...(raw.key || {}), id: identity.sourceEventId };
+      raw.messageTimestamp = identity.timestampSeconds;
+    }
+  } else {
+    raw.source_id = identity.sourceEventId;
+    raw.timestamp = String(identity.timestampSeconds);
+    if (adapter === "message") raw.id = identity.sourceEventId;
+  }
+  return { raw, observedAt: identity.observedAt };
 };
 
 class WhatsAppMirrorReplayService {
@@ -113,11 +153,17 @@ class WhatsAppMirrorReplayService {
       externalTicketId: syntheticId,
       automationEpoch: 1
     };
-    const raw = request.fixture.event.raw as Record<string, unknown>;
-    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    const rawInput = request.fixture.event.raw as Record<string, unknown>;
+    if (!rawInput || typeof rawInput !== "object" || Array.isArray(rawInput)) {
       throw new Error("Replay raw sintetico invalido");
     }
-    const observedAt = this.dependencies.now();
+    const { raw, observedAt } = materializeReplayRaw(
+      request.fixture.provider,
+      adapter,
+      rawInput,
+      request.runId,
+      request.sequence
+    );
     let events: WhatsAppProviderEvent[];
     if (request.fixture.provider === "baileys") {
       events =
@@ -138,7 +184,9 @@ class WhatsAppMirrorReplayService {
                 : adaptMetaConnectionUpdate({ ...context, raw, observedAt })
             ];
     }
-    await this.dependencies.publish(events);
+    // Interactive adapters also emit message.received. Replaying only the
+    // most specialized event preserves one persisted outbox event per request.
+    await this.dependencies.publish([events[events.length - 1]]);
     return { accepted: true, sequence: request.sequence };
   }
 }

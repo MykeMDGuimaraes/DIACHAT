@@ -20,6 +20,15 @@ import { WhatsAppMirrorSerializedSnapshot } from "./WhatsAppMirrorPayloadBuilder
 import { recordWhatsAppMirrorMetric } from "../operations/WhatsAppMirrorMetrics";
 
 type DomainEvent = WhatsAppMirrorSourceEvent;
+const FANOUT_MAX_ATTEMPTS = 6;
+const FANOUT_BACKOFF_SECONDS = [5, 15, 30, 60, 120] as const;
+
+interface FanoutFailureState {
+  status: "ready" | "dead_letter";
+  availableAt: Date;
+  attemptCount: number;
+  lastError: string;
+}
 
 interface WebhookFanoutDependencies {
   transaction<T>(callback: (transaction: any) => Promise<T>): Promise<T>;
@@ -34,10 +43,10 @@ interface WebhookFanoutDependencies {
     leaseToken: string,
     transaction: any
   ): Promise<unknown>;
-  releaseEvent(
+  failEvent(
     id: string,
     leaseToken: string,
-    failureCode: string
+    state: FanoutFailureState
   ): Promise<unknown>;
   buildSnapshot(
     event: DomainEvent
@@ -53,6 +62,7 @@ interface WebhookFanoutDependencies {
   getKeyring(): MessagingKeyring;
   newId(): string;
   mirrorEnabled(): boolean;
+  now(): Date;
 }
 
 const legacyDeliverableEvents = [
@@ -78,16 +88,28 @@ const specializedMirrorEvents = [
   "connection.updated"
 ];
 
+export const buildFanoutClaimState = (
+  currentAttemptCount: number,
+  leaseToken: string,
+  now: Date
+) => ({
+  status: "processing" as const,
+  attemptCount: Math.max(0, Number(currentAttemptCount) || 0) + 1,
+  leaseToken,
+  leaseExpiresAt: new Date(now.getTime() + 120_000)
+});
+
 const defaultDependencies: WebhookFanoutDependencies = {
   transaction: callback => sequelize.transaction(callback),
   claimEvent: eventTypes =>
     sequelize.transaction(async transaction => {
       const leaseToken = randomUUID();
+      const now = new Date();
       const event = await MessagingOutboxEvent.findOne({
         where: {
           eventType: { [Op.in]: eventTypes },
           status: "ready",
-          availableAt: { [Op.lte]: new Date() }
+          availableAt: { [Op.lte]: now }
         },
         order: [["createdAt", "ASC"]],
         transaction,
@@ -96,11 +118,7 @@ const defaultDependencies: WebhookFanoutDependencies = {
       });
       if (!event) return null;
       await event.update(
-        {
-          status: "processing",
-          leaseExpiresAt: new Date(Date.now() + 120000),
-          leaseToken
-        },
+        buildFanoutClaimState(event.attemptCount, leaseToken, now),
         { transaction }
       );
       return event.toJSON() as DomainEvent;
@@ -117,14 +135,12 @@ const defaultDependencies: WebhookFanoutDependencies = {
       { status: "completed", leaseExpiresAt: null, leaseToken: null },
       { where: { id, status: "processing", leaseToken }, transaction }
     ),
-  releaseEvent: (id, leaseToken, failureCode) =>
+  failEvent: (id, leaseToken, state) =>
     MessagingOutboxEvent.update(
       {
-        status: "ready",
+        ...state,
         leaseExpiresAt: null,
-        leaseToken: null,
-        lastError: failureCode,
-        availableAt: new Date(Date.now() + 1000)
+        leaseToken: null
       },
       { where: { id, status: "processing", leaseToken } }
     ),
@@ -136,7 +152,34 @@ const defaultDependencies: WebhookFanoutDependencies = {
   getKeyring: loadMessagingKeyring,
   newId: randomUUID,
   mirrorEnabled: () =>
-    process.env.MESSAGING_WEBHOOK_MIRROR_V1_ENABLED === "true"
+    process.env.MESSAGING_WEBHOOK_MIRROR_V1_ENABLED === "true",
+  now: () => new Date()
+};
+
+export const buildFanoutFailureState = (
+  attemptCount: number,
+  failureCode: string,
+  now: Date
+): FanoutFailureState => {
+  const durableAttemptCount = Math.max(1, Number(attemptCount) || 1);
+  if (durableAttemptCount >= FANOUT_MAX_ATTEMPTS) {
+    return {
+      status: "dead_letter",
+      availableAt: now,
+      attemptCount: durableAttemptCount,
+      lastError: failureCode
+    };
+  }
+  const delaySeconds =
+    FANOUT_BACKOFF_SECONDS[
+      Math.min(durableAttemptCount - 1, FANOUT_BACKOFF_SECONDS.length - 1)
+    ];
+  return {
+    status: "ready",
+    availableAt: new Date(now.getTime() + delaySeconds * 1000),
+    attemptCount: durableAttemptCount,
+    lastError: failureCode
+  };
 };
 
 const matches = (subscription: any, event: DomainEvent): boolean => {
@@ -210,10 +253,14 @@ class WebhookFanoutService {
           : await this.dependencies.buildLegacySnapshot(event);
       } catch (error) {
         recordWhatsAppMirrorMetric("projectionFailure");
-        await this.dependencies.releaseEvent(
+        await this.dependencies.failEvent(
           event.id,
           event.leaseToken,
-          "WHATSAPP_MIRROR_PROJECTION_FAILED"
+          buildFanoutFailureState(
+            event.attemptCount ?? 1,
+            "WHATSAPP_MIRROR_PROJECTION_FAILED",
+            this.dependencies.now()
+          )
         );
         throw error;
       }
@@ -234,10 +281,14 @@ class WebhookFanoutService {
           );
         } catch (error) {
           recordWhatsAppMirrorMetric("cryptoFailure");
-          await this.dependencies.releaseEvent(
+          await this.dependencies.failEvent(
             event.id,
             event.leaseToken,
-            "WHATSAPP_MIRROR_CRYPTO_FAILED"
+            buildFanoutFailureState(
+              event.attemptCount ?? 1,
+              "WHATSAPP_MIRROR_CRYPTO_FAILED",
+              this.dependencies.now()
+            )
           );
           throw error;
         }

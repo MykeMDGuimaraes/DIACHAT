@@ -6,7 +6,9 @@ const {
   fetchJsonWithTimeout,
   loadConfig,
   loadReplayConfig,
+  loadReplayFixtures,
   percentile,
+  selectReplayInput,
   validateReplayFixture
 } = require("../../../../scripts/messagingCapacityGate.js");
 
@@ -146,5 +148,22 @@ describe("messagingCapacityGate", () => {
         hangingFetch
       )
     ).rejects.toThrow("timeout");
+  });
+
+  it("walks the full Cartesian replay cycle before repeating", () => {
+    const fixtures = loadReplayFixtures();
+    const cycle = Array.from({ length: 32 }, (_unused, sequence) =>
+      selectReplayInput(fixtures, sequence)
+    );
+    const identities = cycle.map(
+      ({ fixture, event }: any) =>
+        `${fixture.name}:${fixture.events.indexOf(event)}`
+    );
+
+    expect(new Set(identities).size).toBe(32);
+    expect(new Set(cycle.map(({ fixture }: any) => fixture.name))).toEqual(
+      new Set(["baileys-rich-v2", "meta-rich-v2"])
+    );
+    expect(selectReplayInput(fixtures, 32)).toEqual(cycle[0]);
   });
 });

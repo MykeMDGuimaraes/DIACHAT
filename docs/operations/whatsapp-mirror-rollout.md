@@ -12,6 +12,13 @@ sessões, não chama APIs de envio Baileys/Meta e não cria 270.000 mensagens
 WhatsApp. O runtime existente faz projeção, snapshot AES, fanout, assinatura
 HMAC e entrega HTTPS.
 
+Cada request materializa um source event ID e timestamp determinísticos por
+`runId + sequence`, sem alterar os adapters usados em produção. Assim, uma
+sequência nova gera um aggregate novo e o retry da mesma sequência é
+deduplicado. O ciclo achata as duas fixtures antes da seleção e percorre os 32
+inputs (2 x 16) antes de repetir; cada request publica exatamente um evento no
+outbox.
+
 ## Pré-requisitos obrigatórios
 
 1. Staging separado de produção, com PostgreSQL real, migrations atuais e
@@ -96,6 +103,11 @@ O relatório mede `injectionElapsedSeconds` e `achievedRps` por relógio
 monotônico e falha abaixo de 150 eventos/s sustentados pelos 1.800 s
 aprovados. Requests de injeção e polls usam `AbortController` com timeout para
 que um endpoint travado não suspenda o gate indefinidamente.
+
+Falhas de projeção/crypto incrementam `MessagingOutboxEvent.attemptCount`
+duravelmente no claim. O evento retorna com backoff de 5, 15, 30, 60 e 120 s e
+vai para `dead_letter` na sexta tentativa, preservando o código `lastError`.
+Todos os updates usam `leaseToken` como fence.
 
 ## Monitoramento e promoção
 

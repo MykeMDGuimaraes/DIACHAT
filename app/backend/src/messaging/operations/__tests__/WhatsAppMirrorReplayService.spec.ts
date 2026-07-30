@@ -8,8 +8,7 @@ describe("WhatsAppMirrorReplayService", () => {
     const service = new WhatsAppMirrorReplayService({
       publish: async events => {
         published.push(...events);
-      },
-      now: () => new Date("2026-01-01T00:00:00.000Z")
+      }
     });
 
     await expect(
@@ -41,12 +40,12 @@ describe("WhatsAppMirrorReplayService", () => {
       })
     ).resolves.toEqual({ accepted: true, sequence: 12 });
 
-    expect(published).toHaveLength(2);
+    expect(published).toHaveLength(1);
     expect(published[0]).toEqual(
       expect.objectContaining({
         companyId: 7,
-        eventType: "message.received",
-        occurredAt: new Date("2026-01-01T00:00:00.000Z")
+        eventType: "button.clicked",
+        occurredAt: expect.any(Date)
       })
     );
     expect(published[0].payload).toEqual(
@@ -67,11 +66,9 @@ describe("WhatsAppMirrorReplayService", () => {
       lid: null,
       phoneNumber: "000000000000"
     });
-    expect(published.map(event => event.eventType)).toEqual([
-      "message.received",
-      "button.clicked"
-    ]);
+    expect(published.map(event => event.eventType)).toEqual(["button.clicked"]);
     expect(published[0].payload.provider.name).toBe("baileys");
+    expect(published[0].payload.provider.eventId).toMatch(/^capacity-/);
     expect(JSON.stringify(published)).not.toMatch(
       /authorization|secret|(?:[1-9]\d{10,})@s\.whatsapp\.net/i
     );
@@ -104,5 +101,45 @@ describe("WhatsAppMirrorReplayService", () => {
         }
       } as any)
     ).rejects.toThrow("phoneNumber");
+  });
+
+  it("derives a unique aggregate per run and sequence while deduplicating an identical retry", async () => {
+    const published: any[] = [];
+    const service = new WhatsAppMirrorReplayService({
+      publish: async events => {
+        published.push(events[0]);
+      }
+    });
+    const request = (currentRunId: string, sequence: number) => ({
+      runId: currentRunId,
+      sequence,
+      whatsappId: 3,
+      fixture: {
+        name: "meta-rich-v2",
+        provider: "meta_cloud" as const,
+        event: {
+          adapter: "message",
+          raw: {
+            id: "fixture-static-id",
+            type: "text",
+            text: { body: "Synthetic" },
+            from: "000000000000",
+            timestamp: "1767225600"
+          }
+        }
+      }
+    });
+
+    await service.replay(7, request(runId, 1));
+    await service.replay(7, request(runId, 2));
+    await service.replay(7, request("22222222-2222-4222-8222-222222222222", 1));
+    await service.replay(7, request(runId, 1));
+
+    expect(published[0].aggregateId).not.toBe(published[1].aggregateId);
+    expect(published[0].aggregateId).not.toBe(published[2].aggregateId);
+    expect(published[0].aggregateId).toBe(published[3].aggregateId);
+    expect(published[0].payload.provider.eventId).toBe(
+      published[3].payload.provider.eventId
+    );
   });
 });

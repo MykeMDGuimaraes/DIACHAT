@@ -25,6 +25,12 @@
       "specialized event types literal_error"
     ]
   },
+  "replayCycle": {
+    "inputs": 32,
+    "selection": "cartesian-before-modulo",
+    "outboxEventsPerRequest": 1,
+    "identity": "deterministic-runId-plus-sequence"
+  },
   "target": {
     "requestsPerSecond": 150,
     "durationSeconds": 1800,
