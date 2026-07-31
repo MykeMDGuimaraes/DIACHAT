@@ -67,6 +67,13 @@ jest.mock("../../messaging/public/http", () => {
     publicApiRateLimit: jest.fn(
       (_req: Request, _res: Response, next: NextFunction) => next()
     ),
+    requireMetaCloudPhase2: jest.fn(
+      (_req: Request, _res: Response, next: NextFunction) => next()
+    ),
+    publicMediaUpload: {
+      single: () =>
+        jest.fn((_req: Request, _res: Response, next: NextFunction) => next())
+    },
     messagingOpenApi: {},
     isMessagingAdmin
   };
