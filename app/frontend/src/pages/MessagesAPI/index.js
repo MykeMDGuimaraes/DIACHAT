@@ -202,6 +202,10 @@ const MessagesAPI = () => {
       headers,
       validateStatus: () => true
     };
+    const downloadsMedia =
+      selectedOperation.path === "/api/v1/messages/{messageId}/media" &&
+      queryValues.format === "download";
+    if (downloadsMedia) request.responseType = "blob";
     if (file) {
       const form = new FormData();
       Object.entries(body || {}).forEach(([key, value]) =>
@@ -216,6 +220,16 @@ const MessagesAPI = () => {
 
     try {
       const result = await (surface === "public" ? openApi : api).request(request);
+      if (downloadsMedia && result.status >= 200 && result.status < 300) {
+        const objectUrl = window.URL.createObjectURL(result.data);
+        const anchor = document.createElement("a");
+        anchor.href = objectUrl;
+        anchor.download = `media-${pathValues.messageId || "download"}`;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        window.URL.revokeObjectURL(objectUrl);
+      }
       setResponse({
         status: result.status,
         headers: {
@@ -223,7 +237,9 @@ const MessagesAPI = () => {
           "retry-after": result.headers["retry-after"],
           "x-ratelimit-remaining": result.headers["x-ratelimit-remaining"]
         },
-        body: result.data
+        body: downloadsMedia && result.status >= 200 && result.status < 300
+          ? "Download iniciado pelo navegador."
+          : result.data
       });
     } catch (error) {
       toastError(error);
@@ -244,6 +260,9 @@ const MessagesAPI = () => {
     if ((selectedOperation.operation.parameters || []).some(
       parameter => parameter.in === "header" && parameter.name === "Idempotency-Key"
     )) args.push(`  -H "Idempotency-Key: ${idempotencyKey || "<uuid>"}"`);
+    if (selectedOperation.path === "/api/v1/messages/{messageId}/media" && queryValues.format === "download") {
+      args.push('  --output "./media.bin"');
+    }
     if (selectedOperation.operation.requestBody?.content?.["multipart/form-data"]) {
       args.push(
         '  -F "connectionId=<id>"',

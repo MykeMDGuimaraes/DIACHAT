@@ -48,6 +48,18 @@ describe("MessagingOpenApi 1.3", () => {
     expect(names).toEqual(expect.arrayContaining(["cursor", "limit", "from", "to", "type", "fromMe", "mediaOnly", "status", "providerMessageId"]));
   });
 
+  it("documents URL, download and Base64 media representations", () => {
+    const operation = messagingPublicOpenApi.paths["/api/v1/messages/{messageId}/media"].get;
+    const format = operation.parameters.find((item: any) => item.name === "format");
+    const includeBase64 = operation.parameters.find((item: any) => item.name === "includeBase64");
+
+    expect(format.schema.enum).toEqual(["url", "download", "base64"]);
+    expect(includeBase64.schema.type).toBe("boolean");
+    expect(operation.responses["200"].content).toHaveProperty("application/json");
+    expect(operation.responses["200"].content).toHaveProperty("application/octet-stream");
+    expect(operation.responses).toHaveProperty("413");
+  });
+
   it("publishes the complete session-only administration contract", () => {
     [
       "/api/v1/credentials",
