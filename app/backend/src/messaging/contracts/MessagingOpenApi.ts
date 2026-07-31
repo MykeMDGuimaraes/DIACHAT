@@ -580,6 +580,21 @@ export const messagingOpenApi = {
           content: {
             "application/json": {
               schema: { $ref: "#/components/schemas/MessageRequest" }
+            },
+            "multipart/form-data": {
+              schema: {
+                type: "object",
+                required: ["connectionId", "to", "type", "media"],
+                properties: {
+                  connectionId: { type: "integer", minimum: 1 },
+                  to: { type: "string", pattern: "^\\d{10,15}$" },
+                  type: { type: "string", enum: ["image", "audio", "video", "document"] },
+                  media: { type: "string", format: "binary" },
+                  caption: { type: "string" },
+                  externalTicketId: { type: "string" },
+                  automationEpoch: { type: "integer", minimum: 0 }
+                }
+              }
             }
           }
         },
