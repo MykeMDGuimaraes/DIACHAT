@@ -15,6 +15,19 @@ JWT_SECRET=<mínimo 32 bytes>
 JWT_REFRESH_SECRET=<mínimo 32 bytes e diferente do JWT_SECRET>
 ```
 
+## API pública Baileys — Fase 1
+
+As migrations `20260730000000` e `20260730000001` são aditivas. Execute-as com a mesma `DATABASE_URL` de staging antes de ativar qualquer flag:
+
+```bash
+cd app/backend
+npx sequelize db:migrate
+```
+
+As capacidades são desligadas por padrão e devem ser habilitadas apenas na empresa de homologação, nesta ordem: `MESSAGING_INTERNAL_TEMPLATES_V1_ENABLED`, `MESSAGING_MEDIA_UPLOAD_V1_ENABLED`, `MESSAGING_PRESENCE_V1_ENABLED` e `MESSAGING_REACTIONS_V1_ENABLED`. O upload multipart fica em `storage/messaging` (fora de `/public`); garanta volume persistente e backup criptografado desse diretório.
+
+Antes do corte, use uma credencial nova com os scopes mínimos necessários e uma conexão Baileys controlada para validar: texto idempotente, mídia multipart, template interno, presença, reação, edição, exclusão, URL assinada de mídia e reconexão sem duplicação. Não habilite as flags de empresas de clientes até a conclusão dessa prova.
+
 `META_GRAPH_VERSION` é fallback da plataforma e nunca pode ser `latest`; cada canal também persiste a versão validada pela empresa. Configure `META_GRAPH_SUNSET_AT` para que `/internal/v1/messaging/metrics` alerte nos 90 dias anteriores ao sunset.
 
 O processo executa `DeploymentPreflight` antes de Redis e migrations. A publicação é recusada quando `DATABASE_URL` não é PostgreSQL com transporte TLS (`sslmode=require` ou `DB_SSL=true`), a origem não usa HTTPS, um segredo obrigatório está ausente, a chave AES não decodifica para 32 bytes ou `RUN_SEEDS=true` não possui `PRODUCTION_SEED_CONFIRMATION=I_UNDERSTAND`.
