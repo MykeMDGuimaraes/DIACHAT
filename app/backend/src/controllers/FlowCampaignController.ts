@@ -1,13 +1,4 @@
 import { Request, Response } from "express";
-import ListFlowBuilderService from "../services/FlowBuilderService/ListFlowBuilderService";
-import CreateFlowBuilderService from "../services/FlowBuilderService/CreateFlowBuilderService";
-import UpdateFlowBuilderService from "../services/FlowBuilderService/UpdateFlowBuilderService";
-import DeleteFlowBuilderService from "../services/FlowBuilderService/DeleteFlowBuilderService";
-import GetFlowBuilderService from "../services/FlowBuilderService/GetFlowBuilderService";
-import FlowUpdateDataService from "../services/FlowBuilderService/FlowUpdateDataService";
-import FlowsGetDataService from "../services/FlowBuilderService/FlowsGetDataService";
-import UploadImgFlowBuilderService from "../services/FlowBuilderService/UploadImgFlowBuilderService";
-import UploadAudioFlowBuilderService from "../services/FlowBuilderService/UploadAudioFlowBuilderService";
 import CreateFlowCampaignService from "../services/FlowCampaignService/CreateFlowCampaignService";
 import FlowsCampaignGetDataService from "../services/FlowCampaignService/FlowsCampaignGetDataService";
 import GetFlowsCampaignDataService from "../services/FlowCampaignService/GetFlowsCampaignDataService";
@@ -39,7 +30,6 @@ export const flowCampaigns = async (
   req: Request,
   res: Response
 ): Promise<Response> => {
-  const userId = parseInt(req.user.id);
   const { companyId } = req.user;
 
   const flow = await FlowsCampaignGetDataService({
@@ -53,7 +43,6 @@ export const flowCampaign = async (
   req: Request,
   res: Response
 ): Promise<Response> => {
-  const userId = parseInt(req.user.id);
   const { idFlow } = req.params;
   const { companyId } = req.user;
 

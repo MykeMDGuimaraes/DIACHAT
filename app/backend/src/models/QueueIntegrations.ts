@@ -6,13 +6,11 @@ import {
   Model,
   DataType,
   PrimaryKey,
-  HasMany,
   AutoIncrement,
   BelongsTo,
   ForeignKey,
   Default
 } from "sequelize-typescript";
-import Queue from "./Queue";
 import Company from "./Company";
 
 @Table

@@ -1,5 +1,4 @@
 import { WebhookModel } from "../../models/Webhook";
-import User from "../../models/User";
 
 interface Request {
   companyId: number;
@@ -16,7 +15,7 @@ const GetWebHookService = async ({
 }: Request): Promise<Response> => {
   try {
     // Realiza a consulta com paginação usando findAndCountAll
-    const { count, rows } = await WebhookModel.findAndCountAll({
+    const { rows } = await WebhookModel.findAndCountAll({
       where: {
         company_id: companyId,
         hash_id: hashId

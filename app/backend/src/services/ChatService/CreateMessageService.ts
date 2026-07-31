@@ -1,4 +1,3 @@
-import { Op } from "sequelize";
 import Chat from "../../models/Chat";
 import ChatMessage from "../../models/ChatMessage";
 import ChatUser from "../../models/ChatUser";

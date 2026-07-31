@@ -8,10 +8,8 @@ import {
   Default,
   ForeignKey,
   DataType,
-  AllowNull,
   AutoIncrement
 } from "sequelize-typescript";
-import Company from "./Company";
 import Whatsapp from "./Whatsapp";
 
 @Table

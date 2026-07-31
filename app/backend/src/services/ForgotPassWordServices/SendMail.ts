@@ -2,7 +2,6 @@ import nodemailer from "nodemailer";
 import sequelize from "sequelize";
 import { config } from "dotenv";
 import database from "../../database";
-import Setting from "../../models/Setting";
 
 config();
 interface UserData {
@@ -17,7 +16,6 @@ const SendMail = async (email: string, tokenSenha: string) => {
   if (!userData || userData.companyId === undefined) {
     return { status: 404, message: "Dados do usuário não encontrados" };
   }
-  const { companyId } = userData;
   const urlSmtp = process.env.MAIL_HOST;
   const userSmtp = process.env.MAIL_USER;
   const passwordSmpt = process.env.MAIL_PASS;
@@ -29,7 +27,7 @@ const SendMail = async (email: string, tokenSenha: string) => {
     auth: { user: userSmtp, pass: passwordSmpt }
   });
   if (hasResult === true) {
-    const { hasResults, datas } = await insertToken(email, tokenSenha);
+    await insertToken(email, tokenSenha);
     async function sendEmail() {
       try {
         const mailOptions = {

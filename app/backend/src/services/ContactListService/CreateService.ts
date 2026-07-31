@@ -8,7 +8,7 @@ interface Data {
 }
 
 const CreateService = async (data: Data): Promise<ContactList> => {
-  const { name, companyId } = data;
+  const { name } = data;
 
   const ticketnoteSchema = Yup.object().shape({
     name: Yup.string()

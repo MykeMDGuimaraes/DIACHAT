@@ -6,7 +6,6 @@ import {
 } from "../../messaging/public/baileys";
 import * as Sentry from "@sentry/node";
 
-import { Op } from "sequelize";
 // import { getIO } from "../../libs/socket";
 import { Store } from "../../libs/store";
 import Contact from "../../models/Contact";
@@ -23,10 +22,6 @@ type Session = WASocket & {
   store?: Store;
 };
 
-interface IContact {
-  contacts: BContact[];
-}
-
 const wbotMonitor = async (
   wbot: Session,
   whatsapp: Whatsapp,
@@ -37,7 +32,7 @@ const wbotMonitor = async (
       const content = node.content[0] as any;
 
       if (content.tag === "offer") {
-        const { from, id } = node.attrs;
+        // offer node received
       }
 
       if (content.tag === "terminate") {

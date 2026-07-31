@@ -1,8 +1,6 @@
 import path, { join } from "path";
 import { promisify } from "util";
-import { readFile, writeFile } from "fs";
 import * as Sentry from "@sentry/node";
-import { isNil, isNull, head } from "lodash";
 import { extension as mimeExtension } from "mime-types";
 
 import {
@@ -46,10 +44,6 @@ import Queue from "../../models/Queue";
 import QueueOption from "../../models/QueueOption";
 import FindOrCreateATicketTrakingService from "../TicketServices/FindOrCreateATicketTrakingService";
 import VerifyCurrentSchedule from "../CompanyService/VerifyCurrentSchedule";
-import Campaign from "../../models/Campaign";
-import CampaignShipping from "../../models/CampaignShipping";
-import { Op } from "sequelize";
-import { campaignQueue, parseToMilliseconds, randomValue } from "../../queues";
 import User from "../../models/User";
 import Setting from "../../models/Setting";
 import { cacheLayer } from "../../libs/cache";
@@ -67,7 +61,6 @@ import QueueIntegrations from "../../models/QueueIntegrations";
 import ShowQueueIntegrationService from "../QueueIntegrationServices/ShowQueueIntegrationService";
 
 import { FlowBuilderModel } from "../../models/FlowBuilder";
-import { FlowDefaultModel } from "../../models/FlowDefault";
 import { FlowCampaignModel } from "../../models/FlowCampaign";
 import { IOpenAi } from "../../@types/openai";
 
@@ -79,6 +72,8 @@ import { differenceInMilliseconds } from "date-fns";
 import Whatsapp from "../../models/Whatsapp";
 
 import axios from "axios";
+import { writeFile } from "fs";
+import { isNil, head } from "lodash";
 
 const fs = require("fs");
 
@@ -101,12 +96,6 @@ interface IMe {
   name: string;
   id: string;
 }
-
-interface IMessage {
-  messages: WAMessage[];
-  isLatest: boolean;
-}
-
 export const isNumeric = (value: string) => /^-?\d+$/.test(value);
 
 const writeFileAsync = promisify(writeFile);
@@ -124,7 +113,7 @@ function hasCaption(title: string, fileName: string) {
 }
 
 export function validaCpfCnpj(val) {
-  if (val.length == 11) {
+  if (val.length === 11) {
     var cpf = val.trim();
 
     cpf = cpf.replace(/\./g, "");
@@ -136,12 +125,12 @@ export function validaCpfCnpj(val) {
     var aux = false;
 
     for (var i = 1; cpf.length > i; i++) {
-      if (cpf[i - 1] != cpf[i]) {
+      if (cpf[i - 1] !== cpf[i]) {
         aux = true;
       }
     }
 
-    if (aux == false) {
+    if (aux === false) {
       return false;
     }
 
@@ -151,11 +140,11 @@ export function validaCpfCnpj(val) {
 
     v1 = (v1 * 10) % 11;
 
-    if (v1 == 10) {
+    if (v1 === 10) {
       v1 = 0;
     }
 
-    if (v1 != cpf[9]) {
+    if (v1 !== Number(cpf[9])) {
       return false;
     }
 
@@ -165,16 +154,16 @@ export function validaCpfCnpj(val) {
 
     v2 = (v2 * 10) % 11;
 
-    if (v2 == 10) {
+    if (v2 === 10) {
       v2 = 0;
     }
 
-    if (v2 != cpf[10]) {
+    if (v2 !== Number(cpf[10])) {
       return false;
     } else {
       return true;
     }
-  } else if (val.length == 14) {
+  } else if (val.length === 14) {
     var cnpj = val.trim();
 
     cnpj = cnpj.replace(/\./g, "");
@@ -187,12 +176,12 @@ export function validaCpfCnpj(val) {
     var aux = false;
 
     for (var i = 1; cnpj.length > i; i++) {
-      if (cnpj[i - 1] != cnpj[i]) {
+      if (cnpj[i - 1] !== cnpj[i]) {
         aux = true;
       }
     }
 
-    if (aux == false) {
+    if (aux === false) {
       return false;
     }
 
@@ -212,7 +201,7 @@ export function validaCpfCnpj(val) {
       v1 = 11 - v1;
     }
 
-    if (v1 != cnpj[12]) {
+    if (v1 !== Number(cnpj[12])) {
       return false;
     }
 
@@ -232,7 +221,7 @@ export function validaCpfCnpj(val) {
       v2 = 11 - v2;
     }
 
-    if (v2 != cnpj[13]) {
+    if (v2 !== Number(cnpj[13])) {
       return false;
     } else {
       return true;
@@ -609,7 +598,7 @@ export const convertTextToSpeechAndSaveToFile = (
             `${filename}.${audioToFormat}`,
             audioToFormat
           )
-            .then(output => {
+            .then(_output => {
               resolve();
             })
             .catch(error => {
@@ -646,15 +635,6 @@ const convertWavToAnotherFormat = (
       .save(outputPath);
   });
 };
-
-const deleteFileSync = (path: string): void => {
-  try {
-    fs.unlinkSync(path);
-  } catch (error) {
-    console.error("Erro ao deletar o arquivo:", error);
-  }
-};
-
 export const keepOnlySpecifiedChars = (str: string) => {
   return str.replace(/[^a-zA-Z0-9áéíóúÁÉÍÓÚâêîôûÂÊÎÔÛãõÃÕçÇ!?.,;:\s]/g, "");
 };
@@ -665,7 +645,7 @@ const handleOpenAi = async (
   ticket: Ticket,
   contact: Contact,
   mediaSent: Message | undefined,
-  ticketTraking: TicketTraking = null,
+  _ticketTraking: TicketTraking = null,
   openAiSettings = null
 ): Promise<void> => {
   // REGRA PARA DESABILITAR O BOT PARA ALGUM CONTATO
@@ -872,7 +852,7 @@ const handleOpenAi = async (
 export const transferQueue = async (
   queueId: number,
   ticket: Ticket,
-  contact: Contact
+  _contact: Contact
 ): Promise<void> => {
   await UpdateTicketService({
     ticketData: { queueId: queueId },
@@ -886,9 +866,9 @@ export const verifyMediaMessage = async (
   ticket: Ticket,
   contact: Contact,
   ticketTraking: TicketTraking = null,
-  isForwarded: boolean = false,
-  isPrivate: boolean = false,
-  wbot: Session = null
+  _isForwarded: boolean = false,
+  _isPrivate: boolean = false,
+  _wbot: Session = null
 ): Promise<Message> => {
   const io = getIO();
   const quotedMsg = await verifyQuotedMessage(msg);
@@ -987,7 +967,7 @@ export const verifyMessage = async (
   const io = getIO();
   const quotedMsg = await verifyQuotedMessage(msg);
   const body = getBodyMessage(msg);
-  const isEdited = getTypeMessage(msg) == "editedMessage";
+  const isEdited = getTypeMessage(msg) === "editedMessage";
 
   const messageData = {
     id: isEdited
@@ -1089,11 +1069,6 @@ ${JSON.stringify(msg?.message)}`);
     Sentry.captureException(error);
   }
 };
-
-const Push = (msg: proto.IWebMessageInfo) => {
-  return msg.pushName;
-};
-
 const verifyQueue = async (
   wbot: Session,
   msg: proto.IWebMessageInfo,
@@ -1466,7 +1441,7 @@ const handleChartbot = async (
 
   const messageBody = getBodyMessage(msg);
 
-  if (messageBody == "#") {
+  if (messageBody === "#") {
     // voltar para o menu inicial
     await ticket.update({ queueOptionId: null, chatbot: false, queueId: null });
     await verifyQueue(wbot, msg, ticket, ticket.contact);
@@ -1474,7 +1449,7 @@ const handleChartbot = async (
   }
 
   // voltar para o menu anterior
-  if (!isNil(queue) && !isNil(ticket.queueOptionId) && messageBody == "0") {
+  if (!isNil(queue) && !isNil(ticket.queueOptionId) && messageBody === "0") {
     const option = await QueueOption.findByPk(ticket.queueOptionId);
     await ticket.update({ queueOptionId: option?.parentId });
 
@@ -1484,7 +1459,7 @@ const handleChartbot = async (
       where: { parentId: ticket.queueOptionId }
     });
     let option: any = {};
-    if (count == 1) {
+    if (count === 1) {
       option = await QueueOption.findOne({
         where: { parentId: ticket.queueOptionId }
       });
@@ -1506,7 +1481,7 @@ const handleChartbot = async (
     isNil(ticket.queueOptionId) &&
     !dontReadTheFirstQuestion
   ) {
-    const option = queue?.options.find(o => o.option == messageBody);
+    const option = queue?.options.find(o => o.option === messageBody);
     if (option) {
       await ticket.update({ queueOptionId: option?.id });
     }
@@ -1564,7 +1539,7 @@ const handleChartbot = async (
 
     const botButton = async () => {
       const buttons = [];
-      queueOptions.forEach((option, i) => {
+      queueOptions.forEach((option, _i) => {
         buttons.push({
           buttonId: `${option.option}`,
           buttonText: { displayText: option.title },
@@ -1597,7 +1572,7 @@ const handleChartbot = async (
     const botText = async () => {
       let options = "";
 
-      queueOptions.forEach((option, i) => {
+      queueOptions.forEach((option, _i) => {
         options += `*[ ${option.option} ]* - ${option.title}\n`;
       });
       //options += `\n*[ 0 ]* - Menu anterior`;
@@ -1658,7 +1633,7 @@ const handleChartbot = async (
       const botList = async () => {
         const sectionsRows = [];
 
-        queueOptions.forEach((option, i) => {
+        queueOptions.forEach((option, _i) => {
           sectionsRows.push({
             title: option.title,
             rowId: `${option.option}`
@@ -1693,7 +1668,7 @@ const handleChartbot = async (
 
       const botButton = async () => {
         const buttons = [];
-        queueOptions.forEach((option, i) => {
+        queueOptions.forEach((option, _i) => {
           buttons.push({
             buttonId: `${option.option}`,
             buttonText: { displayText: option.title },
@@ -1726,7 +1701,7 @@ const handleChartbot = async (
       const botText = async () => {
         let options = "";
 
-        queueOptions.forEach((option, i) => {
+        queueOptions.forEach((option, _i) => {
           options += `*[ ${option.option} ]* - ${option.title}\n`;
         });
         options += `\n*[ 0 ]* - Menu anterior`;
@@ -1776,10 +1751,9 @@ const flowbuilderIntegration = async (
   ticket: Ticket,
   contact: Contact,
   isFirstMsg?: Ticket,
-  isTranfered?: boolean
+  _isTranfered?: boolean
 ) => {
   const io = getIO();
-  const quotedMsg = await verifyQuotedMessage(msg);
   const body = getBodyMessage(msg);
 
   /*
@@ -2152,8 +2126,6 @@ export const handleMessageIntegration = async (
   contact: Contact = null,
   isFirstMsg: Ticket | null = null
 ): Promise<void> => {
-  const msgType = getTypeMessage(msg);
-
   if (queueIntegration.type === "n8n" || queueIntegration.type === "webhook") {
     if (queueIntegration?.urlN8N) {
       try {
@@ -2207,7 +2179,7 @@ const flowBuilderQueue = async (
   whatsapp: Whatsapp,
   companyId: number,
   contact: Contact,
-  isFirstMsg: Ticket
+  _isFirstMsg: Ticket
 ) => {
   const body = getBodyMessage(msg);
 
@@ -2362,7 +2334,7 @@ const handleMessage = async (
 
     // voltar para o menu inicial
 
-    if (bodyMessage == "#") {
+    if (bodyMessage === "#") {
       await ticket.update({
         queueOptionId: null,
         chatbot: false,
@@ -2540,8 +2512,7 @@ const handleMessage = async (
 
         const connections: IConnections[] = flow.flow["connections"];
 
-        const { message, answerKey } = nodeSelected.data.typebotIntegration;
-        const oldDataWebhook = ticket.dataWebhook;
+        const { answerKey } = nodeSelected.data.typebotIntegration;
 
         const nodeIndex = nodes.findIndex(node => node.id === nodeSelected.id);
 
@@ -2835,7 +2806,7 @@ const handleMessage = async (
       !isGroup &&
       !msg.key.fromMe
     ) {
-      const lastMessage = await Message.findOne({
+      const lastFromMeMessage = await Message.findOne({
         where: {
           ticketId: ticket.id,
           fromMe: true
@@ -2843,7 +2814,10 @@ const handleMessage = async (
         order: [["createdAt", "DESC"]]
       });
 
-      if (lastMessage && lastMessage.body.includes(whatsapp.greetingMessage)) {
+      if (
+        lastFromMeMessage &&
+        lastFromMeMessage.body.includes(whatsapp.greetingMessage)
+      ) {
         return;
       }
 
@@ -2868,7 +2842,7 @@ const handleMessage = async (
       }
     }
 
-    if (whatsapp.queues.length == 1 && ticket.queue) {
+    if (whatsapp.queues.length === 1 && ticket.queue) {
       if (ticket.chatbot && !msg.key.fromMe) {
         await handleChartbot(ticket, msg, wbot);
       }

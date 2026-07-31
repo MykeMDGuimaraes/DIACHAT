@@ -1,6 +1,5 @@
-import { Op, literal, fn, col } from "sequelize";
+import { Op, fn, col } from "sequelize";
 import Tag from "../../models/Tag";
-import Ticket from "../../models/Ticket";
 import TicketTag from "../../models/TicketTag";
 
 interface Request {

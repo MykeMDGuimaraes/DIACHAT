@@ -7,12 +7,12 @@ import { logger } from "./utils/logger";
 import moment from "moment";
 import Schedule from "./models/Schedule";
 import Contact from "./models/Contact";
-import { Op, QueryTypes, Sequelize } from "sequelize";
+import { Op, QueryTypes } from "sequelize";
 import GetDefaultWhatsApp from "./helpers/GetDefaultWhatsApp";
 import Campaign from "./models/Campaign";
 import ContactList from "./models/ContactList";
 import ContactListItem from "./models/ContactListItem";
-import { isEmpty, isNil, isArray } from "lodash";
+import { isEmpty, isNil } from "lodash";
 import CampaignSetting from "./models/CampaignSetting";
 import CampaignShipping from "./models/CampaignShipping";
 import GetWhatsappWbot from "./helpers/GetWhatsappWbot";
@@ -23,14 +23,11 @@ import path from "path";
 import User from "./models/User";
 import Company from "./models/Company";
 import Plan from "./models/Plan";
-import Ticket from "./models/Ticket";
 import ShowFileService from "./services/FileServices/ShowService";
-import FilesOptions from "./models/FilesOptions";
-import { addSeconds, differenceInSeconds } from "date-fns";
+import { differenceInSeconds } from "date-fns";
 import formatBody from "./helpers/Mustache";
 import { ClosedAllOpenTickets } from "./services/WbotServices/wbotClosedTickets";
 
-const nodemailer = require("nodemailer");
 const CronJob = require("cron").CronJob;
 
 const connection = process.env.REDIS_URI || "";
@@ -219,7 +216,7 @@ async function handleCloseTicketsAutomatic() {
   job.start();
 }
 
-async function handleVerifySchedules(job) {
+async function handleVerifySchedules(_job) {
   try {
     const { count, rows: schedules } = await Schedule.findAndCountAll({
       where: {
@@ -298,7 +295,7 @@ async function handleSendScheduledMessage(job) {
   }
 }
 
-async function handleVerifyCampaigns(job) {
+async function handleVerifyCampaigns(_job) {
   /**
    * @todo
    * Implementar filtro de campanhas
@@ -414,22 +411,6 @@ async function getSettings(campaign) {
 
 export function parseToMilliseconds(seconds) {
   return seconds * 1000;
-}
-
-async function sleep(seconds) {
-  logger.info(
-    `Sleep de ${seconds} segundos iniciado: ${moment().format("HH:mm:ss")}`
-  );
-  return new Promise(resolve => {
-    setTimeout(() => {
-      logger.info(
-        `Sleep de ${seconds} segundos finalizado: ${moment().format(
-          "HH:mm:ss"
-        )}`
-      );
-      resolve(true);
-    }, parseToMilliseconds(seconds));
-  });
 }
 
 function getCampaignValidMessages(campaign) {
@@ -885,7 +866,7 @@ async function handleDispatchCampaign(job) {
           campaign.companyId
         );
         const folder = path.resolve(publicFolder, "fileList", String(files.id));
-        for (const [index, file] of files.options.entries()) {
+        for (const file of files.options) {
           const options = await getMessageOptions(
             file.path,
             path.resolve(folder, file.path),
@@ -959,7 +940,7 @@ async function handleDispatchCampaign(job) {
   }
 }
 
-async function handleLoginStatus(job) {
+async function handleLoginStatus(_job) {
   const users: { id: number }[] = await sequelize.query(
     `select id from "Users" where "updatedAt" < now() - '5 minutes'::interval and online = true`,
     { type: QueryTypes.SELECT }
@@ -1000,10 +981,10 @@ async function handleInvoiceCreate() {
         const invoice = await sequelize.query(sql, { type: QueryTypes.SELECT });
         if (invoice[0]["mycount"] > 0) {
         } else {
-          const sql = `INSERT INTO "Invoices" (detail, status, value, "updatedAt", "createdAt", "dueDate", "companyId")
+          const insertSql = `INSERT INTO "Invoices" (detail, status, value, "updatedAt", "createdAt", "dueDate", "companyId")
           VALUES ('${plan.name}', 'open', '${plan.value}', '${timestamp}', '${timestamp}', '${date}', ${c.id});`;
 
-          const invoiceInsert = await sequelize.query(sql, {
+          await sequelize.query(insertSql, {
             type: QueryTypes.INSERT
           });
 

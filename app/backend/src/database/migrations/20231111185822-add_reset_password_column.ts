@@ -5,7 +5,7 @@ module.exports = {
       allowNull: true
     });
   },
-  down: async (queryInterface, Sequelize) => {
+  down: async (queryInterface, _Sequelize) => {
     await queryInterface.removeColumn("Users", "resetPassword");
   }
 };

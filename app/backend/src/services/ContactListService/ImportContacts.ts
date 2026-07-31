@@ -1,4 +1,4 @@
-import { head, has } from "lodash";
+import { has } from "lodash";
 import ExcelJS from "exceljs";
 import ContactListItem from "../../models/ContactListItem";
 import CheckContactNumber from "../WbotServices/CheckNumber";

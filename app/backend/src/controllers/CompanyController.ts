@@ -150,7 +150,7 @@ export const listPlan = async (req: Request, res: Response): Promise<Response> =
   const authHeader = req.headers.authorization;
   const [, token] = authHeader.split(" ");
   const decoded = verify(token, authConfig.secret);
-  const { id: requestUserId, profile, companyId } = decoded as TokenPayload;
+  const { id: requestUserId, companyId } = decoded as TokenPayload;
   const requestUser = await User.findByPk(requestUserId);
 
   if (requestUser.super === true) {
@@ -166,12 +166,10 @@ export const listPlan = async (req: Request, res: Response): Promise<Response> =
 };
 
 export const indexPlan = async (req: Request, res: Response): Promise<Response> => {
-  const { searchParam, pageNumber } = req.query as IndexQuery;
-
   const authHeader = req.headers.authorization;
   const [, token] = authHeader.split(" ");
   const decoded = verify(token, authConfig.secret);
-  const { id, profile, companyId } = decoded as TokenPayload;
+  const { id } = decoded as TokenPayload;
   // const company = await Company.findByPk(companyId);
   const requestUser = await User.findByPk(id);
 

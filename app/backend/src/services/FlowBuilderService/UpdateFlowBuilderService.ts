@@ -1,6 +1,4 @@
 import { FlowBuilderModel } from "../../models/FlowBuilder";
-import { WebhookModel } from "../../models/Webhook";
-import { randomString } from "../../utils/randomCode";
 
 interface Request {
   companyId: number;
@@ -27,7 +25,7 @@ const UpdateFlowBuilderService = async ({
       return "exist";
     }
 
-    const flow = await FlowBuilderModel.update(
+    await FlowBuilderModel.update(
       { name },
       {
         where: { id: flowId, company_id: companyId }

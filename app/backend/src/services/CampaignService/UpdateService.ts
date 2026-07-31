@@ -44,7 +44,7 @@ const UpdateService = async (
 
   if (
     data.scheduledAt != null &&
-    data.scheduledAt != "" &&
+    data.scheduledAt !== "" &&
     data.status === "INATIVA"
   ) {
     data.status = "PROGRAMADA";

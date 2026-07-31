@@ -1,5 +1,4 @@
 import { Request, Response } from "express";
-import AppError from "../errors/AppError";
 import TicketTag from "../models/TicketTag";
 import Tag from "../models/Tag";
 

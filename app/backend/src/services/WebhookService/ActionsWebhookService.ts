@@ -1,39 +1,20 @@
-import AppError from "../../errors/AppError";
-import { WebhookModel } from "../../models/Webhook";
-import { sendMessageFlow } from "../../controllers/MessageController";
 import { IConnections, INodes } from "./DispatchWebHookService";
-import { Request, Response } from "express";
-import { ParamsDictionary } from "express-serve-static-core";
-import { ParsedQs } from "qs";
-import CreateContactService from "../ContactServices/CreateContactService";
 import Contact from "../../models/Contact";
 //import CreateTicketService from "../TicketServices/CreateTicketService";
 //import CreateTicketServiceWebhook from "../TicketServices/CreateTicketServiceWebhook";
 import { SendMessage } from "../../helpers/SendMessage";
 import GetDefaultWhatsApp from "../../helpers/GetDefaultWhatsApp";
 import Ticket from "../../models/Ticket";
-import fs from "fs";
-import GetWhatsappWbot from "../../helpers/GetWhatsappWbot";
-import path from "path";
-import SendWhatsAppMedia from "../WbotServices/SendWhatsAppMedia";
 import SendWhatsAppMediaFlow, {
   typeSimulation
 } from "../WbotServices/SendWhatsAppMediaFlow";
 import { randomizarCaminho } from "../../utils/randomizador";
-import { SendMessageFlow } from "../../helpers/SendMessageFlow";
 import formatBody from "../../helpers/Mustache";
 import SetTicketMessagesAsRead from "../../helpers/SetTicketMessagesAsRead";
 import SendWhatsAppMessage from "../WbotServices/SendWhatsAppMessage";
 import ShowTicketService from "../TicketServices/ShowTicketService";
-import CreateMessageService, {
-  MessageData
-} from "../MessageServices/CreateMessageService";
-import { randomString } from "../../utils/randomCode";
-import ShowQueueService from "../QueueService/ShowQueueService";
 import { getIO } from "../../libs/socket";
-import UpdateTicketService from "../TicketServices/UpdateTicketService";
 import FindOrCreateATicketTrakingService from "../TicketServices/FindOrCreateATicketTrakingService";
-import ShowTicketUUIDService from "../TicketServices/ShowTicketFromUUIDService";
 import { logger } from "../../utils/logger";
 ///import CreateLogTicketService from "../TicketServices/CreateLogTicketService";
 //import CompaniesSettings from "../../models/CompaniesSettings";
@@ -44,14 +25,6 @@ import { getWbot } from "../../libs/wbot";
 import { proto } from "../../messaging/public/baileys";
 import { handleOpenAi } from "../IntegrationsServices/OpenAiService";
 import { IOpenAi } from "../../@types/openai";
-
-interface IAddContact {
-  companyId: number;
-  name: string;
-  phoneNumber: string;
-  email?: string;
-  dataMore?: any;
-}
 
 export const ActionsWebhookService = async (
   whatsappId: number,
@@ -179,7 +152,6 @@ export const ActionsWebhookService = async (
 
     for (var i = 0; i < lengthLoop; i++) {
       let nodeSelected: any;
-      let ticketInit: Ticket;
 
       if (pressKey) {
         console.log("UPDATE2...");
@@ -187,7 +159,7 @@ export const ActionsWebhookService = async (
           console.log("UPDATE3...");
           if (idTicket) {
             console.log("UPDATE4...");
-            ticketInit = await Ticket.findOne({
+            await Ticket.findOne({
               where: { id: idTicket, whatsappId }
             });
             await ticket.update({
@@ -215,23 +187,23 @@ export const ActionsWebhookService = async (
       }
 
       if (nodeSelected.type === "message") {
-        let msg;
+        let messageNode;
 
         const webhook = ticket.dataWebhook;
 
         if (webhook && webhook.hasOwnProperty("variables")) {
-          msg = {
+          messageNode = {
             body: replaceMessages(webhook, nodeSelected.data.label)
           };
         } else {
-          msg = {
+          messageNode = {
             body: nodeSelected.data.label
           };
         }
 
         await SendMessage(whatsapp, {
           number: numberClient,
-          body: msg.body
+          body: messageNode.body
         });
 
         //TESTE BOTÃO
@@ -305,7 +277,6 @@ export const ActionsWebhookService = async (
       }
 
       if (nodeSelected.type === "question") {
-        const webhook = ticket?.dataWebhook;
         const variables = ticket?.dataWebhook?.variables;
 
         if (!variables || variables === undefined || variables === null) {
@@ -438,21 +409,21 @@ export const ActionsWebhookService = async (
 
             const ticketDetails = await ShowTicketService(idTicket, companyId);
 
-            let msg;
+            let messageBody;
 
             const webhook = ticket.dataWebhook;
 
             if (webhook && webhook.hasOwnProperty("variables")) {
-              msg = replaceMessages(webhook.variables, bodyFor);
+              messageBody = replaceMessages(webhook.variables, bodyFor);
             } else {
-              msg = bodyFor;
+              messageBody = bodyFor;
             }
 
             await delay(3000);
             await typeSimulation(ticket, "composing");
 
             await SendWhatsAppMessage({
-              body: msg,
+              body: messageBody,
               ticket: ticketDetails,
               quotedMsg: null
             });
@@ -619,15 +590,15 @@ export const ActionsWebhookService = async (
 
           const webhook = ticket.dataWebhook;
 
-          let msg;
+          let menuMessage;
           if (webhook && webhook.hasOwnProperty("variables")) {
-            msg = {
+            menuMessage = {
               body: replaceMessages(webhook, menuCreate),
               number: numberClient,
               companyId: companyId
             };
           } else {
-            msg = {
+            menuMessage = {
               body: menuCreate,
               number: numberClient,
               companyId: companyId
@@ -656,7 +627,7 @@ export const ActionsWebhookService = async (
           await typeSimulation(ticket, "composing");
 
           await SendWhatsAppMessage({
-            body: msg.body,
+            body: menuMessage.body,
             ticket: ticketDetails,
             quotedMsg: null
           });
@@ -664,7 +635,7 @@ export const ActionsWebhookService = async (
           SetTicketMessagesAsRead(ticketDetails);
 
           await ticketDetails.update({
-            lastMessage: formatBody(msg.body, ticket.contact)
+            lastMessage: formatBody(menuMessage.body, ticket.contact)
           });
           await intervalWhats("1");
 
@@ -828,15 +799,6 @@ function removerNaoLetrasNumeros(texto: string) {
   return texto.replace(/[^a-zA-Z0-9]/g, "");
 }
 
-const sendMessageWhats = async (
-  whatsId: number,
-  msg: any,
-  req: Request<ParamsDictionary, any, any, ParsedQs, Record<string, any>>
-) => {
-  sendMessageFlow(whatsId, msg, req);
-  return Promise.resolve();
-};
-
 const intervalWhats = (time: string) => {
   const seconds = parseInt(time) * 1000;
   return new Promise(resolve => setTimeout(resolve, seconds));
@@ -847,38 +809,4 @@ const replaceMessages = (variables, message) => {
     /{{\s*([^{}\s]+)\s*}}/g,
     (match, key) => variables[key] || ""
   );
-};
-
-const replaceMessagesOld = (
-  message: string,
-  details: any,
-  dataWebhook: any,
-  dataNoWebhook?: any
-) => {
-  const matches = message.match(/\{([^}]+)\}/g);
-
-  if (dataWebhook) {
-    let newTxt = message.replace(/{+nome}+/, dataNoWebhook.nome);
-    newTxt = newTxt.replace(/{+numero}+/, dataNoWebhook.numero);
-    newTxt = newTxt.replace(/{+email}+/, dataNoWebhook.email);
-    return newTxt;
-  }
-
-  if (matches && matches.includes("inputs")) {
-    const placeholders = matches.map(match => match.replace(/\{|\}/g, ""));
-    let newText = message;
-    placeholders.map(item => {
-      const value = details["inputs"].find(
-        itemLocal => itemLocal.keyValue === item
-      );
-      const lineToData = details["keysFull"].find(itemLocal =>
-        itemLocal.endsWith(`.${value.data}`)
-      );
-      const createFieldJson = constructJsonLine(lineToData, dataWebhook);
-      newText = newText.replace(`{${item}}`, createFieldJson);
-    });
-    return newText;
-  } else {
-    return message;
-  }
 };

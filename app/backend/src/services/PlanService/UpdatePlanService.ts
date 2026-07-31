@@ -18,7 +18,7 @@ interface PlanData {
 }
 
 const UpdatePlanService = async (planData: PlanData): Promise<Plan> => {
-  const { id, name, users, connections, queues, value } = planData;
+  const { id } = planData;
 
   const plan = await Plan.findByPk(id);
 

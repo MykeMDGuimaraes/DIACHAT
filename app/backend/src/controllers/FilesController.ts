@@ -1,5 +1,4 @@
 import { Request, Response } from "express";
-import { head } from "lodash";
 import { getIO } from "../libs/socket";
 
 import AppError from "../errors/AppError";
@@ -66,22 +65,21 @@ export const uploadMedias = async (
 ): Promise<Response> => {
   const { fileId, id, mediaType } = req.body;
   const files = req.files as Express.Multer.File[];
-  const file = head(files);
 
   try {
     let fileOpt;
     if (files.length > 0) {
-      for (const [index, file] of files.entries()) {
+      for (const [fileIndex, file] of files.entries()) {
         fileOpt = await FilesOptions.findOne({
           where: {
             fileId,
-            id: Array.isArray(id) ? id[index] : id
+            id: Array.isArray(id) ? id[fileIndex] : id
           }
         });
 
         fileOpt.update({
           path: file.filename.replace("/", "-"),
-          mediaType: Array.isArray(mediaType) ? mediaType[index] : mediaType
+          mediaType: Array.isArray(mediaType) ? mediaType[fileIndex] : mediaType
         });
       }
     }

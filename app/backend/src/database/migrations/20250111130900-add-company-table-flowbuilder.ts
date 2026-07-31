@@ -1,7 +1,7 @@
-import { QueryInterface, DataTypes } from "sequelize";
+import { DataTypes } from "sequelize";
 
 module.exports = {
-  up: async (queryInterface, Sequelize) => {
+  up: async (queryInterface, _Sequelize) => {
     await queryInterface.addColumn("FlowBuilders", "company_id", {
       type: DataTypes.INTEGER,
       allowNull: false,

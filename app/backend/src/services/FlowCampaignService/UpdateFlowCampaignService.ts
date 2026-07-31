@@ -1,7 +1,4 @@
-import { FlowBuilderModel } from "../../models/FlowBuilder";
 import { FlowCampaignModel } from "../../models/FlowCampaign";
-import { WebhookModel } from "../../models/Webhook";
-import { randomString } from "../../utils/randomCode";
 
 interface Request {
   companyId: number;
@@ -13,7 +10,7 @@ interface Request {
 }
 
 const UpdateFlowCampaignService = async ({
-  companyId,
+  companyId: _companyId,
   name,
   flowId,
   phrase,
@@ -21,7 +18,7 @@ const UpdateFlowCampaignService = async ({
   status
 }: Request): Promise<string> => {
   try {
-    const flow = await FlowCampaignModel.update(
+    await FlowCampaignModel.update(
       { name, phrase, flowId, status },
       {
         where: { id }

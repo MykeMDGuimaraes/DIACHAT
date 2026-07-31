@@ -1,9 +1,5 @@
 import { sendBaileysSocketMessage } from "../../messaging/public/baileys";
-import {
-  MessageUpsertType,
-  proto,
-  WASocket
-} from "../../messaging/public/baileys";
+import { proto, WASocket } from "../../messaging/public/baileys";
 import {
   convertTextToSpeechAndSaveToFile,
   getBodyMessage,
@@ -13,33 +9,19 @@ import {
   verifyMessage
 } from "../WbotServices/wbotMessageListener";
 
-import { isNil, isNull } from "lodash";
-
 import fs from "fs";
-import path, { join } from "path";
+import path from "path";
 
-import OpenAI, { Configuration, OpenAIApi } from "openai";
+import { Configuration, OpenAIApi } from "openai";
 import Ticket from "../../models/Ticket";
 import Contact from "../../models/Contact";
 import Message from "../../models/Message";
 import TicketTraking from "../../models/TicketTraking";
-import ShowWhatsAppService from "../WhatsappService/ShowWhatsAppService";
-import Whatsapp from "../../models/Whatsapp";
 import { logger } from "../../utils/logger";
 
 type Session = WASocket & {
   id?: number;
 };
-
-interface ImessageUpsert {
-  messages: proto.IWebMessageInfo[];
-  type: MessageUpsertType;
-}
-
-interface IMe {
-  name: string;
-  id: string;
-}
 
 interface SessionOpenAi extends OpenAIApi {
   id?: number;
@@ -59,9 +41,9 @@ interface IOpenAi {
   maxMessages: number;
 }
 
-const deleteFileSync = (path: string): void => {
+const deleteFileSync = (filePath: string): void => {
   try {
-    fs.unlinkSync(path);
+    fs.unlinkSync(filePath);
   } catch (error) {
     console.error("Erro ao deletar o arquivo:", error);
   }

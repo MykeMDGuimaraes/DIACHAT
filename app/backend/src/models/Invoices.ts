@@ -5,10 +5,7 @@ import {
   UpdatedAt,
   Model,
   PrimaryKey,
-  AutoIncrement,
-  AllowNull,
-  HasMany,
-  Unique
+  AutoIncrement
 } from "sequelize-typescript";
 
 @Table({ tableName: "Invoices" })

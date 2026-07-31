@@ -1,5 +1,4 @@
 import { WebhookModel } from "../../models/Webhook";
-import { randomString } from "../../utils/randomCode";
 
 interface Request {
   companyId: number;
@@ -22,7 +21,7 @@ const UpdateWebHookConfigService = async ({
 
     const config = { ...webhookOld.config, details };
 
-    const webhook = await WebhookModel.update(
+    await WebhookModel.update(
       { config },
       {
         where: { id: webhookId, company_id: companyId }

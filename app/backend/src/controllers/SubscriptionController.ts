@@ -1,4 +1,4 @@
-import express, { Request, Response } from "express";
+import { Request, Response } from "express";
 import * as Yup from "yup";
 import Gerencianet from "gn-api-sdk-typescript";
 import AppError from "../errors/AppError";
@@ -8,8 +8,6 @@ import Company from "../models/Company";
 import Invoices from "../models/Invoices";
 import { getIO } from "../libs/socket";
 import { logger } from "../utils/logger";
-
-const app = express();
 
 export const index = async (req: Request, res: Response): Promise<Response> => {
   const gerencianet = Gerencianet(options);
@@ -21,7 +19,6 @@ export const createSubscription = async (
   res: Response
 ): Promise<Response> => {
   const gerencianet = Gerencianet(options);
-  const { companyId } = req.user;
 
   const schema = Yup.object().shape({
     price: Yup.string().required(),
@@ -33,19 +30,7 @@ export const createSubscription = async (
     throw new AppError("Validation fails 1", 400);
   }
 
-  const {
-    firstName,
-    price,
-    users,
-    connections,
-    address2,
-    city,
-    state,
-    zipcode,
-    country,
-    plan,
-    invoiceId
-  } = req.body;
+  const { price, invoiceId } = req.body;
 
   const body = {
     calendario: {
@@ -151,7 +136,7 @@ export const webhook = async (
           await company.update({
             dueDate: date
           });
-          const invoi = await invoices.update({
+          await invoices.update({
             id: invoiceID,
             status: "paid"
           });

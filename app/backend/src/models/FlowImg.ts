@@ -4,7 +4,6 @@ import {
   Column,
   PrimaryKey,
   AutoIncrement,
-  DataType,
   CreatedAt,
   UpdatedAt
 } from "sequelize-typescript";

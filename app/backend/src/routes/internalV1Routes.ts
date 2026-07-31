@@ -40,7 +40,7 @@ internalV1Routes.post(
 );
 
 internalV1Routes.use(
-  (err: Error, req: Request, res: Response, next: NextFunction) => {
+  (err: Error, req: Request, res: Response, _next: NextFunction) => {
     if (err instanceof ApiV1Error) {
       return res.status(err.statusCode).json({
         error: {

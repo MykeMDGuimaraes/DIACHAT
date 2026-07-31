@@ -7,18 +7,14 @@ const ResetPassword = async (
   token: string,
   password: string
 ) => {
-  const { hasResult, data } = await filterUser(email, token);
+  const { hasResult } = await filterUser(email, token);
   if (!hasResult) {
     return { status: 404, message: "Email não encontrado" };
   }
   if (hasResult === true) {
     try {
       const convertPassword: string = await hash(password, 8);
-      const { hasResults, datas } = await insertHasPassword(
-        email,
-        token,
-        convertPassword
-      );
+      const { datas } = await insertHasPassword(email, token, convertPassword);
       if (datas.length === 0) {
         return { status: 404, message: "Token não encontrado" };
       }
@@ -28,7 +24,7 @@ const ResetPassword = async (
   }
 };
 export default ResetPassword;
-const filterUser = async (email: string, token: string) => {
+const filterUser = async (email: string, _token: string) => {
   const sql = `SELECT * FROM "Users"  WHERE email = '${email}' AND "resetPassword" != ''`;
   const result = await database.query(sql, {
     type: sequelize.QueryTypes.SELECT

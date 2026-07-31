@@ -15,12 +15,6 @@ import GetTicketWbot from "../../helpers/GetTicketWbot";
 import Ticket from "../../models/Ticket";
 import Contact from "../../models/Contact";
 
-interface Request {
-  media: Express.Multer.File;
-  ticket: Ticket;
-  body?: string;
-}
-
 interface RequestFlow {
   media: string;
   ticket: Ticket;
@@ -91,7 +85,6 @@ const SendWhatsAppMediaFlow = async ({
   media,
   ticket,
   body,
-  isFlow = false,
   isRecord = false
 }: RequestFlow): Promise<WAMessage> => {
   try {

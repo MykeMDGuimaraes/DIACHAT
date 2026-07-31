@@ -11,7 +11,6 @@ import GetContactService from "../services/ContactServices/GetContactService";
 
 import CheckContactNumber from "../services/WbotServices/CheckNumber";
 import CheckIsValidContact from "../services/WbotServices/CheckIsValidContact";
-import GetProfilePicUrl from "../services/WbotServices/GetProfilePicUrl";
 import AppError from "../errors/AppError";
 import SimpleListService, {
   SearchContactParams
@@ -109,12 +108,15 @@ export const storeUpload = async (
     };
 
     try {
-      const contact = await createUploadedContact(
+      const uploadedContact = await createUploadedContact(
         newContact,
         companyId,
         schema
       );
-      contactAdded.push({ contactName: contact.name, contactId: contact.id });
+      contactAdded.push({
+        contactName: uploadedContact.name,
+        contactId: uploadedContact.id
+      });
     } catch (e) {
       errorBag.push({ contactName: contact.Nome, error: e || e.message });
     }

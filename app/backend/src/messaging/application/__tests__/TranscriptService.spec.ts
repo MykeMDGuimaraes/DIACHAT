@@ -1,4 +1,3 @@
-import AppError from "../../../errors/AppError";
 import TranscriptService, {
   decodeTranscriptCursor
 } from "../TranscriptService";

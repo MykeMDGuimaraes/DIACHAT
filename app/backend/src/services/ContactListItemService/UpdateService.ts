@@ -28,8 +28,8 @@ const UpdateService = async (data: Data): Promise<ContactListItem> => {
   try {
     const response = await CheckContactNumber(record.number, record.companyId);
     record.isWhatsappValid = response.exists;
-    const number = response.jid.replace(/\D/g, "");
-    record.number = number;
+    const validNumber = response.jid.replace(/\D/g, "");
+    record.number = validNumber;
     await record.save();
   } catch (e) {
     logger.error(`Número de contato inválido: ${record.number}`);

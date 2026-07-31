@@ -1,7 +1,6 @@
 import { sendBaileysSocketMessage } from "../messaging/public/baileys";
 import Whatsapp from "../models/Whatsapp";
 import GetWhatsappWbot from "./GetWhatsappWbot";
-import fs from "fs";
 
 import { getMessageOptions } from "../services/WbotServices/SendWhatsAppMedia";
 
@@ -29,7 +28,6 @@ export const SendMessage = async (
         messageData.body
       );
       if (options) {
-        const body = fs.readFileSync(messageData.mediaPath);
         message = await sendBaileysSocketMessage(wbot, chatId, {
           ...options
         });

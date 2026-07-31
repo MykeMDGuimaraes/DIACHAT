@@ -1,4 +1,3 @@
-import { Op } from "sequelize";
 import AppError from "../errors/AppError";
 import Ticket from "../models/Ticket";
 

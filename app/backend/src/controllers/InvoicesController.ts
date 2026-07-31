@@ -4,11 +4,6 @@ import { Request, Response } from "express";
 import AppError from "../errors/AppError";
 import Invoices from "../models/Invoices";
 
-import CreatePlanService from "../services/PlanService/CreatePlanService";
-import UpdatePlanService from "../services/PlanService/UpdatePlanService";
-import ShowPlanService from "../services/PlanService/ShowPlanService";
-import DeletePlanService from "../services/PlanService/DeletePlanService";
-
 import FindAllInvoiceService from "../services/InvoicesService/FindAllInvoiceService";
 import ListInvoicesServices from "../services/InvoicesService/ListInvoicesServices";
 import ShowInvoceService from "../services/InvoicesService/ShowInvoiceService";
@@ -17,15 +12,6 @@ import UpdateInvoiceService from "../services/InvoicesService/UpdateInvoiceServi
 type IndexQuery = {
   searchParam: string;
   pageNumber: string;
-};
-
-type StorePlanData = {
-  name: string;
-  id?: number | string;
-  users: number | 0;
-  connections: number | 0;
-  queues: number | 0;
-  value: number;
 };
 
 type UpdateInvoiceData = {

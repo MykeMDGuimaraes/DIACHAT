@@ -1,5 +1,5 @@
 module.exports = {
-  up: (queryInterface, Sequelize) => {
+  up: queryInterface => {
     return queryInterface
       .removeColumn("Campaigns", "confirmationMessage1")
       .then(() =>

@@ -24,7 +24,7 @@ const ListWhatsAppsService = async ({
     ]
   };
 
-  if (session !== undefined && session == 0) {
+  if (session !== undefined && Number(session) === 0) {
     options.attributes = { exclude: ["session"] };
   }
 

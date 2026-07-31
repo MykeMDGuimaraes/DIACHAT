@@ -46,7 +46,7 @@ export const webHook = async (
         });
 
         if (getTokenPage) {
-          entry.messaging?.forEach((data: any) => {
+          entry.messaging?.forEach((_data: any) => {
             // handleMessage(getTokenPage, data, channel, getTokenPage.companyId); TODO: Check Facebook Services
           });
         }

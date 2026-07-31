@@ -34,7 +34,7 @@ const CreateService = async (data: Data): Promise<Campaign> => {
     throw new AppError(err.message);
   }
 
-  if (data.scheduledAt != null && data.scheduledAt != "") {
+  if ((data.scheduledAt ?? null) !== null && data.scheduledAt !== "") {
     data.status = "PROGRAMADA";
   }
 

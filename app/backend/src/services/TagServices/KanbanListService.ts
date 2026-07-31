@@ -1,7 +1,4 @@
-import { Op } from "sequelize";
 import Tag from "../../models/Tag";
-import Ticket from "../../models/Ticket";
-import TicketTag from "../../models/TicketTag";
 
 interface Request {
   companyId: number;

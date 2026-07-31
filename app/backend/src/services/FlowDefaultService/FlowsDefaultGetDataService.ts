@@ -1,7 +1,3 @@
-import { WebhookModel } from "../../models/Webhook";
-import User from "../../models/User";
-import { FlowBuilderModel } from "../../models/FlowBuilder";
-import { FlowCampaignModel } from "../../models/FlowCampaign";
 import { FlowDefaultModel } from "../../models/FlowDefault";
 
 interface Request {
@@ -17,7 +13,7 @@ const FlowsDefaultGetDataService = async ({
 }: Request): Promise<Response> => {
   try {
     // Realiza a consulta com paginação usando findAndCountAll
-    const { count, rows } = await FlowDefaultModel.findAndCountAll({
+    const { rows } = await FlowDefaultModel.findAndCountAll({
       where: {
         companyId
       }

@@ -1,11 +1,6 @@
-import { Request, Response } from "express";
-import { sendMessageFlow } from "../../controllers/MessageController";
+import { Request } from "express";
 import { WebhookModel } from "../../models/Webhook";
 import { FlowBuilderModel } from "../../models/FlowBuilder";
-import { randomString } from "../../utils/randomCode";
-import CreateMessageService, {
-  MessageData
-} from "../MessageServices/CreateMessageService";
 import { ActionsWebhookService } from "./ActionsWebhookService";
 import Whatsapp from "../../models/Whatsapp";
 import QueueIntegrations from "../../models/QueueIntegrations";
@@ -49,18 +44,10 @@ export interface INodes {
   dragging: boolean;
 }
 
-interface webhookCustom {
-  config: null | {
-    lastRequest: {};
-    keys: {};
-  };
-}
-
 const DispatchWebHookService = async ({
   companyId,
   hashId,
-  data,
-  req
+  data
 }: RequestLocal): Promise<WebhookModel> => {
   try {
     const webhook = await WebhookModel.findOne({
@@ -79,7 +66,7 @@ const DispatchWebHookService = async ({
 
     const requestAll = webhook.requestAll + 1;
 
-    const webhookUpdate = await WebhookModel.update(
+    await WebhookModel.update(
       { config, requestAll },
       {
         where: { hash_id: hashId, company_id: companyId }
@@ -97,7 +84,7 @@ const DispatchWebHookService = async ({
 
       const nextStage = connections[0].source;
 
-      const { count, rows } = await Whatsapp.findAndCountAll({
+      const { rows } = await Whatsapp.findAndCountAll({
         where: {
           companyId
         }

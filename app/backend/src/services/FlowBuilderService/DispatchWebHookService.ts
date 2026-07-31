@@ -1,17 +1,9 @@
 import { WebhookModel } from "../../models/Webhook";
-import { randomString } from "../../utils/randomCode";
 
 interface Request {
   userId: number;
   hashId: string;
   data: any;
-}
-
-interface webhookCustom {
-  config: null | {
-    lastRequest: {};
-    keys: {};
-  };
 }
 
 const DispatchWebHookService = async ({
@@ -33,7 +25,7 @@ const DispatchWebHookService = async ({
       }
     };
 
-    const webhookUpdate = await WebhookModel.update(
+    await WebhookModel.update(
       { config },
       {
         where: { hash_id: hashId, user_id: userId }

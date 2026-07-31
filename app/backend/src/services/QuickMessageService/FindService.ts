@@ -1,4 +1,3 @@
-import { Op } from "sequelize";
 import QuickMessage from "../../models/QuickMessage";
 import Company from "../../models/Company";
 

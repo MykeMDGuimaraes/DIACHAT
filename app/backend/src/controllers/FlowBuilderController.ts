@@ -97,8 +97,6 @@ export const FlowDataUpdate = async (
   req: Request,
   res: Response
 ): Promise<Response> => {
-  const userId = parseInt(req.user.id);
-
   const bodyData = req.body;
 
   const { companyId } = req.user;

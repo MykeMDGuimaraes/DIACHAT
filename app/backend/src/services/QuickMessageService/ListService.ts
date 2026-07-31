@@ -1,4 +1,4 @@
-import { Sequelize, Op, Filterable } from "sequelize";
+import { Sequelize, Filterable } from "sequelize";
 import QuickMessage from "../../models/QuickMessage";
 
 interface Request {

@@ -18,7 +18,7 @@ const apiKeyAuth = async (
   let parsed;
   try {
     parsed = parsePublicApiKey(authorization.slice("Bearer ".length));
-  } catch (_) {
+  } catch {
     throw new AppError("Credencial de API inválida", 401);
   }
 

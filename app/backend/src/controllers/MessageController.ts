@@ -19,7 +19,6 @@ import DeleteWhatsAppMessage from "../services/WbotServices/DeleteWhatsAppMessag
 import SendWhatsAppMedia from "../services/WbotServices/SendWhatsAppMedia";
 import SendWhatsAppMessage from "../services/WbotServices/SendWhatsAppMessage";
 import CheckContactNumber from "../services/WbotServices/CheckNumber";
-import CheckIsValidContact from "../services/WbotServices/CheckIsValidContact";
 import GetProfilePicUrl from "../services/WbotServices/GetProfilePicUrl";
 import CreateOrUpdateContactService from "../services/ContactServices/CreateOrUpdateContactService";
 
@@ -76,11 +75,11 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
 
   if (medias) {
     await Promise.all(
-      medias.map(async (media: Express.Multer.File, index) => {
+      medias.map(async (media: Express.Multer.File, mediaIndex) => {
         await SendWhatsAppMedia({
           media,
           ticket,
-          body: Array.isArray(body) ? body[index] : body
+          body: Array.isArray(body) ? body[mediaIndex] : body
         });
       })
     );
@@ -282,11 +281,11 @@ export const sendMessageFlow = async (
     }
 
     const numberToTest = messageData.number;
-    const { body } = messageData;
+    const { body: messageBody } = messageData;
 
     const { companyId } = messageData;
 
-    const CheckValidNumber = await CheckContactNumber(numberToTest, companyId);
+    await CheckContactNumber(numberToTest, companyId);
     const number = numberToTest.replace(/\D/g, "");
 
     if (medias) {
@@ -313,7 +312,7 @@ export const sendMessageFlow = async (
           whatsappId,
           data: {
             number,
-            body
+            body: messageBody
           }
         },
 

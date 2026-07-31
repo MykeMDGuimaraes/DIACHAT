@@ -1,5 +1,3 @@
-import { WebhookModel } from "../../models/Webhook";
-import User from "../../models/User";
 import { FlowBuilderModel } from "../../models/FlowBuilder";
 
 interface Request {
@@ -15,7 +13,7 @@ const ListFlowBuilderService = async ({
 }: Request): Promise<Response> => {
   try {
     // Realiza a consulta com paginação usando findAndCountAll
-    const { count, rows } = await FlowBuilderModel.findAndCountAll({
+    const { rows } = await FlowBuilderModel.findAndCountAll({
       where: {
         company_id: companyId
       }

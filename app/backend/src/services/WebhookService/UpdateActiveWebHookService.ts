@@ -1,5 +1,4 @@
 import { WebhookModel } from "../../models/Webhook";
-import { randomString } from "../../utils/randomCode";
 
 interface Request {
   status: boolean;
@@ -11,7 +10,7 @@ const UpdateActiveWebHookService = async ({
   webhookId
 }: Request): Promise<string> => {
   try {
-    const webhook = await WebhookModel.update(
+    await WebhookModel.update(
       { active: status },
       {
         where: { id: webhookId }

@@ -9,8 +9,7 @@ import {
   sleep,
   validaCpfCnpj,
   sendMessageImage,
-  sendMessageLink,
-  makeid
+  sendMessageLink
 } from "./wbotMessageListener";
 import formatBody from "../../helpers/Mustache";
 
@@ -90,10 +89,9 @@ export const provider = async (
     const urlixc = urlixcdb.value;
     const asaastk = asaastoken.value;
 
-    const cnpj_cpf = getBodyMessage(msg);
     let numberCPFCNPJ = cpfcnpj;
 
-    if (urlmkauth != "" && Client_Id != "" && Client_Secret != "") {
+    if (urlmkauth !== "" && Client_Id !== "" && Client_Secret !== "") {
       if (isNumeric(numberCPFCNPJ) === true) {
         if (cpfcnpj.length > 2) {
           const isCPFCNPJ = validaCpfCnpj(numberCPFCNPJ);
@@ -135,9 +133,9 @@ export const provider = async (
                 };
                 axios
                   .request(config as any)
-                  .then(async function (response) {
-                    if (response.data == "NULL") {
-                      const textMessage = {
+                  .then(async function (responseInner1) {
+                    if (responseInner1.data === "NULL") {
+                      const textMessageInner2 = {
                         text: formatBody(
                           `Cadastro não localizado! *CPF/CNPJ* incorreto ou inválido. Tenta novamente!`,
                           contact
@@ -150,43 +148,34 @@ export const provider = async (
                           `${ticket.contact.number}@${
                             ticket.isGroup ? "g.us" : "s.whatsapp.net"
                           }`,
-                          textMessage
+                          textMessageInner2
                         );
                       } catch (error) {
                         console.log("Não consegui enviar a mensagem!");
                       }
                     } else {
                       let nome;
-                      let cpf_cnpj;
                       let qrcode;
                       let valor;
                       let bloqueado;
                       let linhadig;
                       let uuid_cliente;
-                      let referencia;
-                      let status;
                       let datavenc;
-                      let descricao;
                       let titulo;
-                      let statusCorrigido;
                       let valorCorrigido;
 
-                      nome = response.data.dados_cliente.titulos.nome;
-                      cpf_cnpj = response.data.dados_cliente.titulos.cpf_cnpj;
-                      valor = response.data.dados_cliente.titulos.valor;
-                      bloqueado = response.data.dados_cliente.titulos.bloqueado;
+                      nome = responseInner1.data.dados_cliente.titulos.nome;
+                      valor = responseInner1.data.dados_cliente.titulos.valor;
+                      bloqueado =
+                        responseInner1.data.dados_cliente.titulos.bloqueado;
                       uuid_cliente =
-                        response.data.dados_cliente.titulos.uuid_cliente;
-                      qrcode = response.data.dados_cliente.titulos.qrcode;
-                      linhadig = response.data.dados_cliente.titulos.linhadig;
-                      referencia =
-                        response.data.dados_cliente.titulos.referencia;
-                      status = response.data.dados_cliente.titulos.status;
-                      datavenc = response.data.dados_cliente.titulos.datavenc;
-                      descricao = response.data.dados_cliente.titulos.descricao;
-                      titulo = response.data.dados_cliente.titulos.titulo;
-                      statusCorrigido =
-                        status[0].toUpperCase() + status.substr(1);
+                        responseInner1.data.dados_cliente.titulos.uuid_cliente;
+                      qrcode = responseInner1.data.dados_cliente.titulos.qrcode;
+                      linhadig =
+                        responseInner1.data.dados_cliente.titulos.linhadig;
+                      datavenc =
+                        responseInner1.data.dados_cliente.titulos.datavenc;
+                      titulo = responseInner1.data.dados_cliente.titulos.titulo;
                       valorCorrigido = valor.replace(".", ",");
 
                       var curdate = new Date(datavenc);
@@ -197,7 +186,7 @@ export const provider = async (
                       const anoMesDia = `${dia}/${mes}/${ano}`;
 
                       try {
-                        const textMessage = {
+                        const textMessageInner3 = {
                           text: formatBody(
                             `Localizei seu Cadastro! *${nome}* só mais um instante por favor!`,
                             contact
@@ -208,7 +197,7 @@ export const provider = async (
                           `${ticket.contact.number}@${
                             ticket.isGroup ? "g.us" : "s.whatsapp.net"
                           }`,
-                          textMessage
+                          textMessageInner3
                         );
                         const bodyBoleto = {
                           text: formatBody(
@@ -303,7 +292,7 @@ export const provider = async (
                           });
                           await page.emulateMediaType("screen");
                           // Downlaod the PDF
-                          const pdf = await page.pdf({
+                          await page.pdf({
                             path: nomePDF,
                             printBackground: true,
                             format: "A4"
@@ -357,7 +346,7 @@ export const provider = async (
                           };
                           axios
                             .request(optionsdesbloq as any)
-                            .then(async function (response) {
+                            .then(async function (_responseUnused4) {
                               const bodyLiberado = {
                                 text: formatBody(
                                   `Pronto liberei! Vou precisar que você *retire* seu equipamento da tomada.\n\n*OBS: Somente retire da tomada.* \nAguarde 1 minuto e ligue novamente!`,
@@ -372,7 +361,7 @@ export const provider = async (
                                 }`,
                                 bodyLiberado
                               );
-                              const bodyqrcode = {
+                              const bodyqrcodeInner5 = {
                                 text: formatBody(
                                   `Veja se seu acesso voltou! Caso nao tenha voltado retorne o contato e fale com um atendente!`,
                                   contact
@@ -384,10 +373,10 @@ export const provider = async (
                                 `${ticket.contact.number}@${
                                   ticket.isGroup ? "g.us" : "s.whatsapp.net"
                                 }`,
-                                bodyqrcode
+                                bodyqrcodeInner5
                               );
                             })
-                            .catch(async function (error) {
+                            .catch(async function (_errorUnused6) {
                               const bodyfinaliza = {
                                 text: formatBody(
                                   `Opss! Algo de errado aconteceu! Digite *#* para voltar ao menu anterior e fale com um atendente!`,
@@ -435,7 +424,7 @@ export const provider = async (
                       }
                     }
                   })
-                  .catch(async function (error) {
+                  .catch(async function (_errorUnused7) {
                     try {
                       const bodyBoleto = {
                         text: formatBody(
@@ -456,7 +445,7 @@ export const provider = async (
                     }
                   });
               })
-              .catch(async function (error) {
+              .catch(async function (_errorUnused8) {
                 const bodyfinaliza = {
                   text: formatBody(
                     `Opss! Algo de errado aconteceu! Digite *#* para voltar ao menu anterior e fale com um atendente!`,
@@ -534,7 +523,7 @@ export const provider = async (
                 totalCount = response?.data?.totalCount;
 
                 if (totalCount === 0) {
-                  const body = {
+                  const bodyInner9 = {
                     text: formatBody(
                       `Cadastro não localizado! *CPF/CNPJ* incorreto ou inválido. Tenta novamente!`,
                       contact
@@ -546,10 +535,10 @@ export const provider = async (
                     `${ticket.contact.number}@${
                       ticket.isGroup ? "g.us" : "s.whatsapp.net"
                     }`,
-                    body
+                    bodyInner9
                   );
                 } else {
-                  const body = {
+                  const bodyInner10 = {
                     text: formatBody(
                       `Localizei seu Cadastro! \n*${nome}* só mais um instante por favor!`,
                       contact
@@ -561,7 +550,7 @@ export const provider = async (
                     `${ticket.contact.number}@${
                       ticket.isGroup ? "g.us" : "s.whatsapp.net"
                     }`,
-                    body
+                    bodyInner10
                   );
                   var optionsListpaymentOVERDUE = {
                     method: "GET",
@@ -575,12 +564,12 @@ export const provider = async (
 
                   axios
                     .request(optionsListpaymentOVERDUE as any)
-                    .then(async function (response) {
+                    .then(async function (responseInner11) {
                       let totalCount_overdue;
-                      totalCount_overdue = response?.data?.totalCount;
+                      totalCount_overdue = responseInner11?.data?.totalCount;
 
                       if (totalCount_overdue === 0) {
-                        const body = {
+                        const bodyInner12 = {
                           text: formatBody(
                             `Você não tem nenhuma fatura vencidada! \nVou te enviar a proxima fatura. Por favor aguarde!`,
                             contact
@@ -592,7 +581,7 @@ export const provider = async (
                           `${ticket.contact.number}@${
                             ticket.isGroup ? "g.us" : "s.whatsapp.net"
                           }`,
-                          body
+                          bodyInner12
                         );
                         var optionsPENDING = {
                           method: "GET",
@@ -606,19 +595,18 @@ export const provider = async (
 
                         axios
                           .request(optionsPENDING as any)
-                          .then(async function (response) {
+                          .then(async function (responseInner13) {
                             function sortfunction(a, b) {
                               return a.dueDate.localeCompare(b.dueDate);
                             }
                             const ordenado =
-                              response?.data?.data.sort(sortfunction);
+                              responseInner13?.data?.data.sort(sortfunction);
                             let id_payment_pending;
                             let value_pending;
                             let description_pending;
                             let invoiceUrl_pending;
                             let dueDate_pending;
                             let invoiceNumber_pending;
-                            let totalCount_pending;
                             let value_pending_corrigida;
                             let dueDate_pending_corrigida;
 
@@ -628,7 +616,6 @@ export const provider = async (
                             invoiceUrl_pending = ordenado[0]?.invoiceUrl;
                             dueDate_pending = ordenado[0]?.dueDate;
                             invoiceNumber_pending = ordenado[0]?.invoiceNumber;
-                            totalCount_pending = response?.data?.totalCount;
 
                             dueDate_pending_corrigida = dueDate_pending
                               ?.split("-")
@@ -666,12 +653,12 @@ export const provider = async (
 
                             axios
                               .request(optionsGetPIX as any)
-                              .then(async function (response) {
+                              .then(async function (responseInner14) {
                                 let success;
                                 let payload;
 
-                                success = response?.data?.success;
-                                payload = response?.data?.payload;
+                                success = responseInner14?.data?.success;
+                                payload = responseInner14?.data?.payload;
 
                                 if (success === true) {
                                   const bodyPixCP = {
@@ -719,10 +706,11 @@ export const provider = async (
 
                                   axios
                                     .request(optionsBoletopend as any)
-                                    .then(async function (response) {
+                                    .then(async function (responseInner15) {
                                       let codigo_barras;
                                       codigo_barras =
-                                        response.data.identificationField;
+                                        responseInner15.data
+                                          .identificationField;
                                       const bodycodigoBarras = {
                                         text: formatBody(
                                           `${codigo_barras}`,
@@ -730,7 +718,7 @@ export const provider = async (
                                         )
                                       };
                                       if (
-                                        response.data?.errors?.code !==
+                                        responseInner15.data?.errors?.code !==
                                         "invalid_action"
                                       ) {
                                         const bodycodigo = {
@@ -805,7 +793,7 @@ export const provider = async (
                                         });
                                       }
                                     })
-                                    .catch(async function (error) {
+                                    .catch(async function (_errorUnused16) {
                                       const bodyfinaliza = {
                                         text: formatBody(
                                           `Estamos finalizando esta conversa! Caso precise entre em contato conosco!`,
@@ -830,8 +818,8 @@ export const provider = async (
                                     });
                                 }
                               })
-                              .catch(async function (error) {
-                                const body = {
+                              .catch(async function (_errorUnused17) {
+                                const bodyInner18 = {
                                   text: formatBody(
                                     `*Opss!!!!*\nOcorreu um erro! Digite *#* e fale com um *Atendente*!`,
                                     contact
@@ -843,12 +831,12 @@ export const provider = async (
                                   `${ticket.contact.number}@${
                                     ticket.isGroup ? "g.us" : "s.whatsapp.net"
                                   }`,
-                                  body
+                                  bodyInner18
                                 );
                               });
                           })
-                          .catch(async function (error) {
-                            const body = {
+                          .catch(async function (_errorUnused19) {
+                            const bodyInner20 = {
                               text: formatBody(
                                 `*Opss!!!!*\nOcorreu um erro! Digite *#* e fale com um *Atendente*!`,
                                 contact
@@ -860,7 +848,7 @@ export const provider = async (
                               `${ticket.contact.number}@${
                                 ticket.isGroup ? "g.us" : "s.whatsapp.net"
                               }`,
-                              body
+                              bodyInner20
                             );
                           });
                       } else {
@@ -874,15 +862,16 @@ export const provider = async (
                         let value_overdue_corrigida;
                         let dueDate_overdue_corrigida;
 
-                        id_payment_overdue = response?.data?.data[0]?.id;
-                        value_overdue = response?.data?.data[0]?.value;
+                        id_payment_overdue = responseInner11?.data?.data[0]?.id;
+                        value_overdue = responseInner11?.data?.data[0]?.value;
                         description_overdue =
-                          response?.data?.data[0]?.description;
+                          responseInner11?.data?.data[0]?.description;
                         invoiceUrl_overdue =
-                          response?.data?.data[0]?.invoiceUrl;
-                        dueDate_overdue = response?.data?.data[0]?.dueDate;
+                          responseInner11?.data?.data[0]?.invoiceUrl;
+                        dueDate_overdue =
+                          responseInner11?.data?.data[0]?.dueDate;
                         invoiceNumber_overdue =
-                          response?.data?.data[0]?.invoiceNumber;
+                          responseInner11?.data?.data[0]?.invoiceNumber;
 
                         dueDate_overdue_corrigida = dueDate_overdue
                           ?.split("-")
@@ -892,7 +881,7 @@ export const provider = async (
                           "pt-br",
                           { style: "currency", currency: "BRL" }
                         );
-                        const body = {
+                        const bodyInner21 = {
                           text: formatBody(
                             `Você tem *${totalCount_overdue}* fatura(s) vencidada(s)! \nVou te enviar. Por favor aguarde!`,
                             contact
@@ -904,7 +893,7 @@ export const provider = async (
                           `${ticket.contact.number}@${
                             ticket.isGroup ? "g.us" : "s.whatsapp.net"
                           }`,
-                          body
+                          bodyInner21
                         );
                         const bodyBoleto = {
                           text: formatBody(
@@ -932,12 +921,12 @@ export const provider = async (
 
                         axios
                           .request(optionsGetPIX as any)
-                          .then(async function (response) {
+                          .then(async function (responseInner22) {
                             let success;
                             let payload;
 
-                            success = response?.data?.success;
-                            payload = response?.data?.payload;
+                            success = responseInner22?.data?.success;
+                            payload = responseInner22?.data?.payload;
                             if (success === true) {
                               const bodyPixCP = {
                                 text: formatBody(
@@ -984,10 +973,10 @@ export const provider = async (
 
                               axios
                                 .request(optionsBoleto as any)
-                                .then(async function (response) {
+                                .then(async function (responseInner23) {
                                   let codigo_barras;
                                   codigo_barras =
-                                    response.data.identificationField;
+                                    responseInner23.data.identificationField;
                                   const bodycodigoBarras = {
                                     text: formatBody(
                                       `${codigo_barras}`,
@@ -995,7 +984,7 @@ export const provider = async (
                                     )
                                   };
                                   if (
-                                    response.data?.errors?.code !==
+                                    responseInner23.data?.errors?.code !==
                                     "invalid_action"
                                   ) {
                                     const bodycodigo = {
@@ -1069,16 +1058,16 @@ export const provider = async (
                                     });
                                   }
                                 })
-                                .catch(function (error) {
+                                .catch(function (_errorUnused24) {
                                   //console.error(error);
                                 });
                             }
                           })
-                          .catch(function (error) {});
+                          .catch(function (_errorUnused25) {});
                       }
                     })
-                    .catch(async function (error) {
-                      const body = {
+                    .catch(async function (_errorUnused26) {
+                      const bodyInner27 = {
                         text: formatBody(
                           `*Opss!!!!*\nOcorreu um erro! Digite *#* e fale com um *Atendente*!`,
                           contact
@@ -1090,13 +1079,13 @@ export const provider = async (
                         `${ticket.contact.number}@${
                           ticket.isGroup ? "g.us" : "s.whatsapp.net"
                         }`,
-                        body
+                        bodyInner27
                       );
                     });
                 }
               })
-              .catch(async function (error) {
-                const body = {
+              .catch(async function (_errorUnused28) {
+                const bodyInner29 = {
                   text: formatBody(
                     `*Opss!!!!*\nOcorreu um erro! Digite *#* e fale com um *Atendente*!`,
                     contact
@@ -1108,7 +1097,7 @@ export const provider = async (
                   `${ticket.contact.number}@${
                     ticket.isGroup ? "g.us" : "s.whatsapp.net"
                   }`,
-                  body
+                  bodyInner29
                 );
               });
           }
@@ -1116,7 +1105,7 @@ export const provider = async (
       }
     }
 
-    if (ixcapikey.value != "" && urlixcdb.value != "") {
+    if (ixcapikey.value !== "" && urlixcdb.value !== "") {
       if (isNumeric(numberCPFCNPJ) === true) {
         if (cpfcnpj.length > 2) {
           const isCPFCNPJ = validaCpfCnpj(numberCPFCNPJ);
@@ -1177,7 +1166,7 @@ export const provider = async (
               .then(async function (response) {
                 if (response.data.type === "error") {
                   console.log("Error response", response.data.message);
-                  const body = {
+                  const bodyInner30 = {
                     text: formatBody(
                       `*Opss!!!!*\nOcorreu um erro! Digite *#* e fale com um *Atendente*!`,
                       contact
@@ -1189,11 +1178,11 @@ export const provider = async (
                     `${ticket.contact.number}@${
                       ticket.isGroup ? "g.us" : "s.whatsapp.net"
                     }`,
-                    body
+                    bodyInner30
                   );
                 }
                 if (response.data.total === 0) {
-                  const body = {
+                  const bodyInner31 = {
                     text: formatBody(
                       `Cadastro não localizado! *CPF/CNPJ* incorreto ou inválido. Tenta novamente!`,
                       contact
@@ -1206,19 +1195,17 @@ export const provider = async (
                       `${ticket.contact.number}@${
                         ticket.isGroup ? "g.us" : "s.whatsapp.net"
                       }`,
-                      body
+                      bodyInner31
                     );
                   } catch (error) {}
                 } else {
                   let nome;
                   let id;
-                  let type;
 
                   nome = response.data?.registros[0]?.razao;
                   id = response.data?.registros[0]?.id;
-                  type = response.data?.type;
 
-                  const body = {
+                  const bodyInner32 = {
                     text: formatBody(
                       `Localizei seu Cadastro! \n*${nome}* só mais um instante por favor!`,
                       contact
@@ -1230,7 +1217,7 @@ export const provider = async (
                     `${ticket.contact.number}@${
                       ticket.isGroup ? "g.us" : "s.whatsapp.net"
                     }`,
-                    body
+                    bodyInner32
                   );
                   var boleto = {
                     method: "GET",
@@ -1253,8 +1240,7 @@ export const provider = async (
                   };
                   axios
                     .request(boleto as any)
-                    .then(async function (response) {
-                      let gateway_link;
+                    .then(async function (responseInner33) {
                       let valor;
                       let datavenc;
                       let datavencCorrigida;
@@ -1263,13 +1249,13 @@ export const provider = async (
                       let impresso;
                       let idboleto;
 
-                      idboleto = response.data?.registros[0]?.id;
-                      gateway_link = response.data?.registros[0]?.gateway_link;
-                      valor = response.data?.registros[0]?.valor;
-                      datavenc = response.data?.registros[0]?.data_vencimento;
+                      idboleto = responseInner33.data?.registros[0]?.id;
+                      valor = responseInner33.data?.registros[0]?.valor;
+                      datavenc =
+                        responseInner33.data?.registros[0]?.data_vencimento;
                       linha_digitavel =
-                        response.data?.registros[0]?.linha_digitavel;
-                      impresso = response.data?.registros[0]?.impresso;
+                        responseInner33.data?.registros[0]?.linha_digitavel;
+                      impresso = responseInner33.data?.registros[0]?.impresso;
                       valorCorrigido = valor.replace(".", ",");
                       datavencCorrigida = datavenc
                         .split("-")
@@ -1277,12 +1263,6 @@ export const provider = async (
                         .join("/");
 
                       //INFORMAÇÕES BOLETO
-                      const bodyBoleto = {
-                        text: formatBody(
-                          `Segue a segunda-via da sua Fatura!\n\n*Fatura:* ${idboleto}\n*Nome:* ${nome}\n*Valor:* R$ ${valorCorrigido}\n*Data Vencimento:* ${datavencCorrigida}\n\nVou mandar o *código de barras* na próxima mensagem para ficar mais fácil para você copiar!`,
-                          contact
-                        )
-                      };
                       //await sleep(2000)
                       //await sendBaileysSocketMessage(wbot, `${ticket.contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`, bodyBoleto);
                       //LINHA DIGITAVEL
@@ -1307,7 +1287,7 @@ export const provider = async (
 
                         axios
                           .request(boletopdf as any)
-                          .then(function (response) {})
+                          .then(function (_responseUnused34) {})
                           .catch(function (error) {
                             console.error(error);
                           });
@@ -1326,12 +1306,12 @@ export const provider = async (
 
                       axios
                         .request(optionsPix as any)
-                        .then(async function (response) {
+                        .then(async function (responseInner35) {
                           let tipo;
                           let pix;
 
-                          tipo = response.data?.type;
-                          pix = response.data?.pix?.qrCode?.qrcode;
+                          tipo = responseInner35.data?.type;
+                          pix = responseInner35.data?.pix?.qrCode?.qrcode;
                           if (tipo === "success") {
                             const bodyBoletoPix = {
                               text: formatBody(
@@ -1436,12 +1416,14 @@ export const provider = async (
                             };
                             axios
                               .request(optionscontrato as any)
-                              .then(async function (response) {
+                              .then(async function (responseInner36) {
                                 let status_internet;
                                 let id_contrato;
                                 status_internet =
-                                  response.data?.registros[0]?.status_internet;
-                                id_contrato = response.data?.registros[0]?.id;
+                                  responseInner36.data?.registros[0]
+                                    ?.status_internet;
+                                id_contrato =
+                                  responseInner36.data?.registros[0]?.id;
                                 if (status_internet !== "A") {
                                   const bodyPdf = {
                                     text: formatBody(
@@ -1483,12 +1465,12 @@ export const provider = async (
 
                                   axios
                                     .request(optionsdesbloqeuio as any)
-                                    .then(async function (response) {
-                                      let tipo;
+                                    .then(async function (responseInner37) {
+                                      let tipoInner38;
                                       let mensagem;
-                                      tipo = response.data?.tipo;
-                                      mensagem = response.data?.mensagem;
-                                      if (tipo === "sucesso") {
+                                      tipoInner38 = responseInner37.data?.tipo;
+                                      mensagem = responseInner37.data?.mensagem;
+                                      if (tipoInner38 === "sucesso") {
                                         //DESCONECTANDO O CLIENTE PARA VOLTAR O ACESSO
                                         var optionsRadius = {
                                           method: "GET",
@@ -1510,10 +1492,13 @@ export const provider = async (
 
                                         axios
                                           .request(optionsRadius as any)
-                                          .then(async function (response) {
-                                            let tipo;
-                                            tipo = response.data?.type;
-                                            if (tipo === "success") {
+                                          .then(async function (
+                                            responseInner39
+                                          ) {
+                                            let tipoInner40;
+                                            tipoInner40 =
+                                              responseInner39.data?.type;
+                                            if (tipoInner40 === "success") {
                                               const body_mensagem = {
                                                 text: formatBody(
                                                   `${mensagem}`,
@@ -1530,7 +1515,7 @@ export const provider = async (
                                                 }`,
                                                 body_mensagem
                                               );
-                                              const bodyPdf = {
+                                              const bodyPdfInner41 = {
                                                 text: formatBody(
                                                   `Fiz os procedimentos de liberação! Agora aguarde até 5 minutos e veja se sua conexão irá retornar! .\n\nCaso não tenha voltado, retorne o contato e fale com um atendente!`,
                                                   contact
@@ -1544,7 +1529,7 @@ export const provider = async (
                                                     ? "g.us"
                                                     : "s.whatsapp.net"
                                                 }`,
-                                                bodyPdf
+                                                bodyPdfInner41
                                               );
                                               const bodyfinaliza = {
                                                 text: formatBody(
@@ -1577,7 +1562,7 @@ export const provider = async (
                                         //FIM DA DESCONEXÃO
                                       } else {
                                         var msgerrolbieracao =
-                                          response.data.mensagem;
+                                          responseInner37.data.mensagem;
                                         const bodyerro = {
                                           text: formatBody(
                                             `Ops! Ocorreu um erro e nao consegui desbloquear`,
@@ -1628,7 +1613,7 @@ export const provider = async (
                                         );
                                       }
                                     })
-                                    .catch(async function (error) {
+                                    .catch(async function (_errorUnused42) {
                                       const bodyerro = {
                                         text: formatBody(
                                           `Ops! Ocorreu um erro digite *#* e fale com um atendente!`,
@@ -1670,7 +1655,7 @@ export const provider = async (
 
                                 //
                               })
-                              .catch(async function (error) {
+                              .catch(async function (_errorUnused43) {
                                 const bodyerro = {
                                   text: formatBody(
                                     `Ops! Ocorreu um erro digite *#* e fale com um atendente!`,
@@ -1702,7 +1687,7 @@ export const provider = async (
                               }`,
                               bodyBoleto
                             );
-                            const body = {
+                            const bodyInner44 = {
                               text: formatBody(
                                 `Este é o *Codigo de Barras*`,
                                 contact
@@ -1714,7 +1699,7 @@ export const provider = async (
                               `${ticket.contact.number}@${
                                 ticket.isGroup ? "g.us" : "s.whatsapp.net"
                               }`,
-                              body
+                              bodyInner44
                             );
                             await sleep(2000);
                             const body_linha_digitavel = {
@@ -1747,12 +1732,14 @@ export const provider = async (
                             };
                             axios
                               .request(optionscontrato as any)
-                              .then(async function (response) {
+                              .then(async function (responseInner45) {
                                 let status_internet;
                                 let id_contrato;
                                 status_internet =
-                                  response.data?.registros[0]?.status_internet;
-                                id_contrato = response.data?.registros[0]?.id;
+                                  responseInner45.data?.registros[0]
+                                    ?.status_internet;
+                                id_contrato =
+                                  responseInner45.data?.registros[0]?.id;
                                 if (status_internet !== "A") {
                                   const bodyPdf = {
                                     text: formatBody(
@@ -1794,12 +1781,12 @@ export const provider = async (
 
                                   axios
                                     .request(optionsdesbloqeuio as any)
-                                    .then(async function (response) {
-                                      let tipo;
+                                    .then(async function (responseInner46) {
+                                      let tipoInner1;
                                       let mensagem;
-                                      tipo = response.data?.tipo;
-                                      mensagem = response.data?.mensagem;
-                                      if (tipo === "sucesso") {
+                                      tipoInner1 = responseInner46.data?.tipo;
+                                      mensagem = responseInner46.data?.mensagem;
+                                      if (tipoInner1 === "sucesso") {
                                         //DESCONECTANDO O CLIENTE PARA VOLTAR O ACESSO
                                         var optionsRadius = {
                                           method: "GET",
@@ -1821,16 +1808,19 @@ export const provider = async (
 
                                         axios
                                           .request(optionsRadius as any)
-                                          .then(async function (response) {
-                                            let tipo;
-                                            tipo = response.data?.type;
+                                          .then(async function (
+                                            responseInner2
+                                          ) {
+                                            let tipoInner3;
+                                            tipoInner3 =
+                                              responseInner2.data?.type;
                                             const body_mensagem = {
                                               text: formatBody(
                                                 `${mensagem}`,
                                                 contact
                                               )
                                             };
-                                            if (tipo === "success") {
+                                            if (tipoInner3 === "success") {
                                               await sleep(2000);
                                               await sendBaileysSocketMessage(
                                                 wbot,
@@ -1841,7 +1831,7 @@ export const provider = async (
                                                 }`,
                                                 body_mensagem
                                               );
-                                              const bodyPdf = {
+                                              const bodyPdfInner4 = {
                                                 text: formatBody(
                                                   `Fiz os procedimentos de liberação! Agora aguarde até 5 minutos e veja se sua conexão irá retornar! .\n\nCaso não tenha voltado, retorne o contato e fale com um atendente!`,
                                                   contact
@@ -1855,7 +1845,7 @@ export const provider = async (
                                                     ? "g.us"
                                                     : "s.whatsapp.net"
                                                 }`,
-                                                bodyPdf
+                                                bodyPdfInner4
                                               );
                                               const bodyfinaliza = {
                                                 text: formatBody(
@@ -1891,7 +1881,7 @@ export const provider = async (
                                                 }`,
                                                 body_mensagem
                                               );
-                                              const bodyPdf = {
+                                              const bodyPdfInner5 = {
                                                 text: formatBody(
                                                   `Vou precisar que você *retire* seu equipamento da tomada.\n\n*OBS: Somente retire da tomada.* \nAguarde 1 minuto e ligue novamente!`,
                                                   contact
@@ -1905,9 +1895,9 @@ export const provider = async (
                                                     ? "g.us"
                                                     : "s.whatsapp.net"
                                                 }`,
-                                                bodyPdf
+                                                bodyPdfInner5
                                               );
-                                              const bodyqrcode = {
+                                              const bodyqrcodeInner6 = {
                                                 text: formatBody(
                                                   `Veja se seu acesso voltou! Caso não tenha voltado retorne o contato e fale com um atendente!`,
                                                   contact
@@ -1921,7 +1911,7 @@ export const provider = async (
                                                     ? "g.us"
                                                     : "s.whatsapp.net"
                                                 }`,
-                                                bodyqrcode
+                                                bodyqrcodeInner6
                                               );
                                               const bodyfinaliza = {
                                                 text: formatBody(
@@ -1971,7 +1961,7 @@ export const provider = async (
                                         );
                                       }
                                     })
-                                    .catch(async function (error) {
+                                    .catch(async function (_errorUnused7) {
                                       const bodyerro = {
                                         text: formatBody(
                                           `Ops! Ocorreu um erro digite *#* e fale com um atendente!`,
@@ -2013,7 +2003,7 @@ export const provider = async (
 
                                 //
                               })
-                              .catch(async function (error) {
+                              .catch(async function (_errorUnused8) {
                                 const bodyerro = {
                                   text: formatBody(
                                     `Ops! Ocorreu um erro digite *#* e fale com um atendente!`,
@@ -2042,8 +2032,8 @@ export const provider = async (
                     });
                 }
               })
-              .catch(async function (error) {
-                const body = {
+              .catch(async function (_errorUnused9) {
+                const bodyInner10 = {
                   text: formatBody(
                     `*Opss!!!!*\nOcorreu um erro! Digite *#* e fale com um *Atendente*!`,
                     contact
@@ -2055,7 +2045,7 @@ export const provider = async (
                   `${ticket.contact.number}@${
                     ticket.isGroup ? "g.us" : "s.whatsapp.net"
                   }`,
-                  body
+                  bodyInner10
                 );
               });
           } else {
@@ -2091,7 +2081,7 @@ export const provider = async (
     cpfcnpj = cpfcnpj.replace(" ", "");
     cpfcnpj = cpfcnpj.replace(",", "");
 
-    const asaastoken = await Setting.findOne({
+    await Setting.findOne({
       where: {
         key: "asaas",
         companyId
@@ -2109,42 +2099,32 @@ export const provider = async (
         companyId
       }
     });
-    const ipmkauth = await Setting.findOne({
+    await Setting.findOne({
       where: {
         key: "ipmkauth",
         companyId
       }
     });
-    const clientidmkauth = await Setting.findOne({
+    await Setting.findOne({
       where: {
         key: "clientidmkauth",
         companyId
       }
     });
-    const clientesecretmkauth = await Setting.findOne({
+    await Setting.findOne({
       where: {
         key: "clientsecretmkauth",
         companyId
       }
     });
 
-    let urlmkauth = ipmkauth.value;
-    if (urlmkauth.substr(-1) === "/") {
-      urlmkauth = urlmkauth.slice(0, -1);
-    }
-
     //VARS
-    let url = `${urlmkauth}/api/`;
-    const Client_Id = clientidmkauth.value;
-    const Client_Secret = clientesecretmkauth.value;
     const ixckeybase64 = btoa(ixcapikey.value);
     const urlixc = urlixcdb.value;
-    const asaastk = asaastoken.value;
 
-    const cnpj_cpf = getBodyMessage(msg);
     let numberCPFCNPJ = cpfcnpj;
 
-    if (ixcapikey.value != "" && urlixcdb.value != "") {
+    if (ixcapikey.value !== "" && urlixcdb.value !== "") {
       if (isNumeric(numberCPFCNPJ) === true) {
         if (cpfcnpj.length > 2) {
           const isCPFCNPJ = validaCpfCnpj(numberCPFCNPJ);
@@ -2204,7 +2184,7 @@ export const provider = async (
               .request(options as any)
               .then(async function (response) {
                 if (response.data.type === "error") {
-                  const body = {
+                  const bodyInner11 = {
                     text: formatBody(
                       `*Opss!!!!*\nOcorreu um erro! Digite *#* e fale com um *Atendente*!`,
                       contact
@@ -2216,11 +2196,11 @@ export const provider = async (
                     `${ticket.contact.number}@${
                       ticket.isGroup ? "g.us" : "s.whatsapp.net"
                     }`,
-                    body
+                    bodyInner11
                   );
                 }
                 if (response.data.total === 0) {
-                  const body = {
+                  const bodyInner12 = {
                     text: formatBody(
                       `Cadastro não localizado! *CPF/CNPJ* incorreto ou inválido. Tenta novamente!`,
                       contact
@@ -2233,19 +2213,17 @@ export const provider = async (
                       `${ticket.contact.number}@${
                         ticket.isGroup ? "g.us" : "s.whatsapp.net"
                       }`,
-                      body
+                      bodyInner12
                     );
                   } catch (error) {}
                 } else {
                   let nome;
                   let id;
-                  let type;
 
                   nome = response.data?.registros[0]?.razao;
                   id = response.data?.registros[0]?.id;
-                  type = response.data?.type;
 
-                  const body = {
+                  const bodyInner13 = {
                     text: formatBody(
                       `Localizei seu Cadastro! \n*${nome}* só mais um instante por favor!`,
                       contact
@@ -2257,7 +2235,7 @@ export const provider = async (
                     `${ticket.contact.number}@${
                       ticket.isGroup ? "g.us" : "s.whatsapp.net"
                     }`,
-                    body
+                    bodyInner13
                   );
                   ///VE SE ESTA BLOQUEADO PARA LIBERAR!
                   var optionscontrato = {
@@ -2279,12 +2257,12 @@ export const provider = async (
                   };
                   axios
                     .request(optionscontrato as any)
-                    .then(async function (response) {
+                    .then(async function (responseInner14) {
                       let status_internet;
                       let id_contrato;
                       status_internet =
-                        response.data?.registros[0]?.status_internet;
-                      id_contrato = response.data?.registros[0]?.id;
+                        responseInner14.data?.registros[0]?.status_internet;
+                      id_contrato = responseInner14.data?.registros[0]?.id;
                       if (status_internet !== "A") {
                         const bodyPdf = {
                           text: formatBody(
@@ -2326,11 +2304,11 @@ export const provider = async (
 
                         axios
                           .request(optionsdesbloqeuio as any)
-                          .then(async function (response) {
+                          .then(async function (responseInner15) {
                             let tipo;
                             let mensagem;
-                            tipo = response.data?.tipo;
-                            mensagem = response.data?.mensagem;
+                            tipo = responseInner15.data?.tipo;
+                            mensagem = responseInner15.data?.mensagem;
                             const body_mensagem = {
                               text: formatBody(`${mensagem}`, contact)
                             };
@@ -2356,11 +2334,11 @@ export const provider = async (
 
                               axios
                                 .request(optionsRadius as any)
-                                .then(async function (response) {
-                                  let tipo;
-                                  tipo = response.data?.type;
+                                .then(async function (responseInner16) {
+                                  let tipoInner17;
+                                  tipoInner17 = responseInner16.data?.type;
 
-                                  if (tipo === "success") {
+                                  if (tipoInner17 === "success") {
                                     await sleep(2000);
                                     await sendBaileysSocketMessage(
                                       wbot,
@@ -2371,7 +2349,7 @@ export const provider = async (
                                       }`,
                                       body_mensagem
                                     );
-                                    const bodyPdf = {
+                                    const bodyPdfInner18 = {
                                       text: formatBody(
                                         `Fiz os procedimentos de liberação! Agora aguarde até 5 minutos e veja se sua conexão irá retornar! .\n\nCaso não tenha voltado, retorne o contato e fale com um atendente!`,
                                         contact
@@ -2385,7 +2363,7 @@ export const provider = async (
                                           ? "g.us"
                                           : "s.whatsapp.net"
                                       }`,
-                                      bodyPdf
+                                      bodyPdfInner18
                                     );
                                     const bodyfinaliza = {
                                       text: formatBody(
@@ -2419,7 +2397,7 @@ export const provider = async (
                                       }`,
                                       body_mensagem
                                     );
-                                    const bodyPdf = {
+                                    const bodyPdfInner19 = {
                                       text: formatBody(
                                         `Vou precisar que você *retire* seu equipamento da tomada.\n\n*OBS: Somente retire da tomada.* \nAguarde 1 minuto e ligue novamente!`,
                                         contact
@@ -2433,9 +2411,9 @@ export const provider = async (
                                           ? "g.us"
                                           : "s.whatsapp.net"
                                       }`,
-                                      bodyPdf
+                                      bodyPdfInner19
                                     );
-                                    const bodyqrcode = {
+                                    const bodyqrcodeInner20 = {
                                       text: formatBody(
                                         `Veja se seu acesso voltou! Caso não tenha voltado retorne o contato e fale com um atendente!`,
                                         contact
@@ -2449,7 +2427,7 @@ export const provider = async (
                                           ? "g.us"
                                           : "s.whatsapp.net"
                                       }`,
-                                      bodyqrcode
+                                      bodyqrcodeInner20
                                     );
                                     const bodyfinaliza = {
                                       text: formatBody(
@@ -2522,7 +2500,7 @@ export const provider = async (
                                  await sendBaileysSocketMessage(wbot, `${ticket.contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`,bodyerro);
                              } */
                           })
-                          .catch(async function (error) {
+                          .catch(async function (_errorUnused21) {
                             const bodyerro = {
                               text: formatBody(
                                 `Ops! Ocorreu um erro digite *#* e fale com um atendente!`,
@@ -2576,7 +2554,7 @@ export const provider = async (
 
                       //
                     })
-                    .catch(async function (error) {
+                    .catch(async function (_errorUnused22) {
                       const bodyerro = {
                         text: formatBody(
                           `Ops! Ocorreu um erro digite *#* e fale com um atendente!`,
@@ -2594,8 +2572,8 @@ export const provider = async (
                     });
                 }
               })
-              .catch(async function (error) {
-                const body = {
+              .catch(async function (_errorUnused23) {
+                const bodyInner24 = {
                   text: formatBody(
                     `*Opss!!!!*\nOcorreu um erro! Digite *#* e fale com um *Atendente*!`,
                     contact
@@ -2607,7 +2585,7 @@ export const provider = async (
                   `${ticket.contact.number}@${
                     ticket.isGroup ? "g.us" : "s.whatsapp.net"
                   }`,
-                  body
+                  bodyInner24
                 );
               });
           } else {

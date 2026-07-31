@@ -1,5 +1,4 @@
 import { WebhookModel } from "../../models/Webhook";
-import User from "../../models/User";
 
 interface Request {
   companyId: number;

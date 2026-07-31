@@ -18,7 +18,7 @@
   "rules": {
     "@typescript-eslint/no-non-null-assertion": "off",
     "@typescript-eslint/no-unused-vars": [
-      "warn",
+      "error",
       { "argsIgnorePattern": "_" }
     ],
     "@typescript-eslint/ban-types": "warn",
@@ -35,9 +35,9 @@
     "no-await-in-loop": "warn",
     "no-use-before-define": "warn",
     "prefer-const": "warn",
-    "no-shadow": "warn",
+    "no-shadow": "error",
     "func-names": "warn",
-    "eqeqeq": "warn",
+    "eqeqeq": "error",
     "consistent-return": "warn",
     "radix": "warn",
     "no-restricted-syntax": "warn",

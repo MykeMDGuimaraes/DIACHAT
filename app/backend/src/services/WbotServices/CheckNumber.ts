@@ -1,7 +1,6 @@
 import AppError from "../../errors/AppError";
 import GetDefaultWhatsApp from "../../helpers/GetDefaultWhatsApp";
 import { getWbot } from "../../libs/wbot";
-import { logger } from "../../utils/logger";
 
 interface IOnWhatsapp {
   jid: string;

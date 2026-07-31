@@ -185,7 +185,6 @@ export const deleteMedia = async (
   res: Response
 ): Promise<Response> => {
   const { id } = req.params;
-  const { companyId } = req.user;
 
   try {
     const quickmessage = await QuickMessage.findByPk(id);

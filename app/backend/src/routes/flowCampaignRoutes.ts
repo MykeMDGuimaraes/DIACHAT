@@ -1,7 +1,5 @@
 import express from "express";
-import multer from "multer";
 import isAuth from "../middleware/isAuth";
-import uploadConfig from "../config/uploadExt";
 
 import * as FlowCampaignController from "../controllers/FlowCampaignController";
 

@@ -1,4 +1,3 @@
-import AppError from "../../errors/AppError";
 import BaileysChats from "../../models/BaileysChats";
 
 export const ShowBaileysChatService = async (

@@ -1,7 +1,6 @@
 import Queue from "../models/Queue";
 import Company from "../models/Company";
 import User from "../models/User";
-import Setting from "../models/Setting";
 
 interface SerializedUser {
   id: number;

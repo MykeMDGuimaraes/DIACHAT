@@ -1,5 +1,4 @@
 import { QueryInterface } from "sequelize";
-import { hash } from "bcryptjs";
 
 module.exports = {
   up: (queryInterface: QueryInterface) => {

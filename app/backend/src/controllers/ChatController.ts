@@ -1,4 +1,3 @@
-import * as Yup from "yup";
 import { Request, Response } from "express";
 import { getIO } from "../libs/socket";
 
@@ -24,11 +23,6 @@ type IndexQuery = {
 type StoreData = {
   users: any[];
   title: string;
-};
-
-type FindParams = {
-  companyId: number;
-  ownerId?: number;
 };
 
 export const index = async (req: Request, res: Response): Promise<Response> => {

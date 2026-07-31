@@ -15,7 +15,6 @@ type IndexQuery = {
 export const index = async (req: Request, res: Response): Promise<Response> => {
   const params: Params = req.query;
   const { companyId } = req.user;
-  const daysInterval = 3;
 
   const dashboardData: DashboardData = await DashboardDataService(
     companyId,

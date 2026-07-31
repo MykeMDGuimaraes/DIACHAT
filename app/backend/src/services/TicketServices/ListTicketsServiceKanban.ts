@@ -35,11 +35,9 @@ interface Response {
 
 const ListTicketsServiceKanban = async ({
   searchParam = "",
-  pageNumber = "1",
   queueIds,
   tags,
   users,
-  status,
   date,
   updatedAt,
   showAll,

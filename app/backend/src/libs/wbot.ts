@@ -1,5 +1,4 @@
 import * as Sentry from "@sentry/node";
-import P from "pino";
 
 import { Boom } from "@hapi/boom";
 import NodeCache from "node-cache";
@@ -123,7 +122,6 @@ export const initWASocket = async (whatsapp: Whatsapp): Promise<Session> => {
         const { state, saveState } = await authState(whatsapp);
 
         const msgRetryCounterCache = new NodeCache();
-        const userDevicesCache: CacheStore = new NodeCache();
 
         wsocket = makeWASocket({
           logger: loggerBaileys,

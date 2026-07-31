@@ -18,7 +18,7 @@ jest.mock("@sentry/node", () => ({
         error: unknown,
         _req: unknown,
         _res: unknown,
-        next: (error: unknown) => void
+        next: (nextError: unknown) => void
       ) =>
         next(error)
   }

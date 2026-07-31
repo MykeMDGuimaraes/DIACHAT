@@ -42,18 +42,16 @@ const typebotListener = async ({
 
   let body = getBodyMessage(msg);
 
-  async function createSession(msg, typebot, number) {
+  async function createSession(sessionMsg, _typebot, sessionNumber) {
     try {
-      const id = Math.floor(Math.random() * 10000000000).toString();
-
       const reqData = JSON.stringify({
         isStreamEnabled: true,
         message: "string",
         resultId: "string",
         isOnlyRegistering: false,
         prefilledVariables: {
-          number: number,
-          pushName: msg.pushName || ""
+          number: sessionNumber,
+          pushName: sessionMsg.pushName || ""
         }
       });
 
@@ -147,82 +145,78 @@ const typebotListener = async ({
         for (const message of messages) {
           if (message.type === "text") {
             let formattedText = "";
-            let linkPreview = false;
             for (const richText of message.content.richText) {
               for (const element of richText.children) {
-                let text = "";
+                let elementText = "";
 
                 if (element.text) {
-                  text = element.text;
+                  elementText = element.text;
                 }
                 if (element.type && element.children) {
                   for (const subelement of element.children) {
-                    let text = "";
+                    let subelementText = "";
 
                     if (subelement.text) {
-                      text = subelement.text;
+                      subelementText = subelement.text;
                     }
 
                     if (subelement.type && subelement.children) {
                       for (const subelement2 of subelement.children) {
-                        let text = "";
+                        let subelement2Text = "";
 
                         if (subelement2.text) {
-                          text = subelement2.text;
+                          subelement2Text = subelement2.text;
                         }
 
                         if (subelement2.bold) {
-                          text = `*${text}*`;
+                          subelement2Text = `*${subelement2Text}*`;
                         }
                         if (subelement2.italic) {
-                          text = `_${text}_`;
+                          subelement2Text = `_${subelement2Text}_`;
                         }
                         if (subelement2.underline) {
-                          text = `~${text}~`;
+                          subelement2Text = `~${subelement2Text}~`;
                         }
                         if (subelement2.url) {
                           const linkText = subelement2.children[0].text;
-                          text = `[${linkText}](${subelement2.url})`;
-                          linkPreview = true;
+                          subelement2Text = `[${linkText}](${subelement2.url})`;
                         }
-                        formattedText += text;
+                        formattedText += subelement2Text;
                       }
                     }
                     if (subelement.bold) {
-                      text = `*${text}*`;
+                      subelementText = `*${subelementText}*`;
                     }
                     if (subelement.italic) {
-                      text = `_${text}_`;
+                      subelementText = `_${subelementText}_`;
                     }
                     if (subelement.underline) {
-                      text = `~${text}~`;
+                      subelementText = `~${subelementText}~`;
                     }
                     if (subelement.url) {
                       const linkText = subelement.children[0].text;
-                      text = `[${linkText}](${subelement.url})`;
-                      linkPreview = true;
+                      subelementText = `[${linkText}](${subelement.url})`;
                     }
-                    formattedText += text;
+                    formattedText += subelementText;
                   }
                 }
 
                 if (element.bold) {
-                  text = `*${text}*`;
+                  elementText = `*${elementText}*`;
                 }
                 if (element.italic) {
-                  text = `_${text}_`;
+                  elementText = `_${elementText}_`;
                 }
                 if (element.underline) {
-                  text = `~${text}~`;
+                  elementText = `~${elementText}~`;
                 }
 
                 if (element.url) {
                   const linkText = element.children[0].text;
-                  text = `[${linkText}](${element.url})`;
-                  linkPreview = true;
+                  elementText = `[${linkText}](${element.url})`;
                 }
 
-                formattedText += text;
+                formattedText += elementText;
               }
               formattedText += "\n";
             }

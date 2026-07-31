@@ -33,7 +33,7 @@ const ShowWhatsAppService = async (
     order: [["queues", "orderQueue", "ASC"]]
   };
 
-  if (session !== undefined && session == 0) {
+  if (session !== undefined && Number(session) === 0) {
     findOptions.attributes = { exclude: ["session"] };
   }
 

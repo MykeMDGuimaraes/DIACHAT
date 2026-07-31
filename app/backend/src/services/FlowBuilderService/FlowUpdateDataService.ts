@@ -1,6 +1,4 @@
 import { FlowBuilderModel } from "../../models/FlowBuilder";
-import { WebhookModel } from "../../models/Webhook";
-import { randomString } from "../../utils/randomCode";
 
 interface node {
   id: string;
@@ -31,7 +29,7 @@ const FlowUpdateDataService = async ({
   bodyData
 }: Request): Promise<string> => {
   try {
-    const flow = await FlowBuilderModel.update(
+    await FlowBuilderModel.update(
       {
         flow: {
           nodes: bodyData.nodes,

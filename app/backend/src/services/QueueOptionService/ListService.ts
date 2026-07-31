@@ -22,7 +22,7 @@ const ListService = async ({
     whereOptions.id = queueOptionId;
   }
 
-  if (parentId == -1) {
+  if (Number(parentId) === -1) {
     whereOptions.parentId = null;
   }
 

@@ -9,9 +9,7 @@ export const GetWbotMessage = async (
   ticket: Ticket,
   messageId: string
 ): Promise<proto.WebMessageInfo | Message> => {
-  const getSock = await GetTicketWbot(ticket);
-
-  let limit = 20;
+  await GetTicketWbot(ticket);
 
   const fetchWbotMessagesGradually = async (): Promise<
     proto.WebMessageInfo | Message | null | undefined

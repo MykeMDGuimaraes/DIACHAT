@@ -1,5 +1,4 @@
 import { Op } from "sequelize";
-import { format } from "date-fns";
 import moment from "moment";
 import TicketTraking from "./models/TicketTraking";
 import Ticket from "./models/Ticket";
@@ -33,7 +32,7 @@ export const TransferTicketQueue = async (): Promise<void> => {
       !wpp ||
       !wpp.timeToTransfer ||
       !wpp.transferQueueId ||
-      wpp.timeToTransfer == 0
+      wpp.timeToTransfer === 0
     )
       return;
 
