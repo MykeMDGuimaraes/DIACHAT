@@ -12,7 +12,7 @@ describe("MessageMutationController", () => {
       apiCredential: { id: "credential-1", companyId: 7, connectionIds: [2] },
       params: { messageId: "message-1" },
       body: {},
-      header: jest.fn().mockReturnValue("request-12345678")
+      header: jest.fn().mockReturnValue("legacy-client-key")
     } as any;
     const response = {
       set: jest.fn(),
@@ -26,7 +26,13 @@ describe("MessageMutationController", () => {
     } finally {
       process.env.MESSAGING_REACTIONS_V1_ENABLED = previous;
     }
-    expect(service.create).toHaveBeenCalledWith(expect.objectContaining({ kind: "reaction", emoji: "" }));
+    expect(service.create).toHaveBeenCalledWith(expect.objectContaining({
+      kind: "reaction",
+      emoji: "",
+      idempotencyKey: expect.stringMatching(/^server:/)
+    }));
+    expect(service.create.mock.calls[0][0].idempotencyKey).not.toBe("legacy-client-key");
     expect(response.status).toHaveBeenCalledWith(202);
+    expect(response.set).not.toHaveBeenCalled();
   });
 });

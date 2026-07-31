@@ -97,11 +97,6 @@ const endpointGroup = path => {
   return "Mensagens";
 };
 
-const randomKey = () =>
-  window.crypto?.randomUUID
-    ? window.crypto.randomUUID()
-    : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-
 const operationBody = (spec, operation) => {
   const json = operation?.requestBody?.content?.["application/json"]?.schema;
   return JSON.stringify(json ? schemaExample(spec, json) : {}, null, 2);
@@ -120,7 +115,6 @@ const MessagesAPI = () => {
   const [queryValues, setQueryValues] = useState({});
   const [file, setFile] = useState(null);
   const [response, setResponse] = useState(null);
-  const [idempotencyKey, setIdempotencyKey] = useState("");
 
   const endpoints = useMemo(() => endpointList(spec), [spec]);
   const selectedOperation =
@@ -165,7 +159,6 @@ const MessagesAPI = () => {
     setQueryValues({});
     setFile(null);
     setResponse(null);
-    setIdempotencyKey("");
   };
 
   const invoke = async () => {
@@ -191,10 +184,6 @@ const MessagesAPI = () => {
     const headers = surface === "public"
       ? { Authorization: `Bearer ${apiKey.trim()}` }
       : {};
-    if ((selectedOperation.operation.parameters || []).some(
-      parameter => parameter.in === "header" && parameter.name === "Idempotency-Key"
-    )) headers["Idempotency-Key"] = idempotencyKey || randomKey();
-
     const request = {
       method: selectedOperation.method,
       url,
@@ -233,7 +222,6 @@ const MessagesAPI = () => {
       setResponse({
         status: result.status,
         headers: {
-          "idempotent-replayed": result.headers["idempotent-replayed"],
           "retry-after": result.headers["retry-after"],
           "x-ratelimit-remaining": result.headers["x-ratelimit-remaining"]
         },
@@ -257,9 +245,6 @@ const MessagesAPI = () => {
       `curl -X ${selectedOperation.method.toUpperCase()} "${url}"`,
       `  -H "Authorization: Bearer ${credential}"`
     ];
-    if ((selectedOperation.operation.parameters || []).some(
-      parameter => parameter.in === "header" && parameter.name === "Idempotency-Key"
-    )) args.push(`  -H "Idempotency-Key: ${idempotencyKey || "<uuid>"}"`);
     if (selectedOperation.path === "/api/v1/messages/{messageId}/media" && queryValues.format === "download") {
       args.push('  --output "./media.bin"');
     }
@@ -344,7 +329,7 @@ const MessagesAPI = () => {
                   <>
                     <Card className={classes.card}><CardContent><Chip className={classes.method} color={methodColor[selectedOperation.method]} label={selectedOperation.method.toUpperCase()} /><Typography display="inline" variant="h6">{selectedOperation.path}</Typography><Typography paragraph>{selectedOperation.operation.summary}</Typography><Typography className={classes.small}>Autenticação: {surface === "public" ? "Bearer dch_live_*" : "sessão administrativa"}. {surface === "public" ? `Scope: ${selectedOperation.operation["x-required-scope"]}.` : "Perfil: admin ou superadmin."} {selectedOperation.operation["x-feature-flag"] ? `Flag: ${selectedOperation.operation["x-feature-flag"]}.` : ""}</Typography></CardContent></Card>
                     <Card className={classes.card}><CardContent><Typography variant="h6">Headers e parâmetros</Typography><pre className={classes.code}>{JSON.stringify({ headers: [surface === "public" ? "Authorization: Bearer dch_live_*" : "Authorization: Bearer <session-jwt>", ...parameters.filter(item => item.in === "header").map(item => `${item.name}${item.required ? " (obrigatório)" : ""}`)], parameters: parameters.map(item => ({ name: item.name, in: item.in, required: item.required, schema: dereference(spec, item.schema) })) }, null, 2)}</pre>{parameters.filter(item => item.in === "path" || item.in === "query").map(item => <TextField key={`${item.in}:${item.name}`} label={`${item.name}${item.required ? " *" : ""} (${item.in})`} value={(item.in === "path" ? pathValues : queryValues)[item.name] || ""} onChange={event => (item.in === "path" ? setPathValues : setQueryValues)(current => ({ ...current, [item.name]: event.target.value }))} fullWidth margin="dense" variant="outlined" />)}</CardContent></Card>
-                    <Card className={classes.card}><CardContent><Typography variant="h6">Corpo, respostas e exemplo</Typography>{selectedOperation.operation.requestBody && <TextField label="JSON da requisição" value={payload} onChange={event => setPayload(event.target.value)} multiline rows={10} fullWidth variant="outlined" margin="dense" />}{parameters.some(parameter => parameter.in === "header" && parameter.name === "Idempotency-Key") && <TextField label="Idempotency-Key (repita para testar replay)" value={idempotencyKey} onChange={event => setIdempotencyKey(event.target.value)} fullWidth margin="dense" variant="outlined" />}{selectedOperation.operation.requestBody?.content?.["multipart/form-data"] && <input type="file" onChange={event => setFile(event.target.files?.[0] || null)} />}<Typography className={classes.small}>Respostas documentadas: {Object.keys(selectedOperation.operation.responses || {}).join(", ")}.</Typography><pre className={classes.code}>{JSON.stringify(selectedOperation.operation.responses || {}, null, 2)}</pre><Button style={{ marginTop: 12, marginRight: 8 }} variant="contained" color="primary" onClick={invoke}>Executar</Button><Button style={{ marginTop: 12 }} onClick={() => copy(curl())}>Copiar cURL</Button><pre className={classes.code}>{curl()}</pre>{response && <pre className={classes.code}>{JSON.stringify(response, null, 2)}</pre>}</CardContent></Card>
+                    <Card className={classes.card}><CardContent><Typography variant="h6">Corpo, respostas e exemplo</Typography>{selectedOperation.operation.requestBody && <TextField label="JSON da requisição" value={payload} onChange={event => setPayload(event.target.value)} multiline rows={10} fullWidth variant="outlined" margin="dense" />}{selectedOperation.operation.requestBody?.content?.["multipart/form-data"] && <input type="file" onChange={event => setFile(event.target.files?.[0] || null)} />}<Typography className={classes.small}>Respostas documentadas: {Object.keys(selectedOperation.operation.responses || {}).join(", ")}.</Typography><pre className={classes.code}>{JSON.stringify(selectedOperation.operation.responses || {}, null, 2)}</pre><Button style={{ marginTop: 12, marginRight: 8 }} variant="contained" color="primary" onClick={invoke}>Executar</Button><Button style={{ marginTop: 12 }} onClick={() => copy(curl())}>Copiar cURL</Button><pre className={classes.code}>{curl()}</pre>{response && <pre className={classes.code}>{JSON.stringify(response, null, 2)}</pre>}</CardContent></Card>
                   </>
                 )}
               </Grid>
@@ -352,7 +337,7 @@ const MessagesAPI = () => {
           )}
 
           {tab === 1 && <Card className={classes.card}><CardContent><Typography variant="h6">Webhooks assinados</Typography><Typography paragraph>Entrega at-least-once; deduplique por <code>event.id</code> e responda rapidamente.</Typography><pre className={classes.code}>{`X-DiaChat-Timestamp: <unix timestamp>\nX-DiaChat-Signature: sha256=<hex>\n\nHMAC-SHA256(secret, timestamp + "." + rawBody)`}</pre></CardContent></Card>}
-          {tab === 2 && <Card className={classes.card}><CardContent><Typography variant="h6">Semântica operacional</Typography><ul><li><code>202</code> significa aceite durável, não entrega final.</li><li><code>Idempotent-Replayed: true</code> identifica replay seguro.</li><li><code>409</code> cobre conflito, requisição em andamento ou epoch obsoleto.</li><li>Endpoints administrativos usam a sessão atual; API keys não acessam essa superfície.</li></ul></CardContent></Card>}
+          {tab === 2 && <Card className={classes.card}><CardContent><Typography variant="h6">Semântica operacional</Typography><ul><li><code>202</code> significa aceite durável, não entrega final.</li><li>Cada chamada de mutação representa uma nova operação; aguarde a resposta antes de repetir.</li><li><code>409</code> cobre epoch obsoleto ou conflito de estado da conversa.</li><li>Endpoints administrativos usam a sessão atual; API keys não acessam essa superfície.</li></ul></CardContent></Card>}
         </>
       )}
     </Paper>

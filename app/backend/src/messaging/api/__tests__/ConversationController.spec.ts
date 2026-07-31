@@ -21,7 +21,7 @@ describe("ConversationController", () => {
       },
       params: { conversationId: "conversation-uuid" },
       body,
-      header: jest.fn().mockReturnValue("handoff-ticket-123")
+      header: jest.fn().mockReturnValue("legacy-client-key")
     } as any);
 
   it("accepts a durable takeover command", async () => {
@@ -46,11 +46,13 @@ describe("ConversationController", () => {
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({
         action: "takeover",
+        idempotencyKey: expect.stringMatching(/^server:/),
         conversationId: "conversation-uuid",
         externalTicketId: "ticket-uuid",
         automationEpoch: 4
       })
     );
+    expect(create.mock.calls[0][0].idempotencyKey).not.toBe("legacy-client-key");
     expect(res.status).toHaveBeenCalledWith(202);
     expect(res.json).toHaveBeenCalledWith({
       id: "cmd_handoff",
@@ -81,5 +83,21 @@ describe("ConversationController", () => {
         sendNativeSurvey: false
       })
     );
+  });
+
+  it("always responds 202 without a replay header", async () => {
+    const create = jest.fn().mockResolvedValue({
+      command: { id: "cmd_handoff", conversationId: "conversation-uuid" },
+      replayed: true
+    });
+    const res = response();
+
+    await createHandoffConversationHandler({ create } as any)(
+      request({ action: "pause_automation", queueId: "12" }),
+      res
+    );
+
+    expect(res.set).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(202);
   });
 });

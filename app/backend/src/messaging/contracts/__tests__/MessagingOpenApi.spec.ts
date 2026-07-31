@@ -40,6 +40,23 @@ describe("MessagingOpenApi 1.3", () => {
     });
   });
 
+  it("never exposes client-managed idempotency in the public contract", () => {
+    const serialized = JSON.stringify(messagingPublicOpenApi);
+
+    Object.values(messagingPublicOpenApi.paths).forEach((pathItem: any) => {
+      Object.values(pathItem).forEach((operation: any) => {
+        expect(operation.parameters || []).not.toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ name: "Idempotency-Key" })
+          ])
+        );
+      });
+    });
+    expect(serialized).not.toContain("Idempotent-Replayed");
+    expect(serialized).not.toContain("IDEMPOTENCY_CONFLICT");
+    expect(serialized).not.toContain("REQUEST_IN_PROGRESS");
+  });
+
   it("documents mutation bodies and all transcript filters", () => {
     expect(messagingPublicOpenApi.paths["/api/v1/messages/{messageId}"].patch).toHaveProperty("requestBody");
     expect(messagingPublicOpenApi.paths["/api/v1/messages/{messageId}/reactions"].post).toHaveProperty("requestBody");
@@ -128,7 +145,7 @@ describe("MessagingOpenApi 1.3", () => {
       "/api/v1/conversations/{conversationId}/handoff",
       "/api/v1/conversations/{conversationId}/finalize"
     ].forEach(path => {
-      expect(messagingOpenApi.paths[path].post.responses).toHaveProperty("200");
+      expect(messagingOpenApi.paths[path].post.responses).not.toHaveProperty("200");
       expect(messagingOpenApi.paths[path].post.responses).toHaveProperty("202");
     });
 

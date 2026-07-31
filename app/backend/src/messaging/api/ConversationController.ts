@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { Request, Response } from "express";
 
 import AppError from "../../errors/AppError";
@@ -17,11 +18,8 @@ const inputFor = (
   action: CreateConversationCommandInput["action"]
 ): CreateConversationCommandInput => {
   const credential = req.apiCredential;
-  const idempotencyKey = req.header("Idempotency-Key");
+  const idempotencyKey = `server:${randomUUID()}`;
   if (!credential) throw new AppError("Credencial de API invalida", 401);
-  if (!idempotencyKey) {
-    throw new AppError("Idempotency-Key e obrigatoria", 400);
-  }
   return {
     companyId: credential.companyId,
     allowedConnectionIds: credential.connectionIds,
@@ -39,9 +37,8 @@ const inputFor = (
   };
 };
 
-const respond = (res: Response, command: any, replayed: boolean): Response => {
-  if (replayed) res.set("Idempotent-Replayed", "true");
-  return res.status(replayed ? 200 : 202).json(
+const respond = (res: Response, command: any): Response => {
+  return res.status(202).json(
     command.responseSnapshot || {
       id: command.id,
       status: "accepted",
@@ -60,12 +57,12 @@ export const createHandoffConversationHandler =
       throw new AppError("INVALID_HANDOFF_ACTION", 422);
     }
     const result = await service.create(inputFor(req, action));
-    return respond(res, result.command, result.replayed);
+    return respond(res, result.command);
   };
 
 export const createFinalizeConversationHandler =
   (service: ConversationCommandCreator = new ConversationCommandService()) =>
   async (req: Request, res: Response): Promise<Response> => {
     const result = await service.create(inputFor(req, "finalize"));
-    return respond(res, result.command, result.replayed);
+    return respond(res, result.command);
   };

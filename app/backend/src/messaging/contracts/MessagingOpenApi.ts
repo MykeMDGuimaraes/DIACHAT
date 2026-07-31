@@ -1,10 +1,3 @@
-const idempotencyHeader = {
-  in: "header",
-  name: "Idempotency-Key",
-  required: true,
-  schema: { type: "string", minLength: 8, maxLength: 128 }
-} as const;
-
 const conversationIdParameter = {
   name: "conversationId",
   in: "path",
@@ -17,12 +10,6 @@ const sessionSecurity = [{ Session: [] }] as const;
 
 const acceptedResponse = {
   description: "Comando aceito e persistido antes da resposta",
-  headers: {
-    "Idempotent-Replayed": {
-      schema: { type: "boolean" },
-      description: "true quando a resposta original foi reproduzida"
-    }
-  },
   content: {
     "application/json": {
       schema: { $ref: "#/components/schemas/AcceptedCommand" }
@@ -36,7 +23,7 @@ export const messagingOpenApi = {
     title: "DIA CHAT Messaging API",
     version: "1.3.0",
     description:
-      "Contrato público durável e idempotente do DIA CHAT para integrações de mensageria e automação."
+      "Contrato público durável do DIA CHAT para integrações de mensageria e automação."
   },
   servers: [{ url: "/" }],
   components: {
@@ -551,8 +538,6 @@ export const messagingOpenApi = {
           error: {
             type: "string",
             enum: [
-              "REQUEST_IN_PROGRESS",
-              "IDEMPOTENCY_CONFLICT",
               "STALE_AUTOMATION_EPOCH",
               "CAPABILITY_NOT_SUPPORTED"
             ]
@@ -574,7 +559,6 @@ export const messagingOpenApi = {
       post: {
         summary: "Aceita mensagem de texto ou botões nativos",
         security: apiSecurity,
-        parameters: [idempotencyHeader],
         requestBody: {
           required: true,
           content: {
@@ -599,11 +583,9 @@ export const messagingOpenApi = {
           }
         },
         responses: {
-          "200": acceptedResponse,
           "202": acceptedResponse,
           "409": {
-            description:
-              "REQUEST_IN_PROGRESS, IDEMPOTENCY_CONFLICT ou STALE_AUTOMATION_EPOCH"
+            description: "STALE_AUTOMATION_EPOCH"
           },
           "422": { description: "CAPABILITY_NOT_SUPPORTED" },
           "429": { description: "Limite configurável excedido" }
@@ -614,7 +596,7 @@ export const messagingOpenApi = {
       post: {
         summary: "Pausa, assume ou libera explicitamente a automação",
         security: apiSecurity,
-        parameters: [conversationIdParameter, idempotencyHeader],
+        parameters: [conversationIdParameter],
         requestBody: {
           required: true,
           content: {
@@ -624,7 +606,6 @@ export const messagingOpenApi = {
           }
         },
         responses: {
-          "200": acceptedResponse,
           "202": acceptedResponse,
           "409": { description: "Conflito" }
         }
@@ -634,7 +615,7 @@ export const messagingOpenApi = {
       post: {
         summary: "Finaliza sem pesquisa ou mensagem nativa",
         security: apiSecurity,
-        parameters: [conversationIdParameter, idempotencyHeader],
+        parameters: [conversationIdParameter],
         requestBody: {
           required: true,
           content: {
@@ -644,7 +625,6 @@ export const messagingOpenApi = {
           }
         },
         responses: {
-          "200": acceptedResponse,
           "202": acceptedResponse,
           "409": { description: "Conflito" }
         }
@@ -747,12 +727,12 @@ export const messagingOpenApi = {
       }
     },
     "/api/v1/messages/{messageId}/reactions": {
-      post: { summary: "Envia reacao Baileys", "x-phase": "1", "x-status": "available", security: apiSecurity, parameters: [{ name: "messageId", in: "path", required: true, schema: { type: "string" } }, idempotencyHeader], responses: { "200": acceptedResponse, "202": acceptedResponse } },
-      delete: { summary: "Remove reacao Baileys", "x-phase": "1", "x-status": "available", security: apiSecurity, parameters: [{ name: "messageId", in: "path", required: true, schema: { type: "string" } }, idempotencyHeader], responses: { "200": acceptedResponse, "202": acceptedResponse } }
+      post: { summary: "Envia reacao Baileys", "x-phase": "1", "x-status": "available", security: apiSecurity, parameters: [{ name: "messageId", in: "path", required: true, schema: { type: "string" } }], responses: { "202": acceptedResponse } },
+      delete: { summary: "Remove reacao Baileys", "x-phase": "1", "x-status": "available", security: apiSecurity, parameters: [{ name: "messageId", in: "path", required: true, schema: { type: "string" } }], responses: { "202": acceptedResponse } }
     },
     "/api/v1/messages/{messageId}": {
-      patch: { summary: "Edita mensagem Baileys", "x-phase": "1", "x-status": "available", security: apiSecurity, parameters: [{ name: "messageId", in: "path", required: true, schema: { type: "string" } }, idempotencyHeader], responses: { "200": acceptedResponse, "202": acceptedResponse } },
-      delete: { summary: "Exclui mensagem Baileys", "x-phase": "1", "x-status": "available", security: apiSecurity, parameters: [{ name: "messageId", in: "path", required: true, schema: { type: "string" } }, idempotencyHeader], responses: { "200": acceptedResponse, "202": acceptedResponse } }
+      patch: { summary: "Edita mensagem Baileys", "x-phase": "1", "x-status": "available", security: apiSecurity, parameters: [{ name: "messageId", in: "path", required: true, schema: { type: "string" } }], responses: { "202": acceptedResponse } },
+      delete: { summary: "Exclui mensagem Baileys", "x-phase": "1", "x-status": "available", security: apiSecurity, parameters: [{ name: "messageId", in: "path", required: true, schema: { type: "string" } }], responses: { "202": acceptedResponse } }
     },
     "/api/v1/messages/{messageId}/media": {
       get: {
@@ -905,7 +885,6 @@ const adminOperation = (
   ...additions,
   responses: { ...commonAdminErrors, ...(operation.responses || {}), ...(additions.responses || {}) }
 });
-const messageIdParameter = { name: "messageId", in: "path", required: true, schema: { type: "string" } };
 const templateIdParameter = { name: "templateId", in: "path", required: true, schema: { type: "string", format: "uuid" } };
 const optionalQuery = (name: string, schema: Record<string, unknown> = { type: "string" }) => ({ name, in: "query", required: false, schema });
 
