@@ -1,0 +1,75 @@
+Preparar stagingUsar uma empresa de homologação e um número WhatsApp controlado.
+Garantir uma única sessão Baileys ativa para esse número.
+Confirmar DATABASE_URL PostgreSQL com TLS, Redis e os segredos obrigatórios já existentes.
+Fazer backup do banco e garantir volume persistente para app/backend/storage/messaging.
+
+Implantar a branch
+Aplicar os commits:
+8b3a684 feat: complete Baileys public API phase 1
+42b5402 docs: add Phase 1 Baileys rollout runbook
+Executar:
+cd app/backend
+npm ci
+npm run build
+npx sequelize db:migrate
+Confirmar que as migrations foram aplicadas:
+20260730000000-add-public-conversation-pagination-index
+20260730000001-create-message-templates
+Manter as funcionalidades desligadas no primeiro deploy
+MESSAGING_PRESENCE_V1_ENABLED=false
+MESSAGING_REACTIONS_V1_ENABLED=false
+MESSAGING_INTERNAL_TEMPLATES_V1_ENABLED=false
+MESSAGING_MEDIA_UPLOAD_V1_ENABLED=false
+MESSAGING_MEDIA_UPLOAD_MAX_BYTES=16777216
+Após iniciar o backend, validar:
+GET /health/live
+GET /health/ready
+GET /internal/v1/messaging/metrics
+Também confirmar que não há comandos presos, outbox envelhecida ou dead letters inesperadas.
+Criar credencial de teste
+No frontend administrativo:
+Criar uma API key exclusiva para a empresa de homologação.
+Autorizar somente a conexão Baileys de teste.
+Conceder apenas os scopes necessários:
+messages:write
+conversations:read
+conversations:write
+transcript:read
+media:read
+presence:write
+reactions:write
+messages:manage
+templates:write
+integration:read
+Nunca registrar ou compartilhar a chave dch_live_*.
+Homologar progressivamente
+Ativar uma flag por vez, reiniciando/recarregando a configuração conforme o deploy.
+MESSAGING_INTERNAL_TEMPLATES_V1_ENABLED=true
+Criar, editar, renderizar e remover um template interno.
+Enviar texto usando internalTemplateId e variáveis.
+Confirmar erro 400 VALIDATION_ERROR para variável obrigatória ausente.
+MESSAGING_MEDIA_UPLOAD_V1_ENABLED=true
+Enviar imagem, áudio, vídeo e documento por multipart/form-data.
+Confirmar que o arquivo foi salvo em storage/messaging, nunca em /public.
+Obter mídia apenas por GET /api/v1/messages/{messageId}/media.
+Confirmar que URL expirada, empresa errada e path traversal falham.
+Reiniciar o backend e confirmar que a mídia ainda pode ser enviada/baixada pelo endpoint assinado.
+MESSAGING_PRESENCE_V1_ENABLED=true
+Testar available, composing, recording, paused e unavailable.
+Confirmar 429 PRESENCE_RATE_LIMITED ao repetir para o mesmo número/conexão em menos de dois segundos.
+Confirmar que presença não cria MessageCommand nem evento de outbox.
+MESSAGING_REACTIONS_V1_ENABLED=true
+Enviar reação e remoção de reação.
+Editar e excluir uma mensagem enviada pela API.
+Repetir cada chamada com a mesma Idempotency-Key e confirmar Idempotent-Replayed: true.
+Reutilizar a mesma chave com payload diferente e confirmar 409 IDEMPOTENCY_CONFLICT.
+Testar em conexão Meta Cloud e confirmar 422 CAPABILITY_NOT_SUPPORTED.
+Validar API e resiliênciaConsultar /api/v1/openapi.json com Bearer token e conferir versão 1.3.0.
+Testar /api/v1/integration/ready com conexão e filas reais.
+Validar listagem de conversas, transcript com cursor e filtros.
+Desconectar temporariamente o Baileys, enviar uma mensagem e confirmar:comando permanece no PostgreSQL;
+não há perda;
+reenvio ocorre após reconexão;
+resultado unknown não é repetido automaticamente.
+
+Confirmar logs e métricas sem telefone, texto, token ou caminho de mídia.

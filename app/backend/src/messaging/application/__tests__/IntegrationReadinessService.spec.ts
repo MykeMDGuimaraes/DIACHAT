@@ -28,7 +28,17 @@ describe("IntegrationReadinessService", () => {
         { id: "11", name: "Automacao" },
         { id: "12", name: "Humano" }
       ],
-      capabilities: { buttons: true }
+      capabilities: {
+        text: true,
+        media: true,
+        presence: true,
+        buttons: true,
+        reactions: true,
+        messageEdit: true,
+        messageDelete: true,
+        internalTemplate: true,
+        officialTemplate: false
+      }
     });
   });
 

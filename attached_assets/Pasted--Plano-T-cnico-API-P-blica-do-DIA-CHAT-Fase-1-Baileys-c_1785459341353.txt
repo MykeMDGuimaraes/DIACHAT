@@ -1,0 +1,353 @@
+# Plano Técnico — API Pública do DIA CHAT (Fase 1: Baileys) com Roadmap Fase 2 (Meta Cloud)
+
+## Contexto
+
+O DIA CHAT precisa transformar a aba "API" (hoje uma página estática com dois formulários de teste para `POST /api/messages/send`) em um portal completo de documentação e testes da API pública `/api/v1`, ampliando as capacidades disponíveis para integrações externas (n8n, scripts, parceiros). A Evolution API foi indicada como benchmark arquitetural (não como dependência). A decisão executiva da DIA Solutions divide o trabalho em duas fases sequenciais: **Fase 1 = provider Baileys nativo**, **Fase 2 = provider oficial Meta WhatsApp Cloud API** (planejada agora, implementada depois).
+
+**Achado central que redefine o ponto de partida:** o repositório **já possui** um módulo de mensageria maduro em `app/backend/src/messaging/` (ver ADR `docs/adr/0001-messaging-modular-monolith.md`), com outbox transacional em Postgres, idempotência, credenciais/scopes, webhooks assinados (HMAC), e — mais importante — **já existe um provider Meta Cloud parcialmente implementado** (`MetaCloudMessageCommandProvider`, `MetaCloudChannelController`, `MetaWebhookController`, model `MetaCloudCredential`). Este plano, portanto, não é "construir do zero", e sim **consolidar, completar e documentar** o que já existe, respeitando a separação de fases determinada pela liderança: mesmo com scaffolding de Meta Cloud já presente, nenhuma funcionalidade nova de Meta será entregue nesta Fase 1 — apenas Baileys. O scaffolding existente de Meta será apenas auditado/inventariado (não estendido) e citado no roadmap da Fase 2.
+
+---
+
+## 0. Metodologia e fontes
+
+Pesquisa feita em 4 frentes paralelas, 100% sobre o estado real do repositório e de fontes externas verificadas nesta sessão (sem suposições):
+1. Backend `app/backend/src/messaging/*` (rotas, controllers, services, providers, contratos, outbox, webhooks, testes, scripts de governança).
+2. Frontend `app/frontend/src/pages/MessagesAPI` + padrões reutilizáveis (permissões, plano, componentes).
+3. Banco de dados (`app/backend/src/database/migrations`, models messaging e core).
+4. Evolution API (`github.com/evolution-foundation/evolution-api`, redirecionado de `EvolutionAPI/evolution-api`) como benchmark, incluindo leitura de licença.
+
+Adicionalmente, verifiquei diretamente o pacote Baileys vendorizado (`app/backend/vendor/baileys-6.7.23.tgz`, extraído e inspecionado): os `.d.ts` confirmam suporte nativo a `sendPresenceUpdate` (5 estados: `available|unavailable|composing|recording|paused`), conteúdo de mensagem `react` (reação), `edit` (edição via `WAMessageKey`) e `delete` (exclusão via `WAMessageKey`). Isso substitui "depende de validação" por fatos confirmados em código para essas 4 capacidades.
+
+---
+
+## 1. Inventário do que já existe (auditoria factual)
+
+### 1.1 Três superfícies de API confirmadas
+| Superfície | Path | Auth | Status |
+|---|---|---|---|
+| Legada | `POST /api/messages/send` | `tokenAuth` (token estático da conexão) | Em depreciação ativa: middleware `legacyApiDeprecation` já envia headers `Deprecation`/`Sunset`/`Link`, audita uso, retorna `410` após sunset se ociosa |
+| **Pública atual (foco deste plano)** | `/api/v1/*` | `apiKeyAuth` (`dch_live_<id>.<secret>`) + `requireApiScope` | Módulo `messaging/`, parcialmente documentada em OpenAPI |
+| Interna | `/internal/v1/*` | `isServiceAuth` (ServiceCredential) | Consumida por integrações internas (roteador/automação); **caminho de envio paralelo e não governado** (ver 1.5) |
+
+### 1.2 Rotas `/api/v1` já implementadas (`routes/messagingApiRoutes.ts`)
+- `POST /api/v1/messages` — **já unifica** `text | buttons | media | template` via campo `type` (Meta-only para `template`). Mídia hoje **só aceita URL https**, sem multipart.
+- `POST /api/v1/conversations/:id/handoff`, `POST /api/v1/conversations/:id/finalize`
+- `GET /api/v1/conversations/:id/messages` (transcript paginado por cursor `createdAt+id`, `limit` 1–100)
+- `GET /api/v1/integration/ready` (expõe `capabilities.buttons`)
+- `GET /api/v1/transcript/media/:messageId`, `GET /api/v1/webhook-media/:messageId` (URLs assinadas de curta duração já existem — infraestrutura reaproveitável)
+- CRUD de credenciais (`/api/v1/credentials*`), webhooks (`/api/v1/webhook-subscriptions*`, `/api/v1/webhook-deliveries*`)
+- `/api/v1/channels/meta-cloud*` (admin) e webhook Meta — **scaffolding Fase 2 já presente, fora de escopo desta fase**
+- `GET /api/v1/openapi.json` — serve `contracts/MessagingOpenApi.ts` (OpenAPI 3.1 escrito à mão em TS, não YAML/JSON estático)
+
+### 1.3 Fluxo de envio já governado (reaproveitar, não recriar)
+`rota → apiKeyAuth → requireApiScope → PublicMessageController → PublicTextMessageService (transação local: Contact/Ticket/Message/MessageCommand/MessagingOutboxEvent) → MessagingRuntime (polling Postgres, sem Bull/Redis) → MessageCommandDispatcher (lease fencing, retry exponencial, dead-letter após 8 tentativas) → MessagingProvider.send() → Baileys/Meta → webhook fanout assinado (HMAC-SHA256, SSRF-hardened)`.
+
+Idempotência já implementada corretamente: header `Idempotency-Key`, fingerprint SHA-256 do payload, `409 IDEMPOTENCY_CONFLICT` em mismatch, replay com `Idempotent-Replayed: true`.
+
+**Não introduzir fila Bull/Redis nesta área** — o padrão estabelecido (ADR 0001) é polling Postgres com `FOR UPDATE SKIP LOCKED`; qualquer nova capacidade durável deve seguir o mesmo padrão.
+
+### 1.4 Capability matrix: hoje é hardcoded, não é dado
+`PublicTextMessageService.create()` decide por `if/else` binário: `buttons` só Baileys, `template` só Meta Cloud. Não existe registro/tabela de capacidades. **Fase 1 precisa introduzir um Capability Resolver real** (ver §2.3) — é exatamente a peça que a arquitetura-alvo do usuário (`API pública → Application Services → Capability Resolver → Provider`) exige e que hoje não existe.
+
+### 1.5 Risco descoberto: dois caminhos de envio paralelos
+`InternalV1Controller.sendConversationMessage` (`/internal/v1/conversations/:id/messages`) tem sua **própria** idempotência (`V1MessageIdempotency`) e chama `SendWhatsAppMessage`/`SendWhatsAppMedia` (camada legada `WbotServices`) **diretamente**, fora do outbox/dispatcher/mirror. Isso não é webhook-observável nem capability-checked. **Fora do escopo de mudança nesta Fase 1** (não pedido pelo usuário), mas deve ser citado como risco arquitetural conhecido — não construir novas features em cima desse caminho.
+
+### 1.6 Guarda-corpo arquitetural já existe e é obrigatório respeitar
+`app/backend/.dependency-cruiser.js` + `scripts/checkMessagingBoundaries.js`, rodados via `npm run check:messaging-architecture` / `check:messaging-boundaries`:
+- Só `messaging/adapters/baileys/*` pode importar o pacote `baileys`.
+- Código fora de `messaging/` só pode importar `messaging/public/*` (facade).
+- `messaging/*` só pode importar um **allowlist explícito** de paths do core (`.dependency-cruiser.js`): `src/database`, `src/errors/AppError`, `src/config/upload`, `src/utils/logger`, `src/helpers/GetTicketWbot`, `src/libs/wbot`, um allowlist de models, `CreateMessageService`, `CreateWhatsAppService`.
+
+**Qualquer PR que precise de um novo model/serviço do core deve primeiro estender esse allowlist**, ou a CI quebra em `check:messaging-architecture`. Isso é uma dependência explícita de vários PRs abaixo.
+
+### 1.7 Dado que já resolve "listagem de chats" — não é preciso modelar do zero
+Existe `messaging.WhatsAppChatStates` (model `WhatsAppChatState`, migration `20260729000000-add-whatsapp-mirror-snapshots.ts`) com exatamente os campos pedidos pelo usuário: `companyId, whatsappId, jid, lid, isGroup, archived, pinned, mutedUntil, unreadCount, lastMessageId, lastMessageAt, lastMessagePreview, revision`, único por `(companyId, whatsappId, jid)`. **Falta apenas expor isso via `/api/v1` com paginação por cursor** — o dado já é mantido pelo "WhatsApp mirror" (projeção inbound). Gap real: falta índice de paginação (`companyId, whatsappId, lastMessageAt`/`id`) e nenhum índice equivalente existe hoje em `Messages` para cursor por tempo.
+
+### 1.8 OpenAPI já existe mas está com "contract drift" confirmado
+`contracts/MessagingOpenApi.ts` documenta menos paths do que os que realmente existem (faltam: `DELETE /credentials/:id`, `PUT/DELETE /webhook-subscriptions/:id`, `GET /webhook-deliveries`, `POST /webhook-deliveries/:id/retry`, tudo de `/channels/meta-cloud*`, `/transcript/media/:id`, `/webhook-media/:id`). Corrigir isso é baixo risco e deve ser um item cedo no plano de PRs (ganho rápido de credibilidade do contrato).
+
+---
+
+## 2. Fase 1 — Escopo detalhado e executável
+
+### 2.1 Desenho de endpoints (decisão: ampliar o que existe, não fragmentar)
+
+| Método | Path | Situação | Ação |
+|---|---|---|---|
+| POST | `/api/v1/messages` | Existe (`text/buttons/media/template`) | Estender: adicionar multipart além de URL para mídia; adicionar `replyToMessageId` (já parcialmente presente via `quotedMsgId`? **validar em código na implementação real** — não confirmado nesta pesquisa, tratar como gap até prova em contrário); adicionar suporte a `internalTemplateId`+`variables` (renderização server-side antes de virar `type: text`) |
+| **POST** | **`/api/v1/presence`** | Não existe | Novo — ver §2.5 (fluxo efêmero, fora do outbox) |
+| POST | `/api/v1/messages/{messageId}/reactions` | Não existe | Novo — capability `reactions`, Baileys apenas nesta fase |
+| DELETE | `/api/v1/messages/{messageId}/reactions` | Não existe | Novo (remover reação = `react` com emoji vazio, conforme Baileys) |
+| PATCH | `/api/v1/messages/{messageId}` | Não existe | Novo — edição (`edit: WAMessageKey`), capability `messageEdit` |
+| DELETE | `/api/v1/messages/{messageId}` | Não existe | Novo — exclusão para todos (`delete: WAMessageKey`), capability `messageDelete` |
+| GET | `/api/v1/messages/{messageId}/media` | Parcialmente existe como `/transcript/media/:messageId` e `/webhook-media/:messageId` | **Reaproveitar** `TranscriptAttachmentSigner`/`WebhookMediaService` — criar endpoint canônico único em vez de manter 2 nomes distintos ambíguos; avaliar se os dois existentes devem virar aliases/depreciados em favor deste |
+| GET | `/api/v1/conversations` | Não existe em `/api/v1` (só em `/internal/v1`, DTO diferente) | Novo — baseado em `WhatsAppChatState` (§1.7) |
+| GET | `/api/v1/conversations/{conversationId}` | Não existe | Novo (lookup único) |
+| GET | `/api/v1/conversations/{conversationId}/messages` | **Já existe** (`TranscriptController`) | Estender filtros: `from`/`to` (ISO-8601 com timezone), `type`, `status`, `fromMe`, `providerMessageId`, "somente com mídia" |
+
+Justificativa para manter tudo sob `/api/v1/messages` (texto/mídia/botões/template) em vez de `sendText`/`sendMedia`/`sendButtons` (padrão Evolution): o código já foi construído assim, é consistente com idempotência/outbox unificados, e evita duplicar validação de capability por endpoint. Presença, reações, edição e exclusão viram recursos/sub-recursos dedicados porque têm semânticas de idempotência e efeito colateral diferentes (efêmero vs. mutação de mensagem existente), não porque são "verbos de envio" distintos — isso seguirá o padrão REST orientado a recurso já usado em `/conversations/:id/handoff`.
+
+### 2.2 Templates: separação de três conceitos (nomenclatura obrigatória)
+
+| Conceito | Nome público proposto | Onde vive | Observação |
+|---|---|---|---|
+| Template interno DIA CHAT | `internalTemplate` (tabela nova `messaging.MessageTemplates`) | Renderizado server-side, enviado como `type: text` (ou `buttons`) via Baileys | **Não reutilizar a palavra "template" isolada** — já está ocupada pelo `type: "template"` existente, que é Meta-only |
+| Mensagem interativa suportada pelo Baileys | `type: "buttons"` (já existe) | `BaileysNativeButtonsTransport` | Manter capability própria; **não** transformar silenciosamente em texto — falha controlada com `CAPABILITY_NOT_SUPPORTED` se indisponível |
+| Template oficial Meta | `type: "template"` (já existe, hoje só valida `name`+`language`) | `MetaCloudMessageCommandProvider`/`MetaGraphApiClient` | **Fora de escopo de mudança na Fase 1** — só auditar, não estender |
+
+Novo model `MessageTemplate` (schema `messaging`): `id (uuid), companyId, publicId, name, content (text), variables (jsonb: [{name, required, defaultValue?}]), version (int), active (bool), createdBy, createdAt/updatedAt`. Renderização: sintaxe `{{variavel}}`, escape HTML-safe (mensagem de texto puro, sem risco de injeção HTML, mas sanitizar caracteres de controle), validação de variável obrigatória ausente → `400 VALIDATION_ERROR` antes de criar `MessageCommand`. Endpoint de preview: `POST /api/v1/message-templates/{id}/render` (não envia, só retorna texto renderizado) — usado pela aba API para preview. CRUD admin (`isAuth`+`isMessagingAdmin`, mesmo padrão de `ApiCredentialController`): `POST/GET/PUT/DELETE /api/v1/message-templates`.
+
+### 2.3 Capability Resolver (nova abstração — peça central da Fase 1)
+
+Hoje: `if (kind === "buttons" && provider !== "baileys") throw 422` espalhado em `PublicTextMessageService`. Substituir por:
+
+```ts
+// src/messaging/contracts/CapabilityMatrix.ts (novo)
+type Capability = "text" | "media" | "presence" | "buttons" | "reactions"
+  | "messageEdit" | "messageDelete" | "internalTemplate" | "officialTemplate";
+
+interface ProviderCapabilities {
+  provider: "baileys" | "meta_cloud";
+  supports: Record<Capability, boolean>;
+}
+```
+`BaileysMessageCommandProvider` e `MetaCloudMessageCommandProvider` passam a expor `capabilities: ProviderCapabilities` (propriedade estática/instância). Um `CapabilityResolver` (novo, em `messaging/application/`) recebe `whatsapp.channelType` e retorna as capacidades — usado tanto no envio (validação) quanto em `GET /api/v1/integration/ready` (que hoje só expõe `buttons`, passa a expor a matriz completa) e na aba API do frontend (marcação "Disponível no Baileys" / "Planejado para Meta Cloud" / "Não suportado pelo provider selecionado").
+
+Matriz real Fase 1 (Baileys 6.7.23, confirmado em código+lib):
+
+| Capability | Baileys | Meta Cloud (nesta fase) |
+|---|---|---|
+| text | ✅ | ✅ (já implementado, fora de escopo estender) |
+| media | ✅ (adicionar multipart) | ✅ (não tocar) |
+| presence | ✅ (`sendPresenceUpdate`, 5 estados confirmados na lib) | `CAPABILITY_NOT_SUPPORTED` (Cloud API não expõe presença) |
+| buttons | ✅ (já implementado) | `CAPABILITY_NOT_SUPPORTED` (mantido) |
+| reactions (enviar) | ✅ (`react` confirmado na lib) | `CAPABILITY_NOT_SUPPORTED` nesta fase (Cloud API tem reações oficiais, mas é Fase 2) |
+| messageEdit | ✅ (`edit` confirmado na lib) | N/A Fase 1 |
+| messageDelete | ✅ (`delete` confirmado na lib) | N/A Fase 1 |
+| internalTemplate | ✅ (renderiza e envia como texto/botão) | ✅ (mesmo mecanismo, é agnóstico de provider) |
+| officialTemplate | `CAPABILITY_NOT_SUPPORTED` (nunca) | ✅ (já existe, não expandir agora) |
+
+Erro padrão quando indisponível: `422 { "error": { "code": "CAPABILITY_NOT_SUPPORTED", "message": "...", "requestId": "..." } }` — reaproveitar `AppError` já usado hoje para o mesmo código.
+
+### 2.4 Auth, scopes e multi-tenancy
+
+Reaproveitar 100% o mecanismo existente (`ApiCredential`, `apiKeyAuth`, `requireApiScope`, `connectionIds` allowlist) — **não criar novo sistema de token**. Scopes atuais: `messages:write, conversations:write, integration:read, transcript:read`. Novos scopes propostos (cada um com endpoint que o exige):
+
+| Novo scope | Motivo | Endpoints |
+|---|---|---|
+| `conversations:read` | Listagem de chats é operação distinta de handoff/finalize (`conversations:write`) — separar leitura de escrita evita conceder permissão de handoff só para listar | `GET /conversations`, `GET /conversations/:id` |
+| `presence:write` | Operação efêmera de alto volume, isolar do `messages:write` para permitir rate-limit e revogação independentes | `POST /presence` |
+| `reactions:write` | Efeito colateral visível ao usuário final, mesmo racional de isolamento de `messages:write` | `POST/DELETE /messages/:id/reactions` |
+| `messages:manage` | Edição/exclusão são mutações destrutivas — não conceder junto de `messages:write` (envio) por padrão | `PATCH/DELETE /messages/:id` |
+| `media:read` | Leitura de mídia de mensagens já trafegadas — hoje coberto ad-hoc por assinatura de URL, formalizar como scope explícito | `GET /messages/:id/media` |
+| `templates:write` | CRUD de template interno é admin-like, mas via API key (não só sessão) para permitir automação de cadastro | `/message-templates*` |
+
+Nunca confiar em `companyId` vindo de body/query/path — já é assim hoje (`apiKeyAuth` deriva de `ApiCredential`), manter o padrão em todo endpoint novo. Toda rota nova deve checar `credential.connectionIds.includes(connectionId)` como já faz `PublicMessageController`.
+
+### 2.5 Idempotência, filas e presença (durável vs. efêmero)
+
+Envio de texto/mídia/template/botões: **continuar** usando `MessageCommand`+`MessagingOutboxEvent` (já implementado, não recriar). Reações/edição/exclusão: também devem ser `MessageCommand`-like (mutam estado observável, precisam de retry e de aparecer no webhook mirror) — reaproveitar a mesma tabela `MessageCommand` com novos `messageKind` (`reaction`, `edit`, `delete`) e novos providers.send() cases, **não** criar tabelas paralelas.
+
+**Presença é o único caso que deve fugir do outbox**: é efêmera, de alto volume, sem valor de retry (se falhar, o próximo "composing" natural substitui), e persistir uma linha de outbox por evento de presença gera ruído desproporcional em uma tabela dimensionada para mensagens. Decisão: `POST /api/v1/presence` chama o provider **diretamente e de forma síncrona** (sem outbox), com:
+- Rate limit dedicado (por `connectionId`+`recipient`, ex. 1 req/2s) usando o mesmo mecanismo de `publicApiRateLimit` já existente, parametrizado.
+- `duration` opcional: se informado, agenda internamente (setTimeout em processo, **não** linha de outbox) o envio de `paused`/`available` após N segundos — aceitar que isso é best-effort (se o processo reiniciar, o timer se perde; documentar essa limitação explicitamente no OpenAPI, é aceitável para um recurso efêmero).
+- Sem `Idempotency-Key` obrigatório (natureza não-durável não se beneficia de deduplicação por chave — decisão consciente e documentada).
+- Resposta: `202` imediato com `{status: "sent"}` ou erro direto do provider (sem lease/retry).
+- Auditoria: registrar apenas contagem/metadados (não guardar histórico de presença por mensagem).
+
+### 2.6 Mídia — upload e segurança
+
+Adicionar `multipart/form-data` como segunda forma de entrada em `POST /api/v1/messages` (hoje só aceita URL). Reaproveitar `multer` (já usado na rota legada) com `storage: memoryStorage` (evitar disco). Pipeline de validação: magic-bytes (ex. `file-type` — verificar se já é dependência; se não, avaliar adicionar) + extensão + `mimetype` declarado devem ser consistentes; tamanho máximo por tipo (ex. imagem 16MB, vídeo 64MB, documento 100MB — valores a confirmar com produto); nome de arquivo sempre gerado (UUID), nunca o nome enviado pelo cliente é usado como path.
+
+Para mídia por URL: reaproveitar `WebhookUrlPolicy.ts` (já implementa bloqueio de IP privado/loopback, DNS-pinning contra rebinding, usado hoje nos webhooks) — **aplicar a mesma política** ao download de mídia por URL em vez de escrever uma segunda implementação de proteção SSRF. Timeout, limite de redirecionamentos e limite de tamanho via `Content-Length`/streaming com corte.
+
+`GET /api/v1/messages/{messageId}/media`: reaproveitar `TranscriptAttachmentSigner` (já gera URLs assinadas de curta duração) como implementação de referência; resposta padrão = metadados (`messageId, mediaType, mimeType, fileName, size, sha256, available, expiresAt, downloadUrl`) + redirecionamento/stream autenticado; `format=base64` como opção explícita, nunca padrão.
+
+### 2.7 Contrato de erros
+
+Reaproveitar o schema `Error` já existente em `MessagingOpenApi.ts` (`{error:{code,message,details,requestId}}` — mesmo formato pedido pelo usuário). Mapear os códigos HTTP novos necessários (413, 415) que hoje podem não estar cobertos — confirmar em implementação e adicionar aos testes de contrato. Não expor objetos brutos do Baileys/Graph API — já é prática seguida por `classifyMetaSendError`/`ProviderSendError`; replicar o mesmo padrão de classificação para os novos providers de reação/edição/exclusão.
+
+### 2.8 OpenAPI
+
+Duas frentes: (a) **corrigir o drift já existente** (§1.8) antes/junto de adicionar paths novos — item de baixo risco, alto valor, deve ser PR cedo; (b) documentar todos os endpoints novos desta fase com `x-phase: "1"` e os futuros da Meta com `x-phase: "2"` + `x-status: "planned"` (extensão nova nas `paths`, seguindo o estilo de extensões `x-*` já usado no arquivo). Adicionar teste de contrato que compara `paths` documentados vs. rotas Express reais registradas (novo, não existe hoje) para impedir que o drift volte.
+
+### 2.9 Frontend — nova aba "API"
+
+Stack real: React 17 + CRA5 (`react-scripts` puro, sem Vite) + MUI v4 dominante (v5 coexiste mas pontual) + `react-router-dom` v5 + i18next. **Nenhuma lib de renderização OpenAPI instalada hoje.**
+
+Decisão recomendada: **não** usar `swagger-ui-react` (React 17 é suportado, mas o bundle é pesado — ~2-3MB, estilos difíceis de sobrepor ao Material UI, tema claro/escuro do DIA CHAT ficaria inconsistente) nem Redoc (React-agnóstico via web component, mas customização de "testar direto" é limitada). Recomendo **RapiDoc** (web component, tema customizável via CSS vars, ~400KB, funciona bem embutido em CRA5 via wrapper `<rapi-doc>` + `React.useRef`) **ou**, se o time preferir consistência total de UI com MUI, um **renderer próprio leve** que consome `GET /api/v1/openapi.json` e monta accordion por tag/categoria usando componentes MUI já existentes (`TabPanel`, `Paper`) — mais trabalho de implementação, porém 100% consistente visualmente e sem dependência de terceiros para o "console de teste" (que de qualquer forma precisa ser código próprio, pois nenhuma lib de terceiros modela scopes/plano/mascaramento de token do DIA CHAT). **Recomendação final: renderer próprio leve**, justificado por: já existe `ApiCredentialsModal` reaproveitável, já existe padrão `Can`/`usePlans` para gating, e o console de teste (mascarar token, respeitar `connectionIds`, bloquear endpoints Fase 2) é inerentemente customizado — trazer uma lib pesada só para renderizar `paths`/`schemas` (que são JSON simples) não paga o custo de mais uma dependência de terceiro (peso de bundle + superfície de manutenção) quando o app já tem `markdown-to-jsx` e `react-copy-to-clipboard` para as partes reaproveitáveis.
+
+Estrutura da página nova (substituindo `pages/MessagesAPI/index.js`):
+- Reusar `MainContainer`/`MainHeader` (a página atual não usa, deveria).
+- Categorias como abas (`TabPanel` já existe): Autenticação, Mensagens, Mídias, Presença, Conversas, Templates internos, Webhooks, Credenciais, Roadmap Meta Cloud.
+- Cada endpoint: método+path+descrição+schema+exemplo cURL/Axios/n8n (gerados a partir do OpenAPI carregado, não hardcoded) + botão "copiar" (`react-copy-to-clipboard`).
+- Console de teste: reaproveitar `services/api.js`/`openApi`; token nunca em `localStorage` (mascarar após digitar, limpar ao sair da página via `useEffect` cleanup); usar o padrão `Can`/`usePlans().getPlanCompany` já usado nesta própria página hoje para o gate `useExternalApi` (manter, não remover).
+- Aviso fixo de roadmap Meta Cloud (texto obrigatório do briefing) na aba "Roadmap Meta Cloud", sem botões de teste funcionais ali.
+- i18n: seguir a mesma estrutura de chaves aninhadas já usada em `translate/languages/pt.js` (`messagesAPI.*`), estendendo, não recriando namespace.
+
+### 2.10 Observabilidade e auditoria
+
+Reaproveitar `AuditLog` (já genérico, `action/targetType/metadata`) para novas ações (`api.presence.sent`, `api.reaction.sent`, `api.message.edited`, `api.message.deleted`, `api.template.rendered`) — não criar tabela de auditoria nova. Métricas: seguir o padrão já existente em `MessagingMetricsService`/`MessagingOperationsController` (`/internal/v1/messaging/metrics`), adicionar contadores por capability/endpoint novo. Nunca logar corpo de mensagem/mídia/variáveis de template — mesmo cuidado já presente no design de `AuditLog.metadata`.
+
+### 2.11 Testes
+
+Seguir os padrões já existentes no repo (83 specs em `messaging/`, um por arquivo de produção, dependências injetáveis): todo novo service/controller ganha spec unitário no mesmo padrão. Testes de fronteira: rodar `check:messaging-boundaries` e `check:messaging-architecture` como parte do CI de cada PR (já existem como scripts, só precisa garantir que os novos arquivos não violem o allowlist do dependency-cruiser — ver §1.6, provavelmente será necessário estender o allowlist para o novo model `MessageTemplate` e para `WhatsAppChatState` se ainda não estiver lá). Testes de contrato: novo teste comparando `MessagingOpenApi.paths` vs. rotas Express reais (não existe hoje, ver §2.8). Testes de segurança: reaproveitar `WebhookUrlPolicy` já testado para SSRF em vez de reimplementar e retestar do zero para mídia por URL.
+
+### 2.12 Migrations necessárias (schema `messaging`)
+
+| Migration | Motivo | Rollback |
+|---|---|---|
+| `create-message-templates` | Nova tabela `MessageTemplates` (§2.2) | `DROP TABLE` — sem dados legados, seguro |
+| `add-pagination-index-whatsapp-chat-states` | Índice `(companyId, whatsappId, lastMessageAt DESC, id DESC)` para cursor de `/conversations` (hoje não existe, ver §1.7) | `DROP INDEX` — sem impacto em dados |
+| `add-pagination-index-messages` (avaliar) | `Messages` não tem índice por `createdAt`/`id` combinado com `companyId+ticketId` para paginação estável em alto volume — avaliar necessidade real conforme volume de produção antes de aplicar (índice grande em tabela quente = custo de escrita) | `DROP INDEX` |
+| `add-messaging-scopes-values` | Nenhuma migration de schema estrita necessária (scopes são JSONB livre em `ApiCredential.scopes`), mas **documentar** os novos valores permitidos na validação de `ApiCredentialService` | N/A (mudança de código, não de schema) |
+| `extend-message-command-kinds` (avaliar) | Se `messageKind`/`status` tiverem CHECK constraints em vez de string livre, confirmar antes de adicionar `reaction`/`edit`/`delete` como novos valores — **a confirmar na implementação**, pesquisa não confirmou se há CHECK constraint | Reverter CHECK anterior |
+
+Nenhuma migration deve ser proposta sem, na implementação real, confirmar se há CHECK constraints/enums Postgres nas colunas de status/kind (a pesquisa encontrou defaults de string livre, não confirmou ausência total de CHECK — validar antes do PR correspondente).
+
+### 2.13 Rollout
+
+Feature flags seguindo o padrão já usado (`MESSAGING_WEBHOOK_MIRROR_V1_ENABLED`, `MESSAGING_CAPACITY_PROBE_ENABLED` — env vars simples, não um serviço de feature flag dedicado): `MESSAGING_PRESENCE_V1_ENABLED`, `MESSAGING_REACTIONS_V1_ENABLED`, `MESSAGING_INTERNAL_TEMPLATES_V1_ENABLED`, `MESSAGING_MEDIA_UPLOAD_V1_ENABLED` — permite ativar por etapas em produção sem depender de deploy coordenado com o frontend. Depreciação da API legada: já em andamento (`legacyApiDeprecation`); este plano não acelera nem modifica esse cronograma, só garante que a nova aba API não incentive mais o uso do endpoint legado (a doc estática atual da aba hoje documenta `/api/messages/send` como se fosse o caminho principal — isso deve ser corrigido para apontar `/api/v1` como primário).
+
+---
+
+## 3. Limites explícitos — o que NÃO será implementado na Fase 1
+
+- Nenhum endpoint, credencial, WABA, Phone Number ID ou template oficial da Meta Cloud API será criado ou exposto como funcional.
+- O scaffolding Meta Cloud já existente no repositório (§1) não será estendido, apenas citado/inventariado no roadmap.
+- Nenhuma mudança no caminho de envio paralelo do `/internal/v1` (§1.5) — é um risco identificado, não um item de escopo desta fase.
+- Nenhuma atualização da versão do Baileys vendorizado (fora de escopo por instrução explícita — exigiria análise separada de impacto/regressão/migração de sessões).
+- Reações/edição/exclusão só no sentido Baileys→WhatsApp; nenhuma mudança na Fase 1 no contrato de reações/edições **recebidas** (mirror inbound já existe e não precisa mudar).
+- Botões não serão "rebaixados" automaticamente para texto quando indisponíveis — sempre `CAPABILITY_NOT_SUPPORTED`.
+
+---
+
+## 4. Fase 2 — Visão arquitetural (roadmap, não implementação)
+
+**Achado relevante:** diferente do que o briefing presumia ("Meta Cloud ainda não implementada"), o repositório já tem uma base real: `MetaCloudCredential` (model completo com `wabaId, phoneNumberId, graphVersion`, tokens cifrados via `MessagingSecretCipher`), `MetaCloudChannelController`/`MetaCloudChannelAdminService` (onboarding), `MetaWebhookController`/`MetaWebhookVerificationService` (verificação + ingestão de webhook oficial), `MetaGraphApiClient`, e `MetaCloudMessageCommandProvider` (envio de texto/mídia/template já implementado e com classificação de erro Graph API). A Fase 2 real, portanto, começa como **auditoria + hardening + exposição pública** desse código já existente (validar contra a documentação oficial da Meta vigente no momento da implementação, como exigido pelo briefing), não como construção do zero. Isso deve ser comunicado à liderança como uma boa notícia de prazo, mas sem adiantar entrega — a decisão executiva de sequenciamento permanece válida e este plano não a contorna.
+
+Arquitetura-alvo (já é o formato real do código hoje, só falta o Capability Resolver formal do §2.3):
+```
+API pública (/api/v1) → Application Services → Capability Resolver
+                                                  |
+                              +-------------------+-------------------+
+                              |                                       |
+                    BaileysMessageCommandProvider          MetaCloudMessageCommandProvider
+                    (existe, Fase 1)                        (existe parcialmente, Fase 2)
+```
+
+---
+
+## 5. Matriz comparativa Baileys × Meta Cloud
+
+| Aspecto | Baileys (Fase 1) | Meta Cloud (Fase 2) | Classificação |
+|---|---|---|---|
+| Conexão | QR Code | Onboarding oficial (WABA, Phone Number ID) | Fato confirmado no repo |
+| Credenciais | `Whatsapp.session` (sessão local) | `MetaCloudCredential` (token cifrado) já modelado | Fato confirmado |
+| Templates | Não suportado (nunca) | Oficial, já com `type:"template"` implementado (name+language) | Fato confirmado |
+| Presença | Suportado nativamente (5 estados, confirmado na lib) | Não suportado pela Graph API | Fato/inferência técnica — Graph API não expõe presença de usuário |
+| Botões/interativos | Suportado (nativo, já implementado) | Componentes interativos oficiais existem na Graph API mas não implementados no repo | Depende de validação na Fase 2 |
+| Reações (enviar) | Suportado nativamente (confirmado na lib) | Graph API tem endpoint oficial de reação | Depende de validação na Fase 2 |
+| Edição/exclusão | Suportado nativamente (confirmado na lib) | Graph API não oferece edição; exclusão limitada | Depende de validação contra doc oficial Meta no momento da Fase 2 |
+| Grupos | Suportado | Não suportado pela Cloud API | Conhecimento de mercado — validar na Fase 2 |
+| Estabilidade/risco de bloqueio | Não oficial, risco de banimento por uso não documentado pela Meta | Oficial, sem risco de bloqueio por uso da API em si | Recomendação/risco de produto |
+| Custo | Sem custo por mensagem (infra própria) | Cobrança por conversa/mensagem pela Meta | Fato de mercado — confirmar tabela vigente na Fase 2 |
+| Webhooks | HMAC-SHA256 já implementado, superior ao padrão observado na Evolution API (que usa apenas um JWT opcional em header, sem assinatura de corpo) | Webhook oficial da Meta, verificação via `hub.challenge` já implementada (`MetaWebhookVerificationService`) | Fato confirmado nos dois lados |
+
+---
+
+## 6. Pontos independentes de provider vs. específicos de provider
+
+**Devem permanecer no núcleo comum** (já é assim, preservar): autenticação (`apiKeyAuth`), autorização/scopes, multi-tenancy, idempotência, `MessageCommand`/outbox, webhooks (assinatura/entrega/retry), auditoria, paginação por cursor, IDs públicos (`connectionId`, `conversationId`, `messageId` — nunca JIDs brutos do Baileys expostos, isso já é seguido no design de `WhatsAppMirror*` schemas).
+
+**Necessariamente específicos por provider**: tradução de payload para o formato nativo (Baileys `AnyMessageContent` vs. Graph API JSON), classificação de erro (`classifyMetaSendError` vs. equivalente Baileys), gerenciamento de credenciais (sessão local vs. token OAuth-like), capabilities.
+
+---
+
+## 7. Riscos de contratos excessivamente acoplados ao Baileys
+
+- Se `messageKind`/payload de `POST /api/v1/messages` for desenhado copiando literalmente a forma de `AnyMessageContent` do Baileys (ex. expor `WAMessageKey` bruto em `replyToMessageId`), a Fase 2 herda um contrato que não mapeia limpo para a Graph API (que usa `message_id` de string simples). **Mitigação**: `messageId`/`conversationId` públicos já são UUIDs/IDs internos do DIA CHAT, não JIDs — manter essa tradução em toda nova rota.
+- Se a matriz de capabilities for hardcoded como `if (provider === "baileys")` (como está hoje) em vez de usar o `CapabilityResolver` do §2.3, cada novo provider exige caçar e editar múltiplos `if`s espalhados — risco direto de retrabalho na Fase 2. **Mitigação**: introduzir o resolver já nesta fase, não adiar.
+- Presença sendo Baileys-only não deve virar um campo obrigatório em nenhum contrato público — já está desenhada como endpoint separado (§2.5), que naturalmente retorna `CAPABILITY_NOT_SUPPORTED` para Meta Cloud sem quebrar contrato.
+
+---
+
+## 8. Decisões que facilitam/dificultam a Fase 2
+
+**Facilitam:** Capability Resolver (§2.3); reaproveitar `MessageCommand.provider` como discriminador (já existe); manter `channelType` na conexão (já existe); erro `CAPABILITY_NOT_SUPPORTED` padronizado (já existe); IDs públicos neutros (já é prática).
+
+**Dificultam se não cuidado:** deixar o novo Capability Resolver com apenas 2 valores hardcoded de provider em vez de um registro extensível; expor detalhes de timing/retry específicos do outbox Postgres em contratos públicos (ex. nunca vazar `leaseToken`/`attemptCount` cru — hoje não vaza, manter); nomear qualquer coisa nova como "template" sem qualificador (§2.2).
+
+---
+
+## 9. Plano de PRs — Trilha A (Fase 1, executável)
+
+| PR | Objetivo | Depende de | Principais arquivos |
+|---|---|---|---|
+| **F1-PR01** | Corrigir contract drift do OpenAPI existente (§1.8/§2.8) + teste de drift automatizado | — | `contracts/MessagingOpenApi.ts`, novo `contracts/__tests__/OpenApiDriftFixtures.spec.ts` |
+| **F1-PR02** | Capability Resolver (§2.3) — extrai lógica hardcoded de `PublicTextMessageService` para módulo dedicado, sem mudar comportamento externo | F1-PR01 | novo `contracts/CapabilityMatrix.ts`, `application/CapabilityResolver.ts`, editar `PublicTextMessageService.ts`, `IntegrationReadinessService.ts` |
+| **F1-PR03** | Novos scopes (§2.4) — estende allowlist de `ApiCredentialService`, sem novos endpoints ainda | F1-PR02 | `application/ApiCredentialService.ts`, `MessagingOpenApi.ts` (`x-api-scopes`) |
+| **F1-PR04** | Upload multipart de mídia em `POST /api/v1/messages` + hardening SSRF reaproveitando `WebhookUrlPolicy` (§2.6) | F1-PR02 | `api/PublicMessageController.ts`, `application/PublicTextMessageService.ts`, `adapters/baileys/BaileysMessageCommandProvider.ts` |
+| **F1-PR05** | `GET /api/v1/messages/{messageId}/media` canônico, reaproveitando `TranscriptAttachmentSigner` | F1-PR04 | novo `api/MessageMediaController.ts`, editar `routes/messagingApiRoutes.ts` |
+| **F1-PR06** | `POST /api/v1/presence` (fluxo efêmero fora do outbox, §2.5) | F1-PR02 | novo `api/PresenceController.ts`, `application/PresenceService.ts`, `adapters/baileys/BaileysMessageCommandProvider.ts` (expõe `sendPresence`) |
+| **F1-PR07** | Reações/edição/exclusão via `MessageCommand` (novos `messageKind`) | F1-PR02, confirmar CHECK constraints (§2.12) | `application/PublicTextMessageService.ts` (ou novo `MessageMutationService.ts`), `adapters/baileys/*`, possível migration |
+| **F1-PR08** | Template interno (`MessageTemplate` model + CRUD + render + integração no envio) | F1-PR02 | nova migration, novo model, `application/MessageTemplateService.ts`, `api/MessageTemplateController.ts` |
+| **F1-PR09** | `GET /api/v1/conversations` e `GET /api/v1/conversations/{id}` sobre `WhatsAppChatState` + índice de paginação | — | nova migration de índice, novo `api/ConversationsController.ts` (distinto do `ConversationController` de handoff/finalize, ou estender o mesmo arquivo) |
+| **F1-PR10** | Extensão de filtros em `GET /api/v1/conversations/{id}/messages` (from/to/type/status/fromMe/providerMessageId/media-only) | F1-PR09 | `application/TranscriptService.ts` |
+| **F1-PR11** | OpenAPI completo da Fase 1 (todos os paths novos, `x-phase`, `x-status`) + testes de contrato | F1-PR03..F1-PR10 | `MessagingOpenApi.ts` |
+| **F1-PR12** | Nova aba "API" do frontend (portal + console de teste + marcação por fase/capability) | F1-PR11 | reescreve `pages/MessagesAPI/index.js`, novos componentes, `translate/languages/*.js` |
+| **F1-PR13** | Observabilidade/auditoria dos novos endpoints + feature flags + atualização da doc estática que hoje aponta para `/api/messages/send` como principal | F1-PR12 | `AuditLog` metadata, `MessagingMetricsService` |
+
+Cada PR segue o mesmo formato de critérios de aceite: (a) `npm test`, `check:messaging-boundaries`, `check:messaging-architecture` verdes; (b) spec unitário para todo arquivo novo; (c) OpenAPI atualizado no mesmo PR da mudança de contrato (nunca depois); (d) nenhuma capability declarada disponível sem implementação funcional correspondente.
+
+---
+
+## 10. Roadmap — Trilha B (Fase 2, apenas visão)
+
+| PR | Escopo (roadmap) |
+|---|---|
+| F2-PR01 | Auditoria do provider Meta Cloud já existente + Capability Resolver estendido com `meta_cloud` completo |
+| F2-PR02 | Exposição pública de cadastro/gerenciamento de canais Meta (hoje só admin interno via `MetaCloudChannelController`) |
+| F2-PR03 | Rotação/renovação de credenciais e tokens Meta |
+| F2-PR04 | Hardening dos webhooks oficiais Meta já recebidos (`MetaWebhookController`) para paridade de observabilidade com o webhook mirror do Baileys |
+| F2-PR05 | Validação/expansão de texto e mídia pela Cloud API conforme doc oficial vigente |
+| F2-PR06 | Templates oficiais — CRUD e componentes, validado contra doc oficial Meta no momento |
+| F2-PR07 | Status oficiais de entrega e tratamento de erros da Graph API (expandir `classifyMetaSendError`) |
+| F2-PR08 | OpenAPI e documentação pública Meta (`x-phase:"2"` → `"available"`) |
+| F2-PR09 | Interface de configuração Meta no frontend (fora da aba "Roadmap") |
+| F2-PR10 | Testes, observabilidade e rollout gradual específicos da Meta |
+
+---
+
+## 11. Benchmark Evolution API — achados e alerta de licença
+
+**Licença — alerta obrigatório:** a Evolution API **não é Apache-2.0 puro**. É Apache-2.0 + condições adicionais (aviso de uso obrigatório e visível para quem a incorpora; restrição sobre remover marca/copyright da UI). O GitHub classifica como `NOASSERTION`. **Recomendação:** nenhum código deve ser copiado; qualquer reaproveitamento pontual de ideia (não código) não aciona a cláusula, mas trechos de código sim — reforça a instrução do briefing de usar apenas como benchmark conceitual.
+
+**Padrões observados e decisão do DIA CHAT em cada um:**
+| Convenção Evolution API | Decisão DIA CHAT | Motivo |
+|---|---|---|
+| `instanceName` como identidade da instância | Manter `connectionId` (já existente) | Já integrado a `ApiCredential.connectionIds`, `MessageCommand.whatsappId` |
+| Endpoints verbo-específicos (`sendText`, `sendButtons`...) | Manter `POST /api/v1/messages` unificado (já é o padrão do repo) | Consistência com idempotência/outbox já implementados |
+| Auth via header `apikey` global + token por instância | Manter `Authorization: Bearer dch_live_*` + scopes + `connectionIds` (já existente) | Já mais granular (scopes) que o modelo binário da Evolution |
+| Webhook: JWT opcional, sem assinatura HMAC de corpo | Manter HMAC-SHA256 já implementado (`WebhookSignature`) | Padrão do DIA CHAT já é mais robusto — não regredir |
+| Templates: `WHATSAPP_BUSINESS` mode isolado, `TemplateDto` = modelo oficial Meta | Confirma a separação de conceitos do §2.2 — Evolution também nunca trata template Baileys como template Meta | Validação cruzada da decisão de nomenclatura |
+| Documentação via coleção Postman (sem OpenAPI no repo) | Manter/expandir OpenAPI 3.1 já escrito à mão (`MessagingOpenApi.ts`) | DIA CHAT já está em posição melhor (contrato tipado) que a referência de benchmark |
+
+---
+
+## 12. Critérios de aceite globais da Fase 1
+
+1. Nenhum endpoint/schema/UI da Meta Cloud aparece como "disponível" — apenas "planejado".
+2. Todo novo endpoint tem: scope dedicado, teste unitário, entrada no OpenAPI, capability check via `CapabilityResolver`, e não quebra `check:messaging-boundaries`/`check:messaging-architecture`.
+3. Presença não usa outbox/idempotência (decisão documentada em §2.5), todos os outros envios usam.
+4. Nenhum "template" novo é chamado de template sem qualificador — `internalTemplate` explícito em toda a superfície pública (rota, schema, UI).
+5. Aba "API" do frontend não expõe nenhum botão de teste funcional para Meta Cloud.
+6. `GET /api/v1/openapi.json` é fonte de verdade da UI nova (nada hardcoded na aba API que não venha do spec).
+7. Mídia por URL usa a mesma política SSRF já validada em produção para webhooks (`WebhookUrlPolicy`), não uma implementação nova e não testada.
+
+---
+
+## Observação final sobre o próximo passo
+
+Este plano é o entregável solicitado nesta etapa — nenhum código foi alterado. Pontos que ficaram como "a confirmar na implementação" (marcados explicitamente acima: existência de CHECK constraints em `messageKind`/`status`, confirmação de `replyToMessageId` já suportado ou não em `PublicTextMessageService`, limites de tamanho de mídia por tipo) devem ser verificados no início do PR correspondente, não assumidos.
+
