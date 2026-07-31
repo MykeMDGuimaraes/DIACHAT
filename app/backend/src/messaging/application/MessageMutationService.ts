@@ -17,16 +17,22 @@ class MessageMutationService {
     if (input.kind === "reaction" && (typeof input.emoji !== "string" || input.emoji.length > 32)) throw new AppError("Reacao invalida", 400);
     if (input.kind === "edit" && (!input.text || !input.text.trim())) throw new AppError("Edicao invalida", 400);
     return sequelize.transaction(async transaction => {
-      const message = await Message.findOne({ where: { id: input.messageId, companyId: input.companyId }, transaction, lock: transaction.LOCK.UPDATE });
+      let message = await Message.findOne({ where: { id: input.messageId, companyId: input.companyId }, transaction, lock: transaction.LOCK.UPDATE });
+      // Inbound messages use the provider ID as Message.id, while public outbound
+      // messages retain a DIA CHAT ID. Resolve the latter through the command.
+      if (!message) {
+        const sourceCommand = await MessageCommand.findOne({ where: { companyId: input.companyId, providerMessageId: input.messageId }, transaction });
+        if (sourceCommand?.messageId) message = await Message.findOne({ where: { id: String(sourceCommand.messageId), companyId: input.companyId }, transaction, lock: transaction.LOCK.UPDATE });
+      }
       if (!message) throw new AppError("Mensagem nao encontrada", 404);
       const ticket = await Ticket.findOne({ where: { id: message.ticketId, companyId: input.companyId }, include: [Contact], transaction });
       if (!ticket || !input.allowedConnectionIds.includes(Number(ticket.whatsappId))) throw new AppError("Mensagem nao autorizada", 403);
       const provider = "baileys";
       const capability = input.kind === "reaction" ? "reactions" : input.kind === "edit" ? "messageEdit" : "messageDelete";
       if (!this.capabilities.resolve("baileys").capabilities[capability]) throw new AppError("CAPABILITY_NOT_SUPPORTED", 422);
-      const targetId = await MessageCommand.findOne({ where: { messageId: String(message.id), companyId: input.companyId }, order: [["createdAt", "DESC"]], transaction });
-      if (!targetId?.providerMessageId) throw new AppError("Mensagem ainda nao pode ser alterada", 409);
-      const requestPayload = { ticketId: ticket.id, target: { id: targetId.providerMessageId }, ...(input.emoji !== undefined ? { emoji: input.emoji } : {}), ...(input.text !== undefined ? { text: input.text } : {}) };
+      const targetCommand = await MessageCommand.findOne({ where: { messageId: String(message.id), companyId: input.companyId }, order: [["createdAt", "DESC"]], transaction });
+      const providerMessageId = targetCommand?.providerMessageId || String(message.id);
+      const requestPayload = { ticketId: ticket.id, target: { id: providerMessageId, fromMe: Boolean(message.fromMe), remoteJid: message.remoteJid || `${ticket.contact.number}@s.whatsapp.net` }, ...(input.emoji !== undefined ? { emoji: input.emoji } : {}), ...(input.text !== undefined ? { text: input.text } : {}) };
       const fingerprint = createRequestFingerprint({ provider, messageKind: input.kind, recipient: ticket.contact.number, requestPayload });
       const existing = await MessageCommand.findOne({ where: { companyId: input.companyId, idempotencyScope: input.idempotencyScope, idempotencyKey }, transaction });
       if (existing) {

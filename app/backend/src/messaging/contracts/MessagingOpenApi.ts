@@ -821,4 +821,23 @@ export const messagingOpenApi = {
   }
 } as const;
 
+/**
+ * Credentials issued to integrations must never discover the session-only
+ * administration surface. Keep the complete contract above for the admin UI,
+ * and publish this filtered immutable view from /api/v1/openapi.json.
+ */
+export const messagingPublicOpenApi = {
+  ...messagingOpenApi,
+  paths: Object.fromEntries(
+    Object.entries(messagingOpenApi.paths).map(([path, operations]) => [
+      path,
+      Object.fromEntries(
+        Object.entries(operations).filter(([, operation]: [string, any]) =>
+          Array.isArray(operation?.security) && operation.security.some((entry: Record<string, unknown>) => Object.prototype.hasOwnProperty.call(entry, "ApiKey"))
+        )
+      )
+    ]).filter(([, operations]) => Object.keys(operations).length > 0)
+  )
+};
+
 export default messagingOpenApi;

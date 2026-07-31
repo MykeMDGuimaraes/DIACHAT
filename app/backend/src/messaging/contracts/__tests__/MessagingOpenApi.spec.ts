@@ -2,7 +2,7 @@
 // JSON Schema branches without introducing a production dependency.
 // eslint-disable-next-line import/no-extraneous-dependencies
 import Ajv from "ajv";
-import messagingOpenApi from "../MessagingOpenApi";
+import messagingOpenApi, { messagingPublicOpenApi } from "../MessagingOpenApi";
 
 const webhookBranchesMatched = (payload: Record<string, unknown>): number => {
   const ajv = new Ajv({ allErrors: true, schemaId: "auto" });
@@ -20,6 +20,12 @@ const webhookBranchesMatched = (payload: Record<string, unknown>): number => {
 };
 
 describe("MessagingOpenApi 1.3", () => {
+  it("does not publish session-only administration endpoints to API credentials", () => {
+    expect(messagingPublicOpenApi.paths).not.toHaveProperty("/api/v1/credentials");
+    expect(messagingPublicOpenApi.paths).not.toHaveProperty("/api/v1/webhook-subscriptions");
+    expect(messagingPublicOpenApi.paths).toHaveProperty("/api/v1/messages");
+  });
+
   it("publishes every Router P0 path as an authenticated full API path", () => {
     expect(messagingOpenApi.info.version).toBe("1.3.0");
 

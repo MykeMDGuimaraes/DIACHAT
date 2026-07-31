@@ -9,6 +9,7 @@ export { default as requireApiScope } from "../api/requireApiScope";
 export { default as publicApiRateLimit } from "../api/publicApiRateLimit";
 export { default as legacyApiDeprecation } from "../api/legacyApiDeprecation";
 export { default as isMessagingAdmin } from "../api/MessagingAdminGuard";
+export { default as requireMetaCloudPhase2 } from "../api/MetaCloudFeatureGate";
 export {
   createIssueApiCredentialHandler,
   listApiCredentialsHandler,
@@ -47,4 +48,4 @@ export {
   messagingCapacityProbe,
   messagingCapacityReplay
 } from "../operations/MessagingOperationsController";
-export { default as messagingOpenApi } from "../contracts/MessagingOpenApi";
+export { messagingPublicOpenApi as messagingOpenApi } from "../contracts/MessagingOpenApi";
