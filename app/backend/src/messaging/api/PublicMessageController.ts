@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import { promises as fs } from "fs";
 import AppError from "../../errors/AppError";
 import PublicTextMessageService from "../application/PublicTextMessageService";
 import InternalTemplateService from "../application/InternalTemplateService";
@@ -22,6 +23,7 @@ interface PublicTextMessageCreator {
 export const createPublicTextMessageHandler = (
   service: PublicTextMessageCreator = new PublicTextMessageService()
 ) => async (req: Request, res: Response): Promise<Response> => {
+  try {
   const credential = req.apiCredential;
   const connectionId = Number(req.body.connectionId);
   const idempotencyKey = req.header("Idempotency-Key");
@@ -36,6 +38,25 @@ export const createPublicTextMessageHandler = (
     throw new AppError("Canal de WhatsApp nao autorizado", 403);
   }
 
+  const parseObject = (value: unknown, field: string): Record<string, unknown> | undefined => {
+    if (value === undefined || value === null || value === "") return undefined;
+    if (typeof value === "object" && !Array.isArray(value)) return value as Record<string, unknown>;
+    if (typeof value === "string") {
+      try {
+        const parsed = JSON.parse(value);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
+      } catch { /* handled below */ }
+    }
+    throw new AppError(`${field} invalido`, 400);
+  };
+  const parseArray = (value: unknown, field: string): unknown[] | undefined => {
+    if (value === undefined || value === null || value === "") return undefined;
+    if (Array.isArray(value)) return value;
+    if (typeof value === "string") {
+      try { const parsed = JSON.parse(value); if (Array.isArray(parsed)) return parsed; } catch { /* handled below */ }
+    }
+    throw new AppError(`${field} invalido`, 400);
+  };
   const messageType = req.body.type || "text";
   if (req.file && process.env.MESSAGING_MEDIA_UPLOAD_V1_ENABLED !== "true") {
     throw new AppError("FEATURE_NOT_ENABLED", 404);
@@ -45,7 +66,7 @@ export const createPublicTextMessageHandler = (
     const rendered = await new InternalTemplateService().render(
       credential.companyId,
       req.body.internalTemplateId,
-      req.body.variables || {}
+      parseObject(req.body.variables, "variables") || {}
     );
     text = rendered.text;
   }
@@ -64,7 +85,7 @@ export const createPublicTextMessageHandler = (
             messageType === "template"
               ? req.body.template
               : messageType === "buttons"
-                ? { buttons: req.body.buttons }
+                ? { buttons: parseArray(req.body.buttons, "buttons") }
                 : req.file
                   ? {
                       localPath: privateMediaRelativePath(req.file.path),
@@ -73,7 +94,13 @@ export const createPublicTextMessageHandler = (
                       size: req.file.size,
                       caption: req.body.caption
                     }
-                  : req.body.media
+                  : (() => {
+                      const media = parseObject(req.body.media, "media");
+                      if (!media) throw new AppError("media invalida", 400);
+                      const link = typeof media.link === "string" ? media.link : media.url;
+                      if (typeof link !== "string") throw new AppError("media invalida", 400);
+                      return { ...media, link };
+                    })()
         }),
     ...(req.body.externalTicketId !== undefined
       ? {
@@ -101,4 +128,8 @@ export const createPublicTextMessageHandler = (
         : {})
     };
   return res.status(result.replayed ? 200 : 202).json(body);
+  } catch (error) {
+    if (req.file?.path) await fs.unlink(req.file.path).catch(() => undefined);
+    throw error;
+  }
 };

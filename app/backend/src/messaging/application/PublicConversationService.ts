@@ -1,10 +1,29 @@
 import { Op } from "sequelize";
 import AppError from "../../errors/AppError";
+import Contact from "../../models/Contact";
+import Queue from "../../models/Queue";
+import Ticket from "../../models/Ticket";
+import User from "../../models/User";
 import WhatsAppChatState from "../persistence/models/WhatsAppChatState";
 
-type Cursor = { lastMessageAt: string | null; id: string };
-const decode = (value: string): Cursor | null => { try { const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8")); return typeof parsed.id === "string" ? parsed : null; } catch { return null; } };
-const encode = (value: Cursor) => Buffer.from(JSON.stringify(value), "utf8").toString("base64url");
+type Cursor = { updatedAt: string; id: number };
+
+const decode = (value: string): Cursor | null => {
+  try {
+    const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8"));
+    return typeof parsed.id === "number" && typeof parsed.updatedAt === "string" && !Number.isNaN(new Date(parsed.updatedAt).getTime()) ? parsed : null;
+  } catch {
+    return null;
+  }
+};
+const encode = (value: Cursor): string => Buffer.from(JSON.stringify(value), "utf8").toString("base64url");
+
+const jidFor = (ticket: Ticket): string | null => {
+  const contact = ticket.get("contact") as Contact | undefined;
+  if (!contact?.number) return null;
+  return `${String(contact.number).replace(/\D/g, "")}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`;
+};
+
 class PublicConversationService {
   async list(input: { companyId: number; connectionIds: number[]; connectionId?: number; cursor?: string; limit?: number }) {
     const limit = input.limit ?? 50;
@@ -13,15 +32,64 @@ class PublicConversationService {
     if (input.cursor && !cursor) throw new AppError("Cursor de conversas invalido", 400);
     const ids = input.connectionId ? [input.connectionId] : input.connectionIds;
     if (input.connectionId && !input.connectionIds.includes(input.connectionId)) throw new AppError("Canal de WhatsApp nao autorizado", 403);
-    const rows = await WhatsAppChatState.findAll({ where: { companyId: input.companyId, whatsappId: { [Op.in]: ids }, ...(cursor ? { [Op.or]: [{ lastMessageAt: { [Op.lt]: cursor.lastMessageAt ? new Date(cursor.lastMessageAt) : new Date(0) } }, { lastMessageAt: cursor.lastMessageAt ? new Date(cursor.lastMessageAt) : null, id: { [Op.lt]: cursor.id } }] } : {}) }, order: [["lastMessageAt", "DESC NULLS LAST"], ["id", "DESC"]], limit: limit + 1 });
-    const page = rows.slice(0, limit);
-    return { items: page.map(row => this.serialize(row)), nextCursor: rows.length > limit && page.length ? encode({ lastMessageAt: page[page.length - 1].lastMessageAt ? new Date(page[page.length - 1].lastMessageAt).toISOString() : null, id: page[page.length - 1].id }) : null };
+    if (ids.length === 0) return { items: [], nextCursor: null };
+
+    const rows = await Ticket.findAll({
+      where: {
+        companyId: input.companyId,
+        whatsappId: { [Op.in]: ids },
+        ...(cursor ? { [Op.or]: [{ updatedAt: { [Op.lt]: new Date(cursor.updatedAt) } }, { updatedAt: new Date(cursor.updatedAt), id: { [Op.lt]: cursor.id } }] } : {})
+      },
+      include: [{ model: Contact, attributes: ["id", "name", "number"] }, { model: Queue, attributes: ["id", "name"], required: false }, { model: User, attributes: ["id", "name"], required: false }],
+      order: [["updatedAt", "DESC"], ["id", "DESC"]],
+      limit: limit + 1
+    });
+    return this.page(rows, limit, input.companyId);
   }
+
   async get(input: { companyId: number; connectionIds: number[]; id: string }) {
-    const row = await WhatsAppChatState.findOne({ where: { id: input.id, companyId: input.companyId, whatsappId: { [Op.in]: input.connectionIds } } });
-    if (!row) throw new AppError("Conversa nao encontrada", 404);
-    return this.serialize(row);
+    const ticket = await Ticket.findOne({
+      where: { uuid: input.id, companyId: input.companyId, whatsappId: { [Op.in]: input.connectionIds } },
+      include: [{ model: Contact, attributes: ["id", "name", "number"] }, { model: Queue, attributes: ["id", "name"], required: false }, { model: User, attributes: ["id", "name"], required: false }]
+    });
+    if (!ticket) throw new AppError("Conversa nao encontrada", 404);
+    const states = await this.statesFor([ticket], input.companyId);
+    return this.serialize(ticket, states.get(`${ticket.whatsappId}:${jidFor(ticket)}`));
   }
-  private serialize(row: WhatsAppChatState) { return { id: row.id, connectionId: row.whatsappId, jid: row.jid, lid: row.lid || null, isGroup: row.isGroup, archived: row.archived, pinned: row.pinned, mutedUntil: row.mutedUntil || null, unreadCount: row.unreadCount, lastMessageId: row.lastMessageId || null, lastMessageAt: row.lastMessageAt || null, revision: String(row.revision) }; }
+
+  private async page(rows: Ticket[], limit: number, companyId: number) {
+    const page = rows.slice(0, limit);
+    const states = await this.statesFor(page, companyId);
+    const last = page[page.length - 1];
+    return {
+      items: page.map(ticket => this.serialize(ticket, states.get(`${ticket.whatsappId}:${jidFor(ticket)}`))),
+      nextCursor: rows.length > limit && last ? encode({ updatedAt: new Date(last.updatedAt).toISOString(), id: Number(last.id) }) : null
+    };
+  }
+
+  private async statesFor(tickets: Ticket[], companyId: number): Promise<Map<string, WhatsAppChatState>> {
+    const tuples = tickets.map(ticket => ({ whatsappId: Number(ticket.whatsappId), jid: jidFor(ticket) })).filter((item): item is { whatsappId: number; jid: string } => Boolean(item.jid));
+    if (tuples.length === 0) return new Map();
+    const states = await WhatsAppChatState.findAll({ where: { companyId, [Op.or]: tuples } });
+    return new Map(states.map(state => [`${state.whatsappId}:${state.jid}`, state]));
+  }
+
+  private serialize(ticket: Ticket, state?: WhatsAppChatState) {
+    const contact = ticket.get("contact") as Contact | undefined;
+    const queue = ticket.get("queue") as Queue | undefined;
+    const user = ticket.get("user") as User | undefined;
+    return {
+      id: ticket.uuid,
+      connectionId: ticket.whatsappId,
+      status: ticket.status,
+      contact: contact ? { id: String(contact.id), name: contact.name || null, phone: contact.number || null } : null,
+      queue: queue ? { id: queue.id, name: queue.name } : null,
+      assignee: user ? { id: user.id, name: user.name } : null,
+      chat: state ? { jid: state.jid, lid: state.lid || null, isGroup: state.isGroup, archived: state.archived, pinned: state.pinned, mutedUntil: state.mutedUntil || null, unreadCount: state.unreadCount, lastMessageId: state.lastMessageId || null, lastMessageAt: state.lastMessageAt || null, revision: String(state.revision) } : null,
+      lastMessage: ticket.lastMessage || null,
+      updatedAt: ticket.updatedAt.toISOString()
+    };
+  }
 }
+
 export default PublicConversationService;

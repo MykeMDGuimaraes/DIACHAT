@@ -228,14 +228,19 @@ class BaileysMessageCommandProvider implements MessagingProvider {
           if (!target || typeof target !== "object") throw new AppError("Mensagem alvo invalida", 400);
           const key = target as Record<string, unknown>;
           if (typeof key.id !== "string" || !key.id) throw new AppError("Mensagem alvo invalida", 400);
+          const targetKey = {
+            id: key.id,
+            remoteJid: typeof key.remoteJid === "string" ? key.remoteJid : `${command.recipient}@s.whatsapp.net`,
+            fromMe: typeof key.fromMe === "boolean" ? key.fromMe : true
+          };
           if (command.messageKind === "reaction") {
             if (typeof command.requestPayload.emoji !== "string") throw new AppError("Reacao invalida", 400);
-            content = { react: { text: command.requestPayload.emoji, key: { id: key.id, remoteJid: `${command.recipient}@s.whatsapp.net`, fromMe: true } } };
+            content = { react: { text: command.requestPayload.emoji, key: targetKey } };
           } else if (command.messageKind === "edit") {
             if (typeof command.requestPayload.text !== "string" || !command.requestPayload.text.trim()) throw new AppError("Edicao invalida", 400);
-            content = { text: command.requestPayload.text, edit: { id: key.id, remoteJid: `${command.recipient}@s.whatsapp.net`, fromMe: true } };
+            content = { text: command.requestPayload.text, edit: targetKey };
           } else {
-            content = { delete: { id: key.id, remoteJid: `${command.recipient}@s.whatsapp.net`, fromMe: true } };
+            content = { delete: targetKey };
           }
         } else {
           content = mediaContent(command.messageKind, command.requestPayload);
