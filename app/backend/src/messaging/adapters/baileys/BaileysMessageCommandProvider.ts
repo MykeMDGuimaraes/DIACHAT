@@ -1,4 +1,5 @@
 import AppError from "../../../errors/AppError";
+import path from "path";
 import Contact from "../../../models/Contact";
 import Ticket from "../../../models/Ticket";
 import {
@@ -60,11 +61,17 @@ const mediaContent = (
   payload: Record<string, unknown>
 ): Record<string, unknown> => {
   const link = payload.link;
-  if (typeof link !== "string" || !/^https:\/\//i.test(link)) {
+  const localPath = payload.localPath;
+  const mediaSource = typeof link === "string" && /^https:\/\//i.test(link)
+    ? link
+    : typeof localPath === "string" && /^messaging\/[A-Za-z0-9._-]+$/.test(localPath)
+      ? path.resolve(process.cwd(), "storage", localPath)
+      : null;
+  if (!mediaSource) {
     throw new AppError("URL de midia invalida", 400);
   }
   return {
-    [kind]: { url: link },
+    [kind]: { url: mediaSource },
     ...(payload.caption ? { caption: payload.caption } : {}),
     ...(kind === "document" && payload.fileName
       ? { fileName: payload.fileName }
@@ -157,7 +164,7 @@ class BaileysMessageCommandProvider implements MessagingProvider {
       });
     }
     if (
-      !["text", "buttons", "image", "audio", "video", "document"].includes(
+      !["text", "buttons", "image", "audio", "video", "document", "reaction", "edit", "delete"].includes(
         command.messageKind
       )
     ) {
@@ -216,6 +223,20 @@ class BaileysMessageCommandProvider implements MessagingProvider {
       try {
         if (command.messageKind === "buttons") {
           buttons = nativeButtons(command.requestPayload);
+        } else if (["reaction", "edit", "delete"].includes(command.messageKind)) {
+          const target = command.requestPayload.target;
+          if (!target || typeof target !== "object") throw new AppError("Mensagem alvo invalida", 400);
+          const key = target as Record<string, unknown>;
+          if (typeof key.id !== "string" || !key.id) throw new AppError("Mensagem alvo invalida", 400);
+          if (command.messageKind === "reaction") {
+            if (typeof command.requestPayload.emoji !== "string") throw new AppError("Reacao invalida", 400);
+            content = { react: { text: command.requestPayload.emoji, key: { id: key.id, remoteJid: `${command.recipient}@s.whatsapp.net`, fromMe: true } } };
+          } else if (command.messageKind === "edit") {
+            if (typeof command.requestPayload.text !== "string" || !command.requestPayload.text.trim()) throw new AppError("Edicao invalida", 400);
+            content = { text: command.requestPayload.text, edit: { id: key.id, remoteJid: `${command.recipient}@s.whatsapp.net`, fromMe: true } };
+          } else {
+            content = { delete: { id: key.id, remoteJid: `${command.recipient}@s.whatsapp.net`, fromMe: true } };
+          }
         } else {
           content = mediaContent(command.messageKind, command.requestPayload);
         }

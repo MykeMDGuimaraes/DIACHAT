@@ -56,6 +56,7 @@ import MessagingCapacitySample from "../messaging/persistence/models/MessagingCa
 import ConversationAutomationState from "../messaging/persistence/models/ConversationAutomationState";
 import ConversationCommand from "../messaging/persistence/models/ConversationCommand";
 import WhatsAppChatState from "../messaging/persistence/models/WhatsAppChatState";
+import MessageTemplate from "../messaging/persistence/models/MessageTemplate";
 
 // eslint-disable-next-line
 const dbConfig = require("../config/database");
@@ -121,6 +122,7 @@ const models = [
   ConversationAutomationState,
   ConversationCommand,
   WhatsAppChatState,
+  MessageTemplate,
 ];
 
 sequelize.addModels(models);

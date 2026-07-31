@@ -19,9 +19,9 @@ const webhookBranchesMatched = (payload: Record<string, unknown>): number => {
   ).length;
 };
 
-describe("MessagingOpenApi 1.2", () => {
+describe("MessagingOpenApi 1.3", () => {
   it("publishes every Router P0 path as an authenticated full API path", () => {
-    expect(messagingOpenApi.info.version).toBe("1.2.0");
+    expect(messagingOpenApi.info.version).toBe("1.3.0");
 
     const requiredPaths = [
       "/api/v1/messages",
@@ -48,10 +48,9 @@ describe("MessagingOpenApi 1.2", () => {
 
   it("documents native buttons, correlation, epoch, scopes and stable webhook events", () => {
     const schemas = messagingOpenApi.components.schemas;
-    expect(schemas.MessageRequest.properties.type.enum).toEqual([
-      "text",
-      "buttons"
-    ]);
+    expect(schemas.MessageRequest.properties.type.enum).toEqual(
+      expect.arrayContaining(["text", "buttons", "image", "audio", "video", "document"])
+    );
     expect(schemas.MessageRequest.required).toEqual(
       expect.arrayContaining([
         "connectionId",

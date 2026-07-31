@@ -15,6 +15,12 @@ export {
   revokeApiCredentialHandler
 } from "../api/ApiCredentialController";
 export { createPublicTextMessageHandler } from "../api/PublicMessageController";
+export { createPresenceHandler } from "../api/PresenceController";
+export { listPublicConversationsHandler, getPublicConversationHandler } from "../api/PublicConversationController";
+export { createReactionHandler, deleteReactionHandler, editMessageHandler, deleteMessageHandler } from "../api/MessageMutationController";
+export { listInternalTemplatesHandler, createInternalTemplateHandler, updateInternalTemplateHandler, deleteInternalTemplateHandler, renderInternalTemplateHandler } from "../api/InternalTemplateController";
+export { getMessageMediaHandler } from "../api/MessageMediaController";
+export { publicMediaUpload } from "../api/PublicMediaUpload";
 export {
   createHandoffConversationHandler,
   createFinalizeConversationHandler

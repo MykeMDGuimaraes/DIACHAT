@@ -1,6 +1,8 @@
 import { Request, Response } from "express";
 import AppError from "../../errors/AppError";
 import PublicTextMessageService from "../application/PublicTextMessageService";
+import InternalTemplateService from "../application/InternalTemplateService";
+import { privateMediaRelativePath } from "./PublicMediaUpload";
 
 interface PublicTextMessageCreator {
   create: (input: {
@@ -35,13 +37,25 @@ export const createPublicTextMessageHandler = (
   }
 
   const messageType = req.body.type || "text";
+  if (req.file && process.env.MESSAGING_MEDIA_UPLOAD_V1_ENABLED !== "true") {
+    throw new AppError("FEATURE_NOT_ENABLED", 404);
+  }
+  let text = req.body.text;
+  if (req.body.internalTemplateId) {
+    const rendered = await new InternalTemplateService().render(
+      credential.companyId,
+      req.body.internalTemplateId,
+      req.body.variables || {}
+    );
+    text = rendered.text;
+  }
   const result = await service.create({
     companyId: credential.companyId,
     whatsappId: connectionId,
     idempotencyScope: credential.id,
     idempotencyKey,
     recipient: req.body.to,
-    text: req.body.text,
+    text,
     ...(messageType === "text"
       ? {}
       : {
@@ -51,7 +65,15 @@ export const createPublicTextMessageHandler = (
               ? req.body.template
               : messageType === "buttons"
                 ? { buttons: req.body.buttons }
-                : req.body.media
+                : req.file
+                  ? {
+                      localPath: privateMediaRelativePath(req.file.path),
+                      fileName: req.file.originalname,
+                      mimeType: req.file.mimetype,
+                      size: req.file.size,
+                      caption: req.body.caption
+                    }
+                  : req.body.media
         }),
     ...(req.body.externalTicketId !== undefined
       ? {

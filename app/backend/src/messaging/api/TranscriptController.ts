@@ -6,6 +6,7 @@ import AppError from "../../errors/AppError";
 import Message from "../../models/Message";
 import TranscriptService from "../application/TranscriptService";
 import { verifyTranscriptAttachment } from "../application/TranscriptAttachmentSigner";
+import { privateMediaDirectory } from "./PublicMediaUpload";
 
 interface TranscriptReader {
   list(input: {
@@ -14,6 +15,13 @@ interface TranscriptReader {
     conversationId: string;
     cursor?: string;
     limit?: number;
+    filters?: {
+      from?: string;
+      to?: string;
+      type?: string;
+      fromMe?: boolean;
+      mediaOnly?: boolean;
+    };
   }): Promise<unknown>;
 }
 
@@ -29,6 +37,13 @@ export const createTranscriptHandler =
       cursor:
         typeof req.query.cursor === "string" ? req.query.cursor : undefined,
       limit: req.query.limit === undefined ? undefined : Number(req.query.limit)
+      ,filters: {
+        from: typeof req.query.from === "string" ? req.query.from : undefined,
+        to: typeof req.query.to === "string" ? req.query.to : undefined,
+        type: typeof req.query.type === "string" ? req.query.type : undefined,
+        fromMe: req.query.fromMe === undefined ? undefined : req.query.fromMe === "true",
+        mediaOnly: req.query.mediaOnly === "true"
+      }
     });
     return res.json(result);
   };
@@ -61,7 +76,8 @@ export const transcriptMediaHandler = async (
   const storedPath = message?.getDataValue("mediaUrl");
   if (!storedPath) throw new AppError("Anexo não encontrado", 404);
 
-  const root = path.resolve(uploadConfig.directory);
+  const isPrivate = storedPath.startsWith("messaging/");
+  const root = path.resolve(isPrivate ? path.dirname(privateMediaDirectory) : uploadConfig.directory);
   const target = path.resolve(root, storedPath);
   const relative = path.relative(root, target);
   if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {

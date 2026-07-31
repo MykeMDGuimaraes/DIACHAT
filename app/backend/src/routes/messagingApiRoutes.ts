@@ -5,6 +5,20 @@ import {
   listApiCredentialsHandler,
   revokeApiCredentialHandler,
   createPublicTextMessageHandler,
+  createPresenceHandler,
+  createReactionHandler,
+  deleteReactionHandler,
+  editMessageHandler,
+  deleteMessageHandler,
+  listPublicConversationsHandler,
+  getPublicConversationHandler,
+  listInternalTemplatesHandler,
+  createInternalTemplateHandler,
+  updateInternalTemplateHandler,
+  deleteInternalTemplateHandler,
+  renderInternalTemplateHandler,
+  getMessageMediaHandler,
+  publicMediaUpload,
   createHandoffConversationHandler,
   createFinalizeConversationHandler,
   createIntegrationReadinessHandler,
@@ -138,7 +152,30 @@ messagingApiRoutes.post(
   apiKeyAuth,
   publicApiRateLimit,
   requireApiScope("messages:write"),
+  publicMediaUpload.single("media"),
   createPublicTextMessageHandler()
+);
+messagingApiRoutes.get("/messages/:messageId/media", apiKeyAuth, publicApiRateLimit, requireApiScope("media:read"), getMessageMediaHandler);
+messagingApiRoutes.get("/message-templates", isAuth, isMessagingAdmin, listInternalTemplatesHandler);
+messagingApiRoutes.post("/message-templates", isAuth, isMessagingAdmin, createInternalTemplateHandler);
+messagingApiRoutes.put("/message-templates/:templateId", isAuth, isMessagingAdmin, updateInternalTemplateHandler);
+messagingApiRoutes.delete("/message-templates/:templateId", isAuth, isMessagingAdmin, deleteInternalTemplateHandler);
+messagingApiRoutes.post("/message-templates/:templateId/render", apiKeyAuth, requireApiScope("templates:write"), renderInternalTemplateHandler);
+
+messagingApiRoutes.get("/conversations", apiKeyAuth, publicApiRateLimit, requireApiScope("conversations:read"), listPublicConversationsHandler());
+messagingApiRoutes.get("/conversations/:conversationId", apiKeyAuth, publicApiRateLimit, requireApiScope("conversations:read"), getPublicConversationHandler());
+
+messagingApiRoutes.post("/messages/:messageId/reactions", apiKeyAuth, publicApiRateLimit, requireApiScope("reactions:write"), createReactionHandler());
+messagingApiRoutes.delete("/messages/:messageId/reactions", apiKeyAuth, publicApiRateLimit, requireApiScope("reactions:write"), deleteReactionHandler());
+messagingApiRoutes.patch("/messages/:messageId", apiKeyAuth, publicApiRateLimit, requireApiScope("messages:manage"), editMessageHandler());
+messagingApiRoutes.delete("/messages/:messageId", apiKeyAuth, publicApiRateLimit, requireApiScope("messages:manage"), deleteMessageHandler());
+
+messagingApiRoutes.post(
+  "/presence",
+  apiKeyAuth,
+  publicApiRateLimit,
+  requireApiScope("presence:write"),
+  createPresenceHandler()
 );
 
 messagingApiRoutes.post(

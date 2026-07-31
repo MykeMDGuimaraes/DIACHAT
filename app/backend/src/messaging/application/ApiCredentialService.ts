@@ -45,7 +45,13 @@ class ApiCredentialService {
       "messages:write",
       "conversations:write",
       "integration:read",
-      "transcript:read"
+      "transcript:read",
+      "conversations:read",
+      "presence:write",
+      "reactions:write",
+      "messages:manage",
+      "media:read",
+      "templates:write"
     ]);
     if (
       !input.name.trim() ||

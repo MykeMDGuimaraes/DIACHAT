@@ -3,6 +3,7 @@ import { Op } from "sequelize";
 import AppError from "../../errors/AppError";
 import Queue from "../../models/Queue";
 import Whatsapp from "../../models/Whatsapp";
+import CapabilityResolver from "./CapabilityResolver";
 
 interface ReadinessInput {
   companyId: number;
@@ -38,14 +39,15 @@ class IntegrationReadinessService {
   // Parameter property keeps readiness probes deterministic in tests.
   // eslint-disable-next-line no-useless-constructor
   constructor(
-    private readonly dependencies: ReadinessDependencies = defaultDependencies
+    private readonly dependencies: ReadinessDependencies = defaultDependencies,
+    private readonly capabilities = new CapabilityResolver()
   ) {}
 
   async check(input: ReadinessInput): Promise<{
     ready: boolean;
     connection: { id: number; status: string };
     queues: Array<{ id: string; name?: string }>;
-    capabilities: { buttons: boolean };
+    capabilities: Record<string, boolean>;
   }> {
     if (
       !Number.isInteger(input.connectionId) ||
@@ -69,9 +71,7 @@ class IntegrationReadinessService {
     const connected = ["connected", "open"].includes(
       String(connection.status || "").toLowerCase()
     );
-    const buttons =
-      String(connection.channelType || "baileys").toLowerCase() !==
-      "meta_cloud";
+    const capabilities = this.capabilities.resolve(connection.channelType).capabilities;
     const queueById = new Map(queues.map(queue => [Number(queue.id), queue]));
     const resolvedQueues = queueIds
       .filter(id => queueById.has(id))
@@ -83,13 +83,13 @@ class IntegrationReadinessService {
         };
       });
     return {
-      ready: connected && buttons && resolvedQueues.length === 2,
+      ready: connected && capabilities.buttons && resolvedQueues.length === 2,
       connection: {
         id: Number(connection.id),
         status: connected ? "connected" : "disconnected"
       },
       queues: resolvedQueues,
-      capabilities: { buttons }
+      capabilities
     };
   }
 }
