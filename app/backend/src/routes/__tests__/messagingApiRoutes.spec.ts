@@ -75,6 +75,7 @@ jest.mock("../../messaging/public/http", () => {
         jest.fn((_req: Request, _res: Response, next: NextFunction) => next())
     },
     messagingOpenApi: {},
+    messagingAdminOpenApi: {},
     isMessagingAdmin
   };
 });
@@ -102,6 +103,19 @@ const bearerFor = (profile: string): string =>
   })}`;
 
 describe("messaging admin routes", () => {
+  it("publishes the administrative contract only to admins", async () => {
+    const denied = await request(buildApp())
+      .get("/api/v1/admin/openapi.json")
+      .set("Authorization", bearerFor("user"));
+    expect(denied.status).toBe(403);
+
+    const allowed = await request(buildApp())
+      .get("/api/v1/admin/openapi.json")
+      .set("Authorization", bearerFor("admin"));
+    expect(allowed.status).toBe(200);
+    expect(allowed.headers["cache-control"]).toContain("no-store");
+  });
+
   it.each([
     ["post", "/api/v1/credentials"],
     ["get", "/api/v1/credentials"],

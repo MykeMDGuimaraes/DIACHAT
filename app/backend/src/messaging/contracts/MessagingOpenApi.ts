@@ -821,23 +821,156 @@ export const messagingOpenApi = {
   }
 } as const;
 
-/**
- * Credentials issued to integrations must never discover the session-only
- * administration surface. Keep the complete contract above for the admin UI,
- * and publish this filtered immutable view from /api/v1/openapi.json.
- */
-export const messagingPublicOpenApi = {
-  ...messagingOpenApi,
-  paths: Object.fromEntries(
-    Object.entries(messagingOpenApi.paths).map(([path, operations]) => [
-      path,
-      Object.fromEntries(
-        Object.entries(operations).filter(([, operation]: [string, any]) =>
-          Array.isArray(operation?.security) && operation.security.some((entry: Record<string, unknown>) => Object.prototype.hasOwnProperty.call(entry, "ApiKey"))
-        )
-      )
-    ]).filter(([, operations]) => Object.keys(operations).length > 0)
-  )
+const errorResponse = (description: string) => ({
+  description,
+  content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } }
+});
+
+const commonPublicErrors = {
+  "400": errorResponse("Payload, header ou parâmetro inválido"),
+  "401": errorResponse("Credencial Bearer ausente, inválida ou revogada"),
+  "403": errorResponse("Scope ou conexão não autorizada"),
+  "404": errorResponse("Recurso não encontrado ou funcionalidade desabilitada"),
+  "409": errorResponse("Conflito de idempotência, estado ou concorrência"),
+  "422": errorResponse("Capability não suportada pelo canal"),
+  "429": errorResponse("Limite de requisições excedido")
+};
+const commonAdminErrors = {
+  "400": errorResponse("Payload ou parâmetro inválido"),
+  "401": errorResponse("Sessão ausente ou expirada"),
+  "403": errorResponse("Perfil administrativo obrigatório"),
+  "404": errorResponse("Recurso não encontrado")
+};
+const jsonBody = (schema: Record<string, unknown>) => ({
+  required: true,
+  content: { "application/json": { schema } }
+});
+const publicOperation = (
+  operation: Record<string, any>,
+  scope: string,
+  additions: Record<string, any> = {}
+) => ({
+  ...operation,
+  ...additions,
+  "x-required-scope": scope,
+  responses: { ...commonPublicErrors, ...(operation.responses || {}), ...(additions.responses || {}) }
+});
+const adminOperation = (
+  operation: Record<string, any>,
+  additions: Record<string, any> = {}
+) => ({
+  ...operation,
+  ...additions,
+  responses: { ...commonAdminErrors, ...(operation.responses || {}), ...(additions.responses || {}) }
+});
+const messageIdParameter = { name: "messageId", in: "path", required: true, schema: { type: "string" } };
+const templateIdParameter = { name: "templateId", in: "path", required: true, schema: { type: "string", format: "uuid" } };
+const optionalQuery = (name: string, schema: Record<string, unknown> = { type: "string" }) => ({ name, in: "query", required: false, schema });
+
+const documentedPaths: Record<string, any> = {
+  ...messagingOpenApi.paths,
+  "/api/v1/admin/openapi.json": {
+    get: adminOperation({ summary: "Retorna o contrato administrativo", security: sessionSecurity, responses: { "200": { description: "OpenAPI administrativo 3.1" } } })
+  },
+  "/api/v1/openapi.json": {
+    get: publicOperation(messagingOpenApi.paths["/api/v1/openapi.json"].get, "integration:read")
+  },
+  "/api/v1/messages": {
+    post: publicOperation(messagingOpenApi.paths["/api/v1/messages"].post, "messages:write")
+  },
+  "/api/v1/integration/ready": {
+    get: publicOperation(messagingOpenApi.paths["/api/v1/integration/ready"].get, "integration:read")
+  },
+  "/api/v1/conversations/{conversationId}/handoff": {
+    post: publicOperation(messagingOpenApi.paths["/api/v1/conversations/{conversationId}/handoff"].post, "conversations:write")
+  },
+  "/api/v1/conversations/{conversationId}/finalize": {
+    post: publicOperation(messagingOpenApi.paths["/api/v1/conversations/{conversationId}/finalize"].post, "conversations:write")
+  },
+  "/api/v1/conversations/{conversationId}/messages": {
+    get: publicOperation(messagingOpenApi.paths["/api/v1/conversations/{conversationId}/messages"].get, "transcript:read", {
+      parameters: [conversationIdParameter, optionalQuery("cursor"), optionalQuery("limit", { type: "integer", minimum: 1, maximum: 100, default: 50 }), optionalQuery("from", { type: "string", format: "date-time" }), optionalQuery("to", { type: "string", format: "date-time" }), optionalQuery("type"), optionalQuery("fromMe", { type: "boolean" }), optionalQuery("mediaOnly", { type: "boolean" }), optionalQuery("status", { type: "string", enum: ["accepted", "sent", "delivered", "read", "failed", "received"] }), optionalQuery("providerMessageId")]
+    })
+  },
+  "/api/v1/presence": {
+    post: publicOperation(messagingOpenApi.paths["/api/v1/presence"].post, "presence:write", { "x-feature-flag": "MESSAGING_PRESENCE_V1_ENABLED" })
+  },
+  "/api/v1/messages/{messageId}/reactions": {
+    post: publicOperation(messagingOpenApi.paths["/api/v1/messages/{messageId}/reactions"].post, "reactions:write", { "x-feature-flag": "MESSAGING_REACTIONS_V1_ENABLED", requestBody: jsonBody({ type: "object", additionalProperties: false, required: ["emoji"], properties: { emoji: { type: "string", minLength: 1, maxLength: 32 } } }) }),
+    delete: publicOperation(messagingOpenApi.paths["/api/v1/messages/{messageId}/reactions"].delete, "reactions:write", { "x-feature-flag": "MESSAGING_REACTIONS_V1_ENABLED" })
+  },
+  "/api/v1/messages/{messageId}": {
+    patch: publicOperation(messagingOpenApi.paths["/api/v1/messages/{messageId}"].patch, "messages:manage", { "x-feature-flag": "MESSAGING_REACTIONS_V1_ENABLED", requestBody: jsonBody({ type: "object", additionalProperties: false, required: ["text"], properties: { text: { type: "string", minLength: 1 } } }) }),
+    delete: publicOperation(messagingOpenApi.paths["/api/v1/messages/{messageId}"].delete, "messages:manage", { "x-feature-flag": "MESSAGING_REACTIONS_V1_ENABLED" })
+  },
+  "/api/v1/messages/{messageId}/media": {
+    get: publicOperation(messagingOpenApi.paths["/api/v1/messages/{messageId}/media"].get, "media:read")
+  },
+  "/api/v1/conversations": {
+    get: publicOperation(messagingOpenApi.paths["/api/v1/conversations"].get, "conversations:read", { parameters: [optionalQuery("connectionId", { type: "integer", minimum: 1 }), optionalQuery("cursor"), optionalQuery("limit", { type: "integer", minimum: 1, maximum: 100, default: 50 })] })
+  },
+  "/api/v1/conversations/{conversationId}": {
+    get: publicOperation(messagingOpenApi.paths["/api/v1/conversations/{conversationId}"].get, "conversations:read")
+  },
+  "/api/v1/message-templates/{templateId}/render": {
+    post: publicOperation(messagingOpenApi.paths["/api/v1/message-templates/{templateId}/render"].post, "templates:write", { "x-feature-flag": "MESSAGING_INTERNAL_TEMPLATES_V1_ENABLED", requestBody: jsonBody({ type: "object", additionalProperties: false, properties: { variables: { type: "object", additionalProperties: { type: ["string", "number", "boolean"] } } } }) })
+  },
+  "/api/v1/credentials": {
+    get: adminOperation(messagingOpenApi.paths["/api/v1/credentials"].get),
+    post: adminOperation(messagingOpenApi.paths["/api/v1/credentials"].post, { requestBody: jsonBody({ type: "object", additionalProperties: false, required: ["name", "scopes", "connectionIds"], properties: { name: { type: "string", minLength: 1 }, scopes: { type: "array", items: { type: "string", enum: messagingOpenApi["x-api-scopes"] } }, connectionIds: { type: "array", items: { type: "integer", minimum: 1 } } } }) })
+  },
+  "/api/v1/credentials/{credentialId}": {
+    delete: adminOperation({ summary: "Revoga uma credencial pública", security: sessionSecurity, parameters: [{ name: "credentialId", in: "path", required: true, schema: { type: "string", format: "uuid" } }], responses: { "204": { description: "Credencial revogada" } } })
+  },
+  "/api/v1/webhook-subscriptions": {
+    get: adminOperation(messagingOpenApi.paths["/api/v1/webhook-subscriptions"].get),
+    post: adminOperation(messagingOpenApi.paths["/api/v1/webhook-subscriptions"].post, { requestBody: jsonBody({ type: "object", required: ["name", "url", "events"], properties: { name: { type: "string" }, url: { type: "string", format: "uri" }, events: { type: "array", items: { type: "string" } }, connectionIds: { type: "array", items: { type: "integer" } }, includeApiOrigin: { type: "boolean", default: false } } }) })
+  },
+  "/api/v1/webhook-subscriptions/{subscriptionId}": {
+    put: adminOperation({ summary: "Atualiza e opcionalmente rotaciona uma assinatura", security: sessionSecurity, parameters: [{ name: "subscriptionId", in: "path", required: true, schema: { type: "string", format: "uuid" } }], requestBody: jsonBody({ type: "object", additionalProperties: true }), responses: { "200": { description: "Assinatura atualizada" } } }),
+    delete: adminOperation({ summary: "Exclui uma assinatura", security: sessionSecurity, parameters: [{ name: "subscriptionId", in: "path", required: true, schema: { type: "string", format: "uuid" } }], responses: { "204": { description: "Assinatura excluída" } } })
+  },
+  "/api/v1/webhook-deliveries": {
+    get: adminOperation({ summary: "Lista entregas sem corpo ou PII", security: sessionSecurity, parameters: [optionalQuery("subscriptionId"), optionalQuery("status")], responses: { "200": { description: "Entregas" } } })
+  },
+  "/api/v1/webhook-deliveries/{deliveryId}/retry": {
+    post: adminOperation({ summary: "Reagenda uma dead-letter ainda retida", security: sessionSecurity, parameters: [{ name: "deliveryId", in: "path", required: true, schema: { type: "string", format: "uuid" } }], responses: { "202": { description: "Retry aceito" }, "409": errorResponse("Entrega não está em dead-letter"), "410": errorResponse("Snapshot expirado ou purgado") } })
+  },
+  "/api/v1/message-templates": {
+    get: adminOperation({ summary: "Lista templates internos", security: sessionSecurity, responses: { "200": { description: "Templates" } } }),
+    post: adminOperation({ summary: "Cria template interno", security: sessionSecurity, requestBody: jsonBody({ type: "object", required: ["name", "content"], properties: { name: { type: "string" }, content: { type: "string" }, variables: { type: "array", items: { type: "string" } }, active: { type: "boolean" } } }), responses: { "201": { description: "Template criado" } } })
+  },
+  "/api/v1/message-templates/{templateId}": {
+    put: adminOperation({ summary: "Atualiza template interno", security: sessionSecurity, parameters: [templateIdParameter], requestBody: jsonBody({ type: "object", additionalProperties: false, properties: { name: { type: "string" }, content: { type: "string" }, variables: { type: "array", items: { type: "string" } }, active: { type: "boolean" } } }), responses: { "200": { description: "Template atualizado" } } }),
+    delete: adminOperation({ summary: "Exclui template interno", security: sessionSecurity, parameters: [templateIdParameter], responses: { "204": { description: "Template excluído" } } })
+  },
+  "/api/v1/channels/meta-cloud": {
+    get: adminOperation({ summary: "Lista canais Meta Cloud", security: sessionSecurity, "x-feature-flag": "MESSAGING_META_CLOUD_ENABLED", responses: { "200": { description: "Canais oficiais" } } }),
+    post: adminOperation({ summary: "Cria canal Meta Cloud", security: sessionSecurity, "x-feature-flag": "MESSAGING_META_CLOUD_ENABLED", requestBody: jsonBody({ type: "object", additionalProperties: true }), responses: { "201": { description: "Canal criado" } } })
+  },
+  "/api/v1/channels/meta-cloud/{whatsappId}/credentials": {
+    put: adminOperation({ summary: "Rotaciona credenciais Meta Cloud", security: sessionSecurity, "x-feature-flag": "MESSAGING_META_CLOUD_ENABLED", parameters: [{ name: "whatsappId", in: "path", required: true, schema: { type: "integer", minimum: 1 } }], requestBody: jsonBody({ type: "object", additionalProperties: true }), responses: { "200": { description: "Credenciais rotacionadas" } } })
+  },
+  "/api/v1/channels/meta-cloud/{whatsappId}": {
+    delete: adminOperation({ summary: "Revoga canal Meta Cloud", security: sessionSecurity, "x-feature-flag": "MESSAGING_META_CLOUD_ENABLED", parameters: [{ name: "whatsappId", in: "path", required: true, schema: { type: "integer", minimum: 1 } }], responses: { "204": { description: "Canal revogado" } } })
+  }
 };
 
-export default messagingOpenApi;
+export const messagingCompleteOpenApi = { ...messagingOpenApi, paths: documentedPaths };
+
+const filterBySecurity = (scheme: "ApiKey" | "Session") => Object.fromEntries(
+  Object.entries(documentedPaths).map(([path, operations]) => [path, Object.fromEntries(
+    Object.entries(operations as Record<string, any>).filter(([, operation]) =>
+      Array.isArray(operation?.security) && operation.security.some((entry: Record<string, unknown>) => Object.prototype.hasOwnProperty.call(entry, scheme))
+    )
+  )]).filter(([, operations]) => Object.keys(operations).length > 0)
+);
+
+export const messagingPublicOpenApi = { ...messagingCompleteOpenApi, paths: filterBySecurity("ApiKey") };
+export const messagingAdminOpenApi = {
+  ...messagingCompleteOpenApi,
+  info: { ...messagingCompleteOpenApi.info, title: "DIA CHAT Messaging Administration API" },
+  paths: filterBySecurity("Session")
+};
+
+export default messagingCompleteOpenApi;
