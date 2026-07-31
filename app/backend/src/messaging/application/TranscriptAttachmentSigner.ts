@@ -16,17 +16,26 @@ const digest = (
     .update(`${messageId}.${companyId}.${expires}`)
     .digest("hex");
 
+export const signTranscriptAttachmentDetails = (
+  messageId: string,
+  companyId: number,
+  now = new Date()
+): { url: string; expiresAt: string } => {
+  const expires = Math.floor(now.getTime() / 1000) + 300;
+  const signature = digest(messageId, companyId, expires);
+  return {
+    url: `/api/v1/transcript/media/${encodeURIComponent(
+      messageId
+    )}?companyId=${companyId}&expires=${expires}&signature=${signature}`,
+    expiresAt: new Date(expires * 1000).toISOString()
+  };
+};
+
 export const signTranscriptAttachment = (
   messageId: string,
   companyId: number,
   now = new Date()
-): string => {
-  const expires = Math.floor(now.getTime() / 1000) + 300;
-  const signature = digest(messageId, companyId, expires);
-  return `/api/v1/transcript/media/${encodeURIComponent(
-    messageId
-  )}?companyId=${companyId}&expires=${expires}&signature=${signature}`;
-};
+): string => signTranscriptAttachmentDetails(messageId, companyId, now).url;
 
 export const verifyTranscriptAttachment = (input: {
   messageId: string;

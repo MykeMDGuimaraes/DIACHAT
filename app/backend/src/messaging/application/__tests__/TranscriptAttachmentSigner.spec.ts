@@ -1,5 +1,6 @@
 import {
   signTranscriptAttachment,
+  signTranscriptAttachmentDetails,
   verifyTranscriptAttachment
 } from "../TranscriptAttachmentSigner";
 
@@ -16,6 +17,9 @@ describe("TranscriptAttachmentSigner", () => {
 
   it("issues a five-minute company-bound URL", () => {
     const now = new Date("2026-07-28T20:00:00.000Z");
+    expect(signTranscriptAttachmentDetails("msg:id", 7, now).expiresAt).toBe(
+      "2026-07-28T20:05:00.000Z"
+    );
     const url = new URL(
       signTranscriptAttachment("msg:id", 7, now),
       "https://diachat.example"

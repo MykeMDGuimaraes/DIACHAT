@@ -755,7 +755,49 @@ export const messagingOpenApi = {
       delete: { summary: "Exclui mensagem Baileys", "x-phase": "1", "x-status": "available", security: apiSecurity, parameters: [{ name: "messageId", in: "path", required: true, schema: { type: "string" } }, idempotencyHeader], responses: { "200": acceptedResponse, "202": acceptedResponse } }
     },
     "/api/v1/messages/{messageId}/media": {
-      get: { summary: "Obtem URL assinada de mídia", "x-phase": "1", "x-status": "available", security: apiSecurity, parameters: [{ name: "messageId", in: "path", required: true, schema: { type: "string" } }], responses: { "200": { description: "URL assinada de curta duração" }, "404": { description: "Mídia não encontrada" } } }
+      get: {
+        summary: "Obtém mídia como URL assinada, download ou Base64",
+        description: "format=url retorna metadados e URL assinada (padrão); format=download transmite o arquivo; format=base64 retorna a mídia em JSON. includeBase64=true pode acrescentar Base64 à resposta do formato url.",
+        "x-phase": "1",
+        "x-status": "available",
+        security: apiSecurity,
+        parameters: [
+          { name: "messageId", in: "path", required: true, schema: { type: "string" } },
+          { name: "format", in: "query", required: false, schema: { type: "string", enum: ["url", "download", "base64"], default: "url" } },
+          { name: "includeBase64", in: "query", required: false, description: "Acrescenta Base64 ao JSON de format=url. Não pode ser usado com format=download.", schema: { type: "boolean", default: false } }
+        ],
+        responses: {
+          "200": {
+            description: "Metadados JSON ou conteúdo binário, conforme format",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["messageId", "mediaType", "mimeType", "fileName", "sizeBytes", "sha256", "available", "url", "downloadUrl", "expiresAt"],
+                  properties: {
+                    messageId: { type: "string" },
+                    mediaType: { type: ["string", "null"] },
+                    mimeType: { type: ["string", "null"] },
+                    fileName: { type: "string" },
+                    sizeBytes: { type: "integer", minimum: 0 },
+                    sha256: { type: "string", pattern: "^[a-f0-9]{64}$" },
+                    available: { type: "boolean", const: true },
+                    url: { type: ["string", "null"], description: "Alias retrocompatível de downloadUrl." },
+                    downloadUrl: { type: ["string", "null"] },
+                    expiresAt: { type: ["string", "null"], format: "date-time" },
+                    encoding: { type: "string", const: "base64" },
+                    base64: { type: "string", contentEncoding: "base64" }
+                  }
+                }
+              },
+              "application/octet-stream": { schema: { type: "string", format: "binary" } }
+            }
+          },
+          "400": { description: "Formato ou combinação de parâmetros inválida" },
+          "404": { description: "Mídia não encontrada ou fora das conexões autorizadas" },
+          "413": { description: "Arquivo excede MESSAGING_MEDIA_BASE64_MAX_BYTES para retorno Base64" }
+        }
+      }
     },
     "/api/v1/conversations": {
       get: { summary: "Lista conversas espelhadas", "x-phase": "1", "x-status": "available", security: apiSecurity, responses: { "200": { description: "Pagina de conversas" } } }
