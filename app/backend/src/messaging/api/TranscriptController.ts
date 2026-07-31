@@ -15,12 +15,14 @@ interface TranscriptReader {
     conversationId: string;
     cursor?: string;
     limit?: number;
-    filters?: {
+      filters?: {
       from?: string;
       to?: string;
       type?: string;
       fromMe?: boolean;
-      mediaOnly?: boolean;
+        mediaOnly?: boolean;
+        status?: "accepted" | "sent" | "delivered" | "read" | "failed" | "received";
+        providerMessageId?: string;
     };
   }): Promise<unknown>;
 }
@@ -30,19 +32,28 @@ export const createTranscriptHandler =
   async (req: Request, res: Response): Promise<Response> => {
     const credential = req.apiCredential;
     if (!credential) throw new AppError("Credencial de API inválida", 401);
+    const from = typeof req.query.from === "string" ? req.query.from : undefined;
+    const to = typeof req.query.to === "string" ? req.query.to : undefined;
+    if ((from && Number.isNaN(new Date(from).getTime())) || (to && Number.isNaN(new Date(to).getTime())) || (from && to && new Date(from) > new Date(to))) throw new AppError("Periodo do transcript invalido", 400);
+    const status = typeof req.query.status === "string" ? req.query.status : undefined;
+    if (status && !["accepted", "sent", "delivered", "read", "failed", "received"].includes(status)) throw new AppError("Status do transcript invalido", 400);
+    const fromMe = req.query.fromMe === undefined ? undefined : req.query.fromMe === "true" ? true : req.query.fromMe === "false" ? false : undefined;
+    if (req.query.fromMe !== undefined && fromMe === undefined) throw new AppError("Filtro fromMe invalido", 400);
     const result = await service.list({
       companyId: credential.companyId,
       allowedConnectionIds: credential.connectionIds,
       conversationId: req.params.conversationId,
       cursor:
         typeof req.query.cursor === "string" ? req.query.cursor : undefined,
-      limit: req.query.limit === undefined ? undefined : Number(req.query.limit)
-      ,filters: {
-        from: typeof req.query.from === "string" ? req.query.from : undefined,
-        to: typeof req.query.to === "string" ? req.query.to : undefined,
+      limit: req.query.limit === undefined ? undefined : Number(req.query.limit),
+      filters: {
+        from,
+        to,
         type: typeof req.query.type === "string" ? req.query.type : undefined,
-        fromMe: req.query.fromMe === undefined ? undefined : req.query.fromMe === "true",
-        mediaOnly: req.query.mediaOnly === "true"
+        fromMe,
+        mediaOnly: req.query.mediaOnly === "true",
+        ...(status ? { status: status as "accepted" | "sent" | "delivered" | "read" | "failed" | "received" } : {}),
+        providerMessageId: typeof req.query.providerMessageId === "string" ? req.query.providerMessageId : undefined
       }
     });
     return res.json(result);

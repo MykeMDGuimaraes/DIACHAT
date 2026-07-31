@@ -35,7 +35,8 @@ import {
   webhookAdminHandlers,
   publicApiRateLimit,
   messagingOpenApi,
-  isMessagingAdmin
+  isMessagingAdmin,
+  requireMetaCloudPhase2
 } from "../messaging/public/http";
 import isAuth from "../middleware/isAuth";
 
@@ -115,24 +116,28 @@ messagingApiRoutes.post(
 
 messagingApiRoutes.post(
   "/channels/meta-cloud",
+  requireMetaCloudPhase2,
   isAuth,
   isMessagingAdmin,
   createMetaCloudChannelHandler()
 );
 messagingApiRoutes.get(
   "/channels/meta-cloud",
+  requireMetaCloudPhase2,
   isAuth,
   isMessagingAdmin,
   listMetaCloudChannelsHandler
 );
 messagingApiRoutes.put(
   "/channels/meta-cloud/:whatsappId/credentials",
+  requireMetaCloudPhase2,
   isAuth,
   isMessagingAdmin,
   rotateMetaCloudChannelHandler
 );
 messagingApiRoutes.delete(
   "/channels/meta-cloud/:whatsappId",
+  requireMetaCloudPhase2,
   isAuth,
   isMessagingAdmin,
   revokeMetaCloudChannelHandler
@@ -140,10 +145,12 @@ messagingApiRoutes.delete(
 
 messagingApiRoutes.get(
   "/channels/meta-cloud/:credentialPublicId/webhook",
+  requireMetaCloudPhase2,
   verifyMetaWebhookHandler
 );
 messagingApiRoutes.post(
   "/channels/meta-cloud/:credentialPublicId/webhook",
+  requireMetaCloudPhase2,
   receiveMetaWebhookHandler
 );
 

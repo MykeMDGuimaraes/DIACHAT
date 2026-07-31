@@ -2,6 +2,7 @@ import { Op } from "sequelize";
 import AppError from "../../errors/AppError";
 import Message from "../../models/Message";
 import Ticket from "../../models/Ticket";
+import MessageCommand from "../persistence/models/MessageCommand";
 import { signTranscriptAttachment } from "./TranscriptAttachmentSigner";
 
 interface TranscriptCursor {
@@ -42,6 +43,7 @@ interface TranscriptDependencies {
     filters?: TranscriptFilters;
   }) => Promise<any[]>;
   signAttachment: (messageId: string, companyId: number) => string;
+  resolveProviderMessageIds?: (companyId: number, providerMessageId: string) => Promise<string[]>;
 }
 
 const defaultDependencies: TranscriptDependencies = {
@@ -61,7 +63,9 @@ const defaultDependencies: TranscriptDependencies = {
         ],
         ...(filters?.fromMe === undefined ? {} : { fromMe: filters.fromMe }),
         ...(filters?.mediaOnly ? { mediaUrl: { [Op.ne]: null } } : {}),
-        ...(filters?.type ? { mediaType: filters.type } : {})
+        ...(filters?.type ? { mediaType: filters.type } : {}),
+        ...((filters as any)?.messageIds ? { id: { [Op.in]: (filters as any).messageIds } } : {}),
+        ...statusWhere(filters?.status)
       },
       order: [
         ["createdAt", "DESC"],
@@ -70,6 +74,10 @@ const defaultDependencies: TranscriptDependencies = {
       limit: limit + 1
     }),
   signAttachment: signTranscriptAttachment
+  ,resolveProviderMessageIds: async (companyId, providerMessageId) => {
+    const commands = await MessageCommand.findAll({ where: { companyId, providerMessageId }, attributes: ["messageId"] });
+    return commands.map(command => String(command.messageId)).filter(Boolean);
+  }
 };
 
 export interface TranscriptFilters {
@@ -78,7 +86,21 @@ export interface TranscriptFilters {
   type?: string;
   fromMe?: boolean;
   mediaOnly?: boolean;
+  status?: "accepted" | "sent" | "delivered" | "read" | "failed" | "received";
+  providerMessageId?: string;
+  /** Internal resolved IDs; never accepted from HTTP. */
+  messageIds?: string[];
 }
+
+const statusWhere = (status?: TranscriptFilters["status"]): Record<string, unknown> => {
+  if (!status) return {};
+  if (status === "received") return { fromMe: false };
+  if (status === "failed") return { fromMe: true, ack: { [Op.lt]: 0 } };
+  if (status === "read") return { fromMe: true, [Op.or]: [{ read: true }, { ack: { [Op.gte]: 4 } }] };
+  if (status === "delivered") return { fromMe: true, ack: { [Op.gte]: 3 } };
+  if (status === "sent") return { fromMe: true, ack: { [Op.gte]: 1 } };
+  return { fromMe: true, ack: { [Op.lte]: 0 } };
+};
 
 const statusFor = (message: any): string => {
   if (!message.fromMe) return "received";
@@ -138,12 +160,16 @@ class TranscriptService {
       throw new AppError("Conversa não encontrada", 404);
     }
 
+    const providerMessageIds = input.filters?.providerMessageId
+      ? await (this.dependencies.resolveProviderMessageIds || defaultDependencies.resolveProviderMessageIds!)(input.companyId, input.filters.providerMessageId)
+      : undefined;
+    if (providerMessageIds && providerMessageIds.length === 0) return { items: [], nextCursor: null };
     const rows = await this.dependencies.findMessages({
       ticketId: ticket.id,
       companyId: input.companyId,
       cursor,
       limit,
-      filters: input.filters
+      filters: providerMessageIds ? { ...input.filters, providerMessageId: undefined, messageIds: providerMessageIds } as any : input.filters
     });
     const page = rows.slice(0, limit);
     const items = page.map(message => {
