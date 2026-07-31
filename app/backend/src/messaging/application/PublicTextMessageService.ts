@@ -10,6 +10,7 @@ import { createRequestFingerprint, validateIdempotencyKey } from "../domain/Idem
 import MessageCommand from "../persistence/models/MessageCommand";
 import MessagingOutboxEvent from "../persistence/models/MessagingOutboxEvent";
 import ConversationAutomationService from "./ConversationAutomationService";
+import CapabilityResolver from "./CapabilityResolver";
 
 export interface CreatePublicTextMessageInput {
   companyId: number;
@@ -91,7 +92,10 @@ const defaultDependencies: PublicTextMessageDependencies = {
 class PublicTextMessageService {
   // Parameter property keeps the transactional repository replaceable in tests.
   // eslint-disable-next-line no-useless-constructor
-  constructor(private readonly dependencies = defaultDependencies) {}
+  constructor(
+    private readonly dependencies = defaultDependencies,
+    private readonly capabilities = new CapabilityResolver()
+  ) {}
 
   // eslint-disable-next-line class-methods-use-this
   createCommandId(): string {
@@ -142,7 +146,8 @@ class PublicTextMessageService {
     const validText = !["text", "buttons"].includes(kind) ||
       (typeof input.text === "string" && input.text.trim().length > 0);
     const validMedia = !["image", "audio", "video", "document"].includes(kind) ||
-      (typeof payload.link === "string" && /^https:\/\//i.test(payload.link));
+      ((typeof payload.link === "string" && /^https:\/\//i.test(payload.link)) ||
+        (typeof payload.localPath === "string" && /^messaging\/[A-Za-z0-9._-]+$/.test(payload.localPath)));
     const validTemplate = kind !== "template" ||
       (typeof payload.name === "string" && typeof payload.language === "string");
     const buttons = Array.isArray(payload.buttons) ? payload.buttons : [];
@@ -206,16 +211,11 @@ class PublicTextMessageService {
       if (!whatsapp) {
         throw new AppError("Canal de WhatsApp nao encontrado", 404);
       }
-      const provider = whatsapp.channelType === "meta_cloud" ? "meta_cloud" : "baileys";
-      if (kind === "buttons" && provider !== "baileys") {
-        throw new AppError("CAPABILITY_NOT_SUPPORTED", 422);
-      }
-      if (kind === "template" && provider !== "meta_cloud") {
-        throw new AppError(
-          "Templates estao disponiveis somente em canais Meta Cloud",
-          400
-        );
-      }
+      const { provider } = this.capabilities.resolve(whatsapp.channelType);
+      const capability = kind === "buttons" ? "buttons" :
+        ["image", "audio", "video", "document"].includes(kind) ? "media" :
+        kind === "template" ? "officialTemplate" : "text";
+      this.capabilities.require(whatsapp.channelType, capability);
       let contact = await this.dependencies.findContact(
         recipient,
         normalizedInput.companyId,
@@ -290,7 +290,7 @@ class PublicTextMessageService {
           fromMe: true,
           body: preview,
           mediaType: kind === "text" || kind === "template" ? undefined : kind,
-          mediaUrl: payload.link,
+          mediaUrl: payload.localPath || payload.link,
           ticketId: ticket.id,
           contactId: contact.id,
           companyId: normalizedInput.companyId

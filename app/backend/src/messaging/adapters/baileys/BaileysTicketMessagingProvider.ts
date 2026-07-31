@@ -6,6 +6,7 @@ import { sendBaileysSocketMessage } from "./BaileysSocketPort";
 type TicketSocket = Pick<WASocket, "sendMessage"> & {
   relayMessage?: WASocket["relayMessage"];
   user?: WASocket["user"];
+  sendPresenceUpdate?: WASocket["sendPresenceUpdate"];
 };
 
 interface SendTicketTextInput {
@@ -128,6 +129,23 @@ class BaileysTicketMessagingProvider {
       messageId,
       quoted
     );
+  }
+
+  async sendPresence(ticket: Ticket, recipient: string, presence: "available" | "unavailable" | "composing" | "recording" | "paused"): Promise<void> {
+    let socket: TicketSocket;
+    try {
+      socket = await this.getSocket(ticket);
+    } catch (error) {
+      throw new RetryableSendError({
+        code: "BAILEYS_SOCKET_UNAVAILABLE",
+        message: "Sessao Baileys indisponivel para presenca",
+        details: { cause: error instanceof Error ? error.message : String(error) }
+      });
+    }
+    if (!socket.sendPresenceUpdate) {
+      throw new RetryableSendError({ code: "BAILEYS_PRESENCE_UNAVAILABLE", message: "Socket Baileys sem presenca" });
+    }
+    await socket.sendPresenceUpdate(presence, `${recipient}@s.whatsapp.net`);
   }
 }
 

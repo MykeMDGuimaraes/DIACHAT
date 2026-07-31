@@ -1,0 +1,10 @@
+import { Request, Response } from "express";
+import AppError from "../../errors/AppError";
+import InternalTemplateService from "../application/InternalTemplateService";
+import MessageTemplate from "../persistence/models/MessageTemplate";
+const service = new InternalTemplateService();
+export const listInternalTemplatesHandler = async (req: Request, res: Response) => res.json(await service.list(req.user.companyId));
+export const createInternalTemplateHandler = async (req: Request, res: Response) => { if (!req.body.name || !req.body.content) throw new AppError("VALIDATION_ERROR", 400); return res.status(201).json(await service.create(req.user.companyId, { ...req.body, createdBy: req.user.id })); };
+export const updateInternalTemplateHandler = async (req: Request, res: Response) => { const item = await MessageTemplate.findOne({ where: { companyId: req.user.companyId, publicId: req.params.templateId } }); if (!item) throw new AppError("Internal template nao encontrado", 404); await item.update({ ...(req.body.name !== undefined ? { name: String(req.body.name).trim() } : {}), ...(req.body.content !== undefined ? { content: String(req.body.content) } : {}), ...(Array.isArray(req.body.variables) ? { variables: req.body.variables } : {}), ...(req.body.active !== undefined ? { active: Boolean(req.body.active) } : {}), version: item.version + 1 }); return res.json(item); };
+export const deleteInternalTemplateHandler = async (req: Request, res: Response) => { const item = await MessageTemplate.findOne({ where: { companyId: req.user.companyId, publicId: req.params.templateId } }); if (!item) throw new AppError("Internal template nao encontrado", 404); await item.destroy(); return res.status(204).send(); };
+export const renderInternalTemplateHandler = async (req: Request, res: Response) => { const credential = req.apiCredential; if (!credential) throw new AppError("Credencial de API invalida", 401); if (process.env.MESSAGING_INTERNAL_TEMPLATES_V1_ENABLED !== "true") throw new AppError("FEATURE_NOT_ENABLED", 404); return res.json(await service.render(credential.companyId, req.params.templateId, req.body.variables || {})); };

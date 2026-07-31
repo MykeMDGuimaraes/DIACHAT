@@ -34,7 +34,7 @@ export const messagingOpenApi = {
   openapi: "3.1.0",
   info: {
     title: "DIA CHAT Messaging API",
-    version: "1.2.0",
+    version: "1.3.0",
     description:
       "Contrato público durável e idempotente do DIA CHAT para integrações de mensageria e automação."
   },
@@ -73,7 +73,7 @@ export const messagingOpenApi = {
         properties: {
           connectionId: { type: "integer", minimum: 1 },
           to: { type: "string", pattern: "^\\d{10,15}$" },
-          type: { type: "string", enum: ["text", "buttons"] },
+          type: { type: "string", enum: ["text", "buttons", "image", "audio", "video", "document", "template"] },
           text: { type: "string", minLength: 1 },
           buttons: {
             type: "array",
@@ -81,6 +81,9 @@ export const messagingOpenApi = {
             maxItems: 3,
             items: { $ref: "#/components/schemas/Button" }
           },
+          media: { type: "object", description: "URL HTTPS da mídia; alternativamente envie multipart/form-data com o campo media." },
+          internalTemplateId: { type: "string", format: "uuid" },
+          variables: { type: "object", additionalProperties: { type: ["string", "number", "boolean"] } },
           externalTicketId: { type: "string", minLength: 1 },
           automationEpoch: { type: "integer", minimum: 0 }
         }
@@ -720,13 +723,46 @@ export const messagingOpenApi = {
         security: sessionSecurity,
         responses: { "201": { description: "Assinatura criada" } }
       }
+    },
+    "/api/v1/presence": {
+      post: {
+        summary: "Atualiza presenca Baileys (efemera)", "x-phase": "1", "x-status": "available", security: apiSecurity,
+        requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["connectionId", "to", "state"], properties: { connectionId: { type: "integer" }, to: { type: "string" }, state: { type: "string", enum: ["available", "unavailable", "composing", "recording", "paused"] }, duration: { type: "integer", maximum: 60 } } } } } },
+        responses: { "204": { description: "Presenca aceita sem persistencia ou retry" }, "422": { description: "Capability nao suportada" } }
+      }
+    },
+    "/api/v1/messages/{messageId}/reactions": {
+      post: { summary: "Envia reacao Baileys", "x-phase": "1", "x-status": "available", security: apiSecurity, parameters: [{ name: "messageId", in: "path", required: true, schema: { type: "string" } }, idempotencyHeader], responses: { "200": acceptedResponse, "202": acceptedResponse } },
+      delete: { summary: "Remove reacao Baileys", "x-phase": "1", "x-status": "available", security: apiSecurity, parameters: [{ name: "messageId", in: "path", required: true, schema: { type: "string" } }, idempotencyHeader], responses: { "200": acceptedResponse, "202": acceptedResponse } }
+    },
+    "/api/v1/messages/{messageId}": {
+      patch: { summary: "Edita mensagem Baileys", "x-phase": "1", "x-status": "available", security: apiSecurity, parameters: [{ name: "messageId", in: "path", required: true, schema: { type: "string" } }, idempotencyHeader], responses: { "200": acceptedResponse, "202": acceptedResponse } },
+      delete: { summary: "Exclui mensagem Baileys", "x-phase": "1", "x-status": "available", security: apiSecurity, parameters: [{ name: "messageId", in: "path", required: true, schema: { type: "string" } }, idempotencyHeader], responses: { "200": acceptedResponse, "202": acceptedResponse } }
+    },
+    "/api/v1/messages/{messageId}/media": {
+      get: { summary: "Obtem URL assinada de mídia", "x-phase": "1", "x-status": "available", security: apiSecurity, parameters: [{ name: "messageId", in: "path", required: true, schema: { type: "string" } }], responses: { "200": { description: "URL assinada de curta duração" }, "404": { description: "Mídia não encontrada" } } }
+    },
+    "/api/v1/conversations": {
+      get: { summary: "Lista conversas espelhadas", "x-phase": "1", "x-status": "available", security: apiSecurity, responses: { "200": { description: "Pagina de conversas" } } }
+    },
+    "/api/v1/conversations/{conversationId}": {
+      get: { summary: "Consulta conversa espelhada", "x-phase": "1", "x-status": "available", security: apiSecurity, parameters: [conversationIdParameter], responses: { "200": { description: "Conversa" } } }
+    },
+    "/api/v1/message-templates/{templateId}/render": {
+      post: { summary: "Renderiza internalTemplate sem enviar", "x-phase": "1", "x-status": "available", security: apiSecurity, parameters: [{ name: "templateId", in: "path", required: true, schema: { type: "string", format: "uuid" } }], responses: { "200": { description: "Template renderizado" } } }
     }
   },
   "x-api-scopes": [
     "messages:write",
     "conversations:write",
     "integration:read",
-    "transcript:read"
+    "transcript:read",
+    "conversations:read",
+    "presence:write",
+    "reactions:write",
+    "messages:manage",
+    "media:read",
+    "templates:write"
   ],
   "x-webhook-events": {
     payloadSchema: {

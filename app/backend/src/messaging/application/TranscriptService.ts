@@ -39,6 +39,7 @@ interface TranscriptDependencies {
     companyId: number;
     cursor: TranscriptCursor | null;
     limit: number;
+    filters?: TranscriptFilters;
   }) => Promise<any[]>;
   signAttachment: (messageId: string, companyId: number) => string;
 }
@@ -49,22 +50,18 @@ const defaultDependencies: TranscriptDependencies = {
       where: { uuid: conversationId, companyId },
       attributes: ["id", "uuid", "companyId", "whatsappId"]
     }),
-  findMessages: ({ ticketId, companyId, cursor, limit }) =>
+  findMessages: ({ ticketId, companyId, cursor, limit, filters }) =>
     Message.findAll({
       where: {
-        ticketId,
-        companyId,
-        ...(cursor
-          ? {
-              [Op.or]: [
-                { createdAt: { [Op.lt]: new Date(cursor.createdAt) } },
-                {
-                  createdAt: new Date(cursor.createdAt),
-                  id: { [Op.lt]: cursor.id }
-                }
-              ]
-            }
-          : {})
+        ticketId, companyId,
+        [Op.and]: [
+          ...(cursor ? [{ [Op.or]: [{ createdAt: { [Op.lt]: new Date(cursor.createdAt) } }, { createdAt: new Date(cursor.createdAt), id: { [Op.lt]: cursor.id } }] }] : []),
+          ...(filters?.from ? [{ createdAt: { [Op.gte]: new Date(filters.from) } }] : []),
+          ...(filters?.to ? [{ createdAt: { [Op.lte]: new Date(filters.to) } }] : [])
+        ],
+        ...(filters?.fromMe === undefined ? {} : { fromMe: filters.fromMe }),
+        ...(filters?.mediaOnly ? { mediaUrl: { [Op.ne]: null } } : {}),
+        ...(filters?.type ? { mediaType: filters.type } : {})
       },
       order: [
         ["createdAt", "DESC"],
@@ -74,6 +71,14 @@ const defaultDependencies: TranscriptDependencies = {
     }),
   signAttachment: signTranscriptAttachment
 };
+
+export interface TranscriptFilters {
+  from?: string;
+  to?: string;
+  type?: string;
+  fromMe?: boolean;
+  mediaOnly?: boolean;
+}
 
 const statusFor = (message: any): string => {
   if (!message.fromMe) return "received";
@@ -111,6 +116,7 @@ class TranscriptService {
     conversationId: string;
     cursor?: string;
     limit?: number;
+    filters?: TranscriptFilters;
   }): Promise<{ items: Record<string, unknown>[]; nextCursor: string | null }> {
     const limit = input.limit === undefined ? 50 : Number(input.limit);
     if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
@@ -136,7 +142,8 @@ class TranscriptService {
       ticketId: ticket.id,
       companyId: input.companyId,
       cursor,
-      limit
+      limit,
+      filters: input.filters
     });
     const page = rows.slice(0, limit);
     const items = page.map(message => {
