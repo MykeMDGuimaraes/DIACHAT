@@ -1,5 +1,6 @@
-import { Request, Response } from "express";
+import { randomUUID } from "crypto";
 import { promises as fs } from "fs";
+import { Request, Response } from "express";
 import AppError from "../../errors/AppError";
 import PublicTextMessageService from "../application/PublicTextMessageService";
 import InternalTemplateService from "../application/InternalTemplateService";
@@ -26,13 +27,10 @@ export const createPublicTextMessageHandler = (
   try {
   const credential = req.apiCredential;
   const connectionId = Number(req.body.connectionId);
-  const idempotencyKey = req.header("Idempotency-Key");
+  const idempotencyKey = `server:${randomUUID()}`;
 
   if (!credential) {
     throw new AppError("Credencial de API invalida", 401);
-  }
-  if (!idempotencyKey) {
-    throw new AppError("Idempotency-Key e obrigatoria", 400);
   }
   if (!Number.isInteger(connectionId) || !credential.connectionIds.includes(connectionId)) {
     throw new AppError("Canal de WhatsApp nao autorizado", 403);
@@ -110,10 +108,6 @@ export const createPublicTextMessageHandler = (
       : {})
   });
 
-  if (result.replayed) {
-    res.set("Idempotent-Replayed", "true");
-  }
-
   const body =
     result.command.responseSnapshot ||
     {
@@ -127,7 +121,7 @@ export const createPublicTextMessageHandler = (
         ? { contactId: String(result.command.contactId) }
         : {})
     };
-  return res.status(result.replayed ? 200 : 202).json(body);
+  return res.status(202).json(body);
   } catch (error) {
     if (req.file?.path) await fs.unlink(req.file.path).catch(() => undefined);
     throw error;

@@ -156,7 +156,6 @@ describe("messaging admin routes", () => {
     const response = await request(buildApp())
       [method](route)
       .set("Authorization", "Bearer dch_live_test.secret")
-      .set("Idempotency-Key", "request-12345678")
       .send({});
 
     expect(response.status).toBe(202);

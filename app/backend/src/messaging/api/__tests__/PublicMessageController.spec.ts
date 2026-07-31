@@ -24,7 +24,7 @@ describe("PublicMessageController", () => {
         connectionIds: [2]
       },
       body: { connectionId: 2, to: "5511999999999", text: "Olá" },
-      header: jest.fn().mockReturnValue("request-12345678")
+      header: jest.fn().mockReturnValue("legacy-client-key")
     };
     const res = response();
 
@@ -34,10 +34,13 @@ describe("PublicMessageController", () => {
       companyId: 10,
       whatsappId: 2,
       idempotencyScope: "cred_1",
-      idempotencyKey: "request-12345678",
+      idempotencyKey: expect.stringMatching(
+        /^server:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+      ),
       recipient: "5511999999999",
       text: "Olá"
     });
+    expect(create.mock.calls[0][0].idempotencyKey).not.toBe("legacy-client-key");
     expect(res.status).toHaveBeenCalledWith(202);
     expect(res.json).toHaveBeenCalledWith({
       id: "cmd_1",
@@ -46,14 +49,13 @@ describe("PublicMessageController", () => {
     });
   });
 
-  it("adds the replay header for an idempotent retry", async () => {
-    const handler = createPublicTextMessageHandler({
-      create: jest.fn().mockResolvedValue({
+  it("always returns 202 without exposing internal replay state", async () => {
+    const create = jest.fn().mockResolvedValue({
         command: { id: "cmd_1", status: "queued" },
         message: null,
         replayed: true
-      })
     });
+    const handler = createPublicTextMessageHandler({ create });
     const req: any = {
       apiCredential: { id: "cred_1", companyId: 10, connectionIds: [2] },
       body: { connectionId: 2, to: "5511999999999", text: "Olá" },
@@ -63,8 +65,29 @@ describe("PublicMessageController", () => {
 
     await handler(req, res);
 
-    expect(res.set).toHaveBeenCalledWith("Idempotent-Replayed", "true");
-    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.set).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(202);
+  });
+
+  it("generates a distinct internal key for each identical request", async () => {
+    const create = jest.fn().mockResolvedValue({
+      command: { id: "cmd_1", status: "queued" },
+      message: null,
+      replayed: false
+    });
+    const handler = createPublicTextMessageHandler({ create });
+    const req: any = {
+      apiCredential: { id: "cred_1", companyId: 10, connectionIds: [2] },
+      body: { connectionId: 2, to: "5511999999999", text: "Olá" },
+      header: jest.fn()
+    };
+
+    await handler(req, response());
+    await handler(req, response());
+
+    expect(create.mock.calls[0][0].idempotencyKey).not.toBe(
+      create.mock.calls[1][0].idempotencyKey
+    );
   });
 
   it("forwards a supported media payload to the durable command service", async () => {
