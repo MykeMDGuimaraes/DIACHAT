@@ -2,7 +2,10 @@
 // JSON Schema branches without introducing a production dependency.
 // eslint-disable-next-line import/no-extraneous-dependencies
 import Ajv from "ajv";
-import messagingOpenApi, { messagingPublicOpenApi } from "../MessagingOpenApi";
+import messagingOpenApi, {
+  messagingAdminOpenApi,
+  messagingPublicOpenApi
+} from "../MessagingOpenApi";
 
 const webhookBranchesMatched = (payload: Record<string, unknown>): number => {
   const ajv = new Ajv({ allErrors: true, schemaId: "auto" });
@@ -24,6 +27,43 @@ describe("MessagingOpenApi 1.3", () => {
     expect(messagingPublicOpenApi.paths).not.toHaveProperty("/api/v1/credentials");
     expect(messagingPublicOpenApi.paths).not.toHaveProperty("/api/v1/webhook-subscriptions");
     expect(messagingPublicOpenApi.paths).toHaveProperty("/api/v1/messages");
+  });
+
+  it("publishes scopes and standard errors for every public operation", () => {
+    Object.values(messagingPublicOpenApi.paths).forEach((pathItem: any) => {
+      Object.values(pathItem).forEach((operation: any) => {
+        expect(operation["x-required-scope"]).toEqual(expect.any(String));
+        expect(operation.responses).toHaveProperty("400");
+        expect(operation.responses).toHaveProperty("401");
+        expect(operation.responses).toHaveProperty("403");
+      });
+    });
+  });
+
+  it("documents mutation bodies and all transcript filters", () => {
+    expect(messagingPublicOpenApi.paths["/api/v1/messages/{messageId}"].patch).toHaveProperty("requestBody");
+    expect(messagingPublicOpenApi.paths["/api/v1/messages/{messageId}/reactions"].post).toHaveProperty("requestBody");
+    expect(messagingPublicOpenApi.paths["/api/v1/message-templates/{templateId}/render"].post).toHaveProperty("requestBody");
+    const names = messagingPublicOpenApi.paths["/api/v1/conversations/{conversationId}/messages"].get.parameters.map((item: any) => item.name);
+    expect(names).toEqual(expect.arrayContaining(["cursor", "limit", "from", "to", "type", "fromMe", "mediaOnly", "status", "providerMessageId"]));
+  });
+
+  it("publishes the complete session-only administration contract", () => {
+    [
+      "/api/v1/credentials",
+      "/api/v1/admin/openapi.json",
+      "/api/v1/credentials/{credentialId}",
+      "/api/v1/webhook-subscriptions",
+      "/api/v1/webhook-subscriptions/{subscriptionId}",
+      "/api/v1/webhook-deliveries",
+      "/api/v1/webhook-deliveries/{deliveryId}/retry",
+      "/api/v1/message-templates",
+      "/api/v1/message-templates/{templateId}",
+      "/api/v1/channels/meta-cloud",
+      "/api/v1/channels/meta-cloud/{whatsappId}/credentials",
+      "/api/v1/channels/meta-cloud/{whatsappId}"
+    ].forEach(path => expect(Object.prototype.hasOwnProperty.call(messagingAdminOpenApi.paths, path)).toBe(true));
+    expect(messagingAdminOpenApi.paths).not.toHaveProperty("/api/v1/messages");
   });
 
   it("publishes every Router P0 path as an authenticated full API path", () => {

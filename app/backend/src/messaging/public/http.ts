@@ -48,4 +48,7 @@ export {
   messagingCapacityProbe,
   messagingCapacityReplay
 } from "../operations/MessagingOperationsController";
-export { messagingPublicOpenApi as messagingOpenApi } from "../contracts/MessagingOpenApi";
+export {
+  messagingPublicOpenApi as messagingOpenApi,
+  messagingAdminOpenApi
+} from "../contracts/MessagingOpenApi";

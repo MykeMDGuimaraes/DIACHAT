@@ -35,6 +35,7 @@ import {
   webhookAdminHandlers,
   publicApiRateLimit,
   messagingOpenApi,
+  messagingAdminOpenApi,
   isMessagingAdmin,
   requireMetaCloudPhase2
 } from "../messaging/public/http";
@@ -46,7 +47,19 @@ messagingApiRoutes.get(
   "/openapi.json",
   apiKeyAuth,
   requireApiScope("integration:read"),
-  (_req, res) => res.json(messagingOpenApi)
+  (_req, res) => {
+    res.set("Cache-Control", "private, no-store");
+    return res.json(messagingOpenApi);
+  }
+);
+messagingApiRoutes.get(
+  "/admin/openapi.json",
+  isAuth,
+  isMessagingAdmin,
+  (_req, res) => {
+    res.set("Cache-Control", "private, no-store");
+    return res.json(messagingAdminOpenApi);
+  }
 );
 messagingApiRoutes.get(
   "/integration/ready",
