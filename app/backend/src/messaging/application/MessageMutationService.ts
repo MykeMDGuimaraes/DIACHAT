@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from "uuid";
 import sequelize from "../../database";
 import AppError from "../../errors/AppError";
+import { resolveContactJid } from "../adapters/baileys/BaileysContactIdentity";
 import Contact from "../../models/Contact";
 import Message from "../../models/Message";
 import Ticket from "../../models/Ticket";
@@ -32,7 +33,7 @@ class MessageMutationService {
       if (!this.capabilities.resolve("baileys").capabilities[capability]) throw new AppError("CAPABILITY_NOT_SUPPORTED", 422);
       const targetCommand = await MessageCommand.findOne({ where: { messageId: String(message.id), companyId: input.companyId }, order: [["createdAt", "DESC"]], transaction });
       const providerMessageId = targetCommand?.providerMessageId || String(message.id);
-      const requestPayload = { ticketId: ticket.id, target: { id: providerMessageId, fromMe: Boolean(message.fromMe), remoteJid: message.remoteJid || `${ticket.contact.number}@s.whatsapp.net` }, ...(input.emoji !== undefined ? { emoji: input.emoji } : {}), ...(input.text !== undefined ? { text: input.text } : {}) };
+      const requestPayload = { ticketId: ticket.id, target: { id: providerMessageId, fromMe: Boolean(message.fromMe), remoteJid: message.remoteJid || resolveContactJid({ ...ticket.contact, isGroup: ticket.isGroup }) }, ...(input.emoji !== undefined ? { emoji: input.emoji } : {}), ...(input.text !== undefined ? { text: input.text } : {}) };
       const fingerprint = createRequestFingerprint({ provider, messageKind: input.kind, recipient: ticket.contact.number, requestPayload });
       const existing = await MessageCommand.findOne({ where: { companyId: input.companyId, idempotencyScope: input.idempotencyScope, idempotencyKey }, transaction });
       if (existing) {

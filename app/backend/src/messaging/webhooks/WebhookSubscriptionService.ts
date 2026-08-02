@@ -44,6 +44,26 @@ const expandMirrorEvents = (events: string[]): string[] =>
     : [...new Set(events)];
 
 const supportedMethods = new Set(["POST", "PUT", "PATCH"]);
+const supportedExcludeFilters = new Set([
+  "fromMe",
+  "group",
+  "apiOriginated"
+]);
+
+export type WebhookExcludeFilter =
+  | "fromMe"
+  | "group"
+  | "apiOriginated";
+
+const sanitizeExcludeFilters = (
+  filters?: WebhookExcludeFilter[]
+): WebhookExcludeFilter[] => {
+  const unique = [...new Set(filters || [])];
+  if (unique.some(filter => !supportedExcludeFilters.has(filter))) {
+    throw new AppError("Filtro de exclusão de webhook inválido", 400);
+  }
+  return unique;
+};
 
 const normalizeWebhookMethod = (method?: string): string => {
   const normalized = (method || "POST").trim().toUpperCase();
@@ -71,6 +91,7 @@ export interface CreateWebhookSubscriptionInput {
   connectionIds?: number[];
   messageKinds?: string[];
   includeApiOrigin?: boolean;
+  excludeFilters?: WebhookExcludeFilter[];
 }
 
 interface CreateWebhookSubscriptionDependencies {
@@ -112,6 +133,7 @@ export const createWebhookSubscription = async (
     connectionIds: sanitizeConnectionIds(input.connectionIds),
     messageKinds: [...new Set(input.messageKinds || [])],
     includeApiOrigin: input.includeApiOrigin === true,
+    excludeFilters: sanitizeExcludeFilters(input.excludeFilters),
     secretCiphertext: dependencies.encryptSecret(
       signingSecret,
       dependencies.keyring
@@ -133,6 +155,7 @@ export interface UpdateWebhookSubscriptionInput {
   connectionIds?: number[];
   messageKinds?: string[];
   includeApiOrigin?: boolean;
+  excludeFilters?: WebhookExcludeFilter[];
   rotateSecret?: boolean;
 }
 
@@ -174,6 +197,8 @@ export const updateWebhookSubscription = async (
     changes.connectionIds = sanitizeConnectionIds(input.connectionIds);
   if (input.messageKinds)
     changes.messageKinds = [...new Set(input.messageKinds)];
+  if (input.excludeFilters !== undefined)
+    changes.excludeFilters = sanitizeExcludeFilters(input.excludeFilters);
   let signingSecret: string | undefined;
   if (input.rotateSecret) {
     signingSecret = dependencies.generateSecret();

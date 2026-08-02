@@ -12,6 +12,7 @@ class WebhookSubscription extends Model<WebhookSubscription> {
   @Default([]) @AllowNull(false) @Column(DataType.JSONB) connectionIds: number[];
   @Default([]) @AllowNull(false) @Column(DataType.JSONB) messageKinds: string[];
   @Default(false) @AllowNull(false) @Column(DataType.BOOLEAN) includeApiOrigin: boolean;
+  @Default([]) @AllowNull(false) @Column(DataType.JSONB) excludeFilters: string[];
   @AllowNull(false) @Column(DataType.TEXT) secretCiphertext: string;
   @AllowNull(false) @Column(DataType.STRING) keyVersion: string;
   @Default(0) @AllowNull(false) @Column(DataType.INTEGER) consecutiveFailures: number;

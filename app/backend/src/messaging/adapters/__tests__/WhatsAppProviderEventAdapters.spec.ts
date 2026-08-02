@@ -40,6 +40,25 @@ describe("WhatsApp provider event adapters", () => {
     );
   });
 
+  it("preserves a primary LID and accepts a phone alternate without depending on field order", () => {
+    const [event] = adaptBaileysMessageEvents({
+      ...context,
+      raw: {
+        key: {
+          id: "provider-lid-1",
+          remoteJid: "198642640113823@lid",
+          remoteJidAlt: "5511999999999@s.whatsapp.net",
+          fromMe: false
+        },
+        messageTimestamp: 1_722_000_000,
+        message: { conversation: "mensagem" }
+      }
+    });
+
+    expect(event.payload.contact.jid).toBe("198642640113823@lid");
+    expect(event.payload.contact.lid).toBe("198642640113823@lid");
+  });
+
   it("maps provider buttons to the same null-complete DTO shape and keeps message.received plus button.clicked", () => {
     const baileys = adaptBaileysMessageEvents({
       ...context,

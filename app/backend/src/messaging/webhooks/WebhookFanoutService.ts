@@ -215,6 +215,11 @@ export const buildFanoutFailureState = (
 
 const matches = (subscription: any, event: DomainEvent): boolean => {
   if (!subscription.events?.includes(event.eventType)) return false;
+  const exclusions = new Set(subscription.excludeFilters || []);
+  if (exclusions.has("fromMe") && event.payload.fromMe === true) return false;
+  if (exclusions.has("group") && event.payload.isGroup === true) return false;
+  if (exclusions.has("apiOriginated") && event.payload.origin === "api")
+    return false;
   if (event.payload.origin === "api" && !subscription.includeApiOrigin)
     return false;
   if (

@@ -1,5 +1,6 @@
 import { Op } from "sequelize";
 import AppError from "../../errors/AppError";
+import { resolveContactJid } from "../adapters/baileys/BaileysContactIdentity";
 import Contact from "../../models/Contact";
 import Queue from "../../models/Queue";
 import Ticket from "../../models/Ticket";
@@ -21,7 +22,7 @@ const encode = (value: Cursor): string => Buffer.from(JSON.stringify(value), "ut
 const jidFor = (ticket: Ticket): string | null => {
   const contact = ticket.get("contact") as Contact | undefined;
   if (!contact?.number) return null;
-  return `${String(contact.number).replace(/\D/g, "")}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`;
+  return resolveContactJid({ ...contact, isGroup: ticket.isGroup });
 };
 
 class PublicConversationService {

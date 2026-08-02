@@ -12,3 +12,9 @@ export { sendBaileysSocketMessage } from "../adapters/baileys/BaileysSocketPort"
 export { default as BaileysLogger } from "../adapters/baileys/BaileysLogger";
 export { registerBaileysMirrorLifecycleListeners } from "../adapters/baileys/BaileysProviderEventAdapter";
 export { WhatsAppProviderEventContext } from "../domain/WhatsAppProviderEvent";
+export {
+  parseBaileysContactIdentity,
+  resolveContactJid,
+  BaileysContactIdentity,
+  ContactJidServer
+} from "../adapters/baileys/BaileysContactIdentity";

@@ -1,6 +1,8 @@
 import {
   WEBHOOK_EVENTS,
-  WEBHOOK_MESSAGE_KINDS
+  WEBHOOK_MESSAGE_KINDS,
+  WEBHOOK_EXCLUDE_FILTERS,
+  webhookFormFromSubscription
 } from "./index";
 
 describe("WebhookSubscriptionsModal catalog", () => {
@@ -32,5 +34,40 @@ describe("WebhookSubscriptionsModal catalog", () => {
       "document",
       "template"
     ]);
+  });
+
+  it("offers the supported exclusion filters", () => {
+    expect(WEBHOOK_EXCLUDE_FILTERS.map(item => item.value)).toEqual([
+      "fromMe",
+      "group",
+      "apiOriginated"
+    ]);
+  });
+
+  it("hydrates every editable subscription field", () => {
+    expect(
+      webhookFormFromSubscription({
+        id: "sub_1",
+        name: "n8n",
+        url: "https://hooks.example.com/diachat",
+        method: "PUT",
+        events: ["message.received"],
+        messageKinds: ["text"],
+        connectionIds: [2],
+        includeApiOrigin: true,
+        excludeFilters: ["group"],
+        enabled: false
+      })
+    ).toEqual({
+      name: "n8n",
+      url: "https://hooks.example.com/diachat",
+      method: "PUT",
+      selectedEvents: ["message.received"],
+      selectedKinds: ["text"],
+      connectionIds: [2],
+      includeApiOrigin: true,
+      excludeFilters: ["group"],
+      enabled: false
+    });
   });
 });

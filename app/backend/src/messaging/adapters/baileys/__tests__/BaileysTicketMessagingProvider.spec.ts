@@ -23,6 +23,31 @@ describe("BaileysTicketMessagingProvider", () => {
     );
   });
 
+  it("sends a ticket through its persisted LID instead of fabricating a phone JID", async () => {
+    const sendMessage = jest.fn().mockResolvedValue({ key: { id: "wa_lid" } });
+    const provider = new BaileysTicketMessagingProvider(async () => ({
+      sendMessage
+    }));
+
+    await provider.sendText({
+      ticket: {
+        isGroup: false,
+        contact: {
+          number: null,
+          lid: "198642640113823",
+          jidServer: "lid"
+        }
+      } as any,
+      text: "Olá via LID"
+    });
+
+    expect(sendMessage).toHaveBeenCalledWith(
+      "198642640113823@lid",
+      { text: "Olá via LID" },
+      undefined
+    );
+  });
+
   it("serializes native quick replies through the vendored Baileys proto and relays them", async () => {
     const sendMessage = jest.fn();
     const relayMessage = jest.fn().mockResolvedValue("wa_buttons");
@@ -62,6 +87,43 @@ describe("BaileysTicketMessagingProvider", () => {
         { id: "reject_ticket-1", title: "Recusar" }
       ],
       "cmd-buttons-1",
+      undefined
+    );
+  });
+
+  it("relays native buttons to the persisted LID", async () => {
+    const nativeButtonsRelay = jest.fn().mockResolvedValue({
+      key: { id: "wa_buttons_lid" }
+    });
+    const provider = new BaileysTicketMessagingProvider(
+      async () => ({
+        sendMessage: jest.fn(),
+        relayMessage: jest.fn(),
+        user: { id: "5511888888888:1@s.whatsapp.net" }
+      }),
+      nativeButtonsRelay
+    );
+
+    await provider.sendNativeButtons({
+      ticket: {
+        isGroup: false,
+        contact: {
+          number: null,
+          lid: "198642640113823",
+          jidServer: "lid"
+        }
+      } as any,
+      text: "Escolha",
+      buttons: [{ id: "yes", title: "Sim" }],
+      messageId: "cmd-lid"
+    });
+
+    expect(nativeButtonsRelay).toHaveBeenCalledWith(
+      expect.anything(),
+      "198642640113823@lid",
+      "Escolha",
+      [{ id: "yes", title: "Sim" }],
+      "cmd-lid",
       undefined
     );
   });
