@@ -475,12 +475,17 @@ const getContactMessage = async (msg: proto.IWebMessageInfo, wbot: Session) => {
   const key = msg.key as typeof msg.key & {
     remoteJidAlt?: string;
     participantAlt?: string;
+    senderPn?: string;
   };
   const isGroup = msg.key.remoteJid?.includes("g.us");
   const primaryId = isGroup
     ? msg.participant || msg.key.participant || msg.key.remoteJid
     : msg.key.remoteJid;
-  const alternateId = isGroup ? key.participantAlt : key.remoteJidAlt;
+  // Baileys recente entrega o telefone do remetente @lid em key.senderPn
+  // (eventos mais antigos usavam remoteJidAlt/participantAlt).
+  const alternateId = isGroup
+    ? key.participantAlt || key.senderPn
+    : key.remoteJidAlt || key.senderPn;
   const rawNumber = String(primaryId || "").replace(/\D/g, "");
   return isGroup
     ? {
@@ -2951,10 +2956,6 @@ const wbotMessageListener = async (
 ): Promise<void> => {
   try {
     wbot.ev.on("messages.upsert", async (messageUpsert: ImessageUpsert) => {
-      // LOG TEMPORÁRIO de diagnóstico (WA_RAW_EVENT_LOG=true): remover após uso
-      if (process.env.WA_RAW_EVENT_LOG === "true") {
-        console.log("[WA_RAW_EVENT]", JSON.stringify(messageUpsert));
-      }
       const messages = messageUpsert.messages
         .filter(filterMessages)
         .map(msg => msg);
