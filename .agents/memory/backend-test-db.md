@@ -9,4 +9,6 @@ Receita confirmada: `NODE_ENV=test` faz o bootstrap carregar `.env.test` (que ap
 
 **Why:** rodar testes destrutivos (`destroy({where:{}})`) no banco de dev é perigoso; e o `npm test` padrão apontaria para o mesmo banco.
 
+Incidente de 03/08/2026: neste repl, rodar `npx jest` (bare OU com `NODE_ENV=test`) gravou no banco de DEV — suítes de integração criaram empresas/canais "Canal Outbound <uuid>" e comandos fantasmas (que o backend vivo despachou de verdade), e limpezas das suítes apagaram MessageCommands reais. A isolação via `.env.test` descrita acima não estava ativa. Até o isolamento ser corrigido: após rodar suítes, conferir e limpar `Companies`/`Whatsapps`/`messaging."MessageCommands"` fixture (empresas com id alto e canais "Canal Outbound %").
+
 Armadilha: FKs de migrações que criam tabelas em schema não-public precisam qualificar `model: { tableName, schema: "public" }`, senão `references: { model: "Companies" }` resolve para o schema da tabela nova e quebra em banco limpo (passa despercebido em bancos já migrados).
