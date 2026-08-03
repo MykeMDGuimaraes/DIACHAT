@@ -9,7 +9,9 @@ Segunda armadilha: `resolveContactJid` lança `CONTACT_WHATSAPP_IDENTITY_UNAVAIL
 
 Terceira armadilha (confirmada com evento real capturado em dev, ago/2026): o Baileys atual entrega o telefone do remetente @lid em **`key.senderPn`** — muitos eventos NÃO trazem `remoteJidAlt`. O código que lia só remoteJidAlt/participantAlt deixava number nulo mesmo com a flag ligada. `getContactMessage` agora faz fallback `remoteJidAlt || senderPn` (e `participantAlt || senderPn` em grupos).
 
-Quarta armadilha: o senderPn vem SEM o nono dígito brasileiro em algumas regiões (`553190610568`), mas quem disca/importa informa COM (`5531990610568`) — o WhatsApp aceita e entrega nas duas formas. A busca exata por `number` em `CreateOrUpdateContactService` não casava e duplicava contato+ticket (flagrado em produção via API). Hoje a identidade de contato busca por **ambas as formas** (helper `brazilianNinthDigitVariants`, só não-grupo).
+Quarta armadilha: o senderPn vem SEM o nono dígito brasileiro em algumas regiões (`553190610568`), mas quem disca/importa informa COM (`5531990610568`) — o WhatsApp aceita e entrega nas duas formas. A busca exata por `number` não casava e duplicava contato+ticket. Hoje a identidade de contato busca por **ambas as formas** (helper `brazilianNinthDigitVariants`, só não-grupo).
+
+Quinta armadilha (a mais cara): existem **dois caminhos de envio por API** — o legado `/api/messages/send` (MessageController → CreateOrUpdateContactService) e o novo `/api/v1/messages` (PublicTextMessageService, com busca de contato PRÓPRIA e exata). Corrigir um não corrige o outro. Para saber qual o cliente usa: AuditLog `legacy_messages_send_accessed` (legado) vs `messaging."MessageCommands"` (novo). Toda correção de identidade de contato precisa cobrir os dois lados.
 
 **Why:** incidente em produção (ago/2026): contato criado sem número, conversa sem mensagens; causa raiz = include limitado + flag de correlação desligada.
 
