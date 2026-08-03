@@ -11,6 +11,7 @@ import MessageCommand from "../persistence/models/MessageCommand";
 import MessagingOutboxEvent from "../persistence/models/MessagingOutboxEvent";
 import ConversationAutomationService from "./ConversationAutomationService";
 import CapabilityResolver from "./CapabilityResolver";
+import brazilianNinthDigitVariants from "../../helpers/brazilianNinthDigitVariants";
 
 export interface CreatePublicTextMessageInput {
   companyId: number;
@@ -64,8 +65,14 @@ const defaultDependencies: PublicTextMessageDependencies = {
     }),
   findWhatsapp: (id, companyId, transaction) =>
     Whatsapp.findOne({ where: { id, companyId }, transaction }),
+  // O recipient pode vir com ou sem o nono dígito brasileiro; a forma
+  // armazenada no contato depende de como ele chegou (senderPn do WhatsApp
+  // pode omitir o 9). Buscar ambas as formas evita contato duplicado.
   findContact: (number, companyId, transaction) =>
-    Contact.findOne({ where: { number, companyId }, transaction }),
+    Contact.findOne({
+      where: { number: brazilianNinthDigitVariants(number), companyId },
+      transaction
+    }),
   createContact: (data, transaction) => Contact.create(data as any, { transaction }),
   findTicket: (contactId, whatsappId, companyId, transaction) =>
     Ticket.findOne({
