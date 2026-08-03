@@ -6,6 +6,7 @@ import WebhookFanoutService from "../webhooks/WebhookFanoutService";
 import WebhookRecoveryService from "../webhooks/WebhookRecoveryService";
 import MessageCommandDispatcher from "./MessageCommandDispatcher";
 import OutboundPairRecoveryService from "./OutboundPairRecoveryService";
+import DeliveryConfirmationRecoveryService from "./DeliveryConfirmationRecoveryService";
 import MessagingCapacityObserver from "../operations/MessagingCapacityObserver";
 import MetaInboxRecoveryService from "../channels/meta-cloud/MetaInboxRecoveryService";
 import ConversationCommandDispatcher from "./ConversationCommandDispatcher";
@@ -266,6 +267,8 @@ export const createMessagingRuntime = (): MessagingRuntime =>
     {
       recover: async () => {
         const outbound = await new OutboundPairRecoveryService().recover();
+        const delivery =
+          await new DeliveryConfirmationRecoveryService().recover();
         const webhooks = await new WebhookRecoveryService().recover();
         const inbox = await new MetaInboxRecoveryService().recover();
         const conversations =
@@ -273,6 +276,7 @@ export const createMessagingRuntime = (): MessagingRuntime =>
         return {
           recovered:
             outbound.recovered +
+            delivery.recovered +
             webhooks.deliveries +
             webhooks.events +
             inbox.recovered +

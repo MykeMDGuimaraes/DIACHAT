@@ -112,7 +112,8 @@ export const buildMessageFailedEvent = (
 
 export const buildMessageUnknownEvent = (
   command: MessageCommandEventSource,
-  errorMessage: string
+  errorMessage: string,
+  errorCode: string = MESSAGE_COMMAND_ERROR_CODE.SEND_OUTCOME_UNKNOWN
 ): MessageOutboxEventDto => ({
   companyId: command.companyId,
   eventType: OUTBOX_EVENT_TYPE.MESSAGE_STATUS_UPDATED,
@@ -128,7 +129,7 @@ export const buildMessageUnknownEvent = (
     contactId: command.contactId,
     origin: "api",
     status: MESSAGE_COMMAND_STATUS.UNKNOWN,
-    errorCode: MESSAGE_COMMAND_ERROR_CODE.SEND_OUTCOME_UNKNOWN,
+    errorCode,
     errorMessage: errorMessage.slice(0, 500)
   },
   status: OUTBOX_EVENT_STATUS.READY,

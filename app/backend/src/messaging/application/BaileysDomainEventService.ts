@@ -4,6 +4,7 @@ import Ticket from "../../models/Ticket";
 import ConversationAutomationState from "../persistence/models/ConversationAutomationState";
 import MessagingOutboxEvent from "../persistence/models/MessagingOutboxEvent";
 import MessageCommand from "../persistence/models/MessageCommand";
+import { MESSAGE_COMMAND_STATUS } from "../domain/MessagingStates";
 import { adaptBaileysMessageEvents } from "../adapters/baileys/BaileysProviderEventAdapter";
 import { WhatsAppProviderEvent } from "../domain/WhatsAppProviderEvent";
 import WhatsAppProviderEventPublisher from "./WhatsAppProviderEventPublisher";
@@ -349,6 +350,26 @@ class BaileysDomainEventService {
         input.providerMessageId,
         transaction
       );
+      // O ack do WhatsApp tambem faz o comando avancar: sent -> delivered -> read.
+      // Sem isso o comando ficava "sent" para sempre mesmo com entrega confirmada.
+      if (command && typeof command.update === "function") {
+        const rank: Record<string, number> = {
+          [MESSAGE_COMMAND_STATUS.SENT]: 1,
+          [MESSAGE_COMMAND_STATUS.DELIVERED]: 2,
+          [MESSAGE_COMMAND_STATUS.READ]: 3
+        };
+        // Mesma escala do publishStatus/Baileys: 2 = servidor, 3 = entregue,
+        // 4 = lida. O comando so avanca para delivered/read, nunca retrocede.
+        const target =
+          typeof input.ack === "number" && input.ack >= 4
+            ? MESSAGE_COMMAND_STATUS.READ
+            : typeof input.ack === "number" && input.ack >= 3
+              ? MESSAGE_COMMAND_STATUS.DELIVERED
+              : null;
+        if (target && rank[command.status] && rank[target] > rank[command.status]) {
+          await command.update({ status: target }, { transaction });
+        }
+      }
       const localMessageId = command?.messageId || input.providerMessageId;
       const persisted = await this.dependencies.findMessage(
         input.companyId,

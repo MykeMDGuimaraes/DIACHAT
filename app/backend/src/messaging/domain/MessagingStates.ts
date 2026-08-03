@@ -45,12 +45,16 @@ export const OUTBOX_EVENT_TYPE = {
 
 export const MESSAGE_COMMAND_ERROR_CODE = {
   SEND_OUTCOME_UNKNOWN: "SEND_OUTCOME_UNKNOWN",
-  SEND_RETRY_EXHAUSTED: "SEND_RETRY_EXHAUSTED"
+  SEND_RETRY_EXHAUSTED: "SEND_RETRY_EXHAUSTED",
+  DELIVERY_UNCONFIRMED: "DELIVERY_UNCONFIRMED"
 } as const;
 
 export const MAX_SEND_ATTEMPTS = 8;
 export const SEND_LEASE_MS = 120_000;
 export const SEND_TIMEOUT_MS = 60_000;
+// Tempo máximo esperando o ack do WhatsApp após o socket aceitar a mensagem.
+// Sem ack até esse prazo, o comando deixa de constar como "sent".
+export const DELIVERY_CONFIRM_TIMEOUT_MS = 5 * 60_000;
 export const BACKOFF_BASE_MS = 5_000;
 export const BACKOFF_MAX_MS = 15 * 60_000;
 

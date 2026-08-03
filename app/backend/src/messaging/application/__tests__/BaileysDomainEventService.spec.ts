@@ -440,6 +440,102 @@ describe("BaileysDomainEventService", () => {
     );
   });
 
+  it("advances the API command status when the provider ACK confirms delivery", async () => {
+    const command = {
+      id: "command-1",
+      messageId: "local-message-1",
+      status: "sent",
+      update: jest.fn().mockResolvedValue(undefined)
+    };
+    const dependencies = {
+      transaction: jest.fn((callback: any) => callback("tx")),
+      findCommandByProviderMessageId: jest.fn().mockResolvedValue(command),
+      findCommandByMessageId: jest.fn().mockResolvedValue(null),
+      findMessage: jest.fn().mockResolvedValue({
+        id: "local-message-1",
+        companyId: 7,
+        ticketId: 91
+      }),
+      updateMessage: jest.fn().mockResolvedValue(undefined),
+      findOrCreateEvent: jest.fn().mockResolvedValue(undefined)
+    };
+    const service = new BaileysDomainEventService(dependencies as any);
+
+    await service.acknowledgeProviderMessage({
+      companyId: 7,
+      providerMessageId: "wa-provider-1",
+      ack: 3
+    });
+
+    expect(command.update).toHaveBeenCalledWith(
+      { status: "delivered" },
+      { transaction: "tx" }
+    );
+  });
+
+  it("advances the API command to read when the ACK is read-level", async () => {
+    const command = {
+      id: "command-1",
+      messageId: "local-message-1",
+      status: "delivered",
+      update: jest.fn().mockResolvedValue(undefined)
+    };
+    const dependencies = {
+      transaction: jest.fn((callback: any) => callback("tx")),
+      findCommandByProviderMessageId: jest.fn().mockResolvedValue(command),
+      findCommandByMessageId: jest.fn().mockResolvedValue(null),
+      findMessage: jest.fn().mockResolvedValue({
+        id: "local-message-1",
+        companyId: 7,
+        ticketId: 91
+      }),
+      updateMessage: jest.fn().mockResolvedValue(undefined),
+      findOrCreateEvent: jest.fn().mockResolvedValue(undefined)
+    };
+    const service = new BaileysDomainEventService(dependencies as any);
+
+    await service.acknowledgeProviderMessage({
+      companyId: 7,
+      providerMessageId: "wa-provider-1",
+      ack: 4
+    });
+
+    expect(command.update).toHaveBeenCalledWith(
+      { status: "read" },
+      { transaction: "tx" }
+    );
+  });
+
+  it("never moves the command status backwards on a lower ACK", async () => {
+    const command = {
+      id: "command-1",
+      messageId: "local-message-1",
+      status: "read",
+      update: jest.fn().mockResolvedValue(undefined)
+    };
+    const dependencies = {
+      transaction: jest.fn((callback: any) => callback("tx")),
+      findCommandByProviderMessageId: jest.fn().mockResolvedValue(command),
+      findCommandByMessageId: jest.fn().mockResolvedValue(null),
+      findMessage: jest.fn().mockResolvedValue({
+        id: "local-message-1",
+        companyId: 7,
+        ticketId: 91
+      }),
+      updateMessage: jest.fn().mockResolvedValue(undefined),
+      findOrCreateEvent: jest.fn().mockResolvedValue(undefined)
+    };
+    const service = new BaileysDomainEventService(dependencies as any);
+
+    await service.acknowledgeProviderMessage({
+      companyId: 7,
+      providerMessageId: "wa-provider-1",
+      ack: 3
+    });
+
+    expect(command.update).not.toHaveBeenCalled();
+  });
+
   it("recognizes an API provider id so the echoed upsert can be skipped", async () => {
     const dependencies = {
       transaction: jest.fn((callback: any) => callback("tx")),

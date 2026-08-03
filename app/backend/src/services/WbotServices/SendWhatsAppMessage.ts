@@ -8,6 +8,7 @@ import {
   ProviderSendError
 } from "../../messaging/public/baileysTicketMessaging";
 import GetTicketWbot from "../../helpers/GetTicketWbot";
+import { logger } from "../../utils/logger";
 
 import formatBody from "../../helpers/Mustache";
 
@@ -60,7 +61,12 @@ const SendWhatsAppMessage = async ({
     return sentMessage;
   } catch (err) {
     Sentry.captureException(err);
-    console.log(err);
+    // console.log(err) serializava o erro como linha vazia no log — a falha
+    // de envio ficava invisível. Registrar com contexto para diagnóstico.
+    logger.error(
+      { err, ticketId: ticket.id, companyId: ticket.companyId },
+      "SendWhatsAppMessage: falha ao enviar mensagem WhatsApp"
+    );
     if (err instanceof AppError) {
       throw err;
     }
