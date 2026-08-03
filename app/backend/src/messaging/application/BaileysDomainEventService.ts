@@ -1,10 +1,14 @@
+import { Op } from "sequelize";
 import sequelize from "../../database";
 import Message from "../../models/Message";
 import Ticket from "../../models/Ticket";
 import ConversationAutomationState from "../persistence/models/ConversationAutomationState";
 import MessagingOutboxEvent from "../persistence/models/MessagingOutboxEvent";
 import MessageCommand from "../persistence/models/MessageCommand";
-import { MESSAGE_COMMAND_STATUS } from "../domain/MessagingStates";
+import {
+  MESSAGE_COMMAND_ERROR_CODE,
+  MESSAGE_COMMAND_STATUS
+} from "../domain/MessagingStates";
 import { adaptBaileysMessageEvents } from "../adapters/baileys/BaileysProviderEventAdapter";
 import { WhatsAppProviderEvent } from "../domain/WhatsAppProviderEvent";
 import WhatsAppProviderEventPublisher from "./WhatsAppProviderEventPublisher";
@@ -53,6 +57,11 @@ interface Dependencies {
     providerMessageId: string,
     transaction: any
   ): Promise<any>;
+  advanceCommandStatus(
+    commandId: string,
+    target: string,
+    transaction: any
+  ): Promise<void>;
   findMessage(
     companyId: number,
     messageId: string,
@@ -78,6 +87,28 @@ const providerEventPublisher = new WhatsAppProviderEventPublisher();
 
 const defaultDependencies: Dependencies = {
   transaction: callback => sequelize.transaction(callback),
+  // Promoção atômica e só para frente: sent/delivered avançam, e um
+  // "unknown" de DELIVERY_UNCONFIRMED se autocorrige quando o ack chega
+  // atrasado. O WHERE condicional fecha a corrida com o recovery watchdog.
+  advanceCommandStatus: async (commandId, target, transaction) => {
+    await MessageCommand.update(
+      { status: target, errorCode: null },
+      {
+        where: {
+          id: commandId,
+          [Op.or]: [
+            { status: MESSAGE_COMMAND_STATUS.SENT },
+            { status: MESSAGE_COMMAND_STATUS.DELIVERED },
+            {
+              status: MESSAGE_COMMAND_STATUS.UNKNOWN,
+              errorCode: MESSAGE_COMMAND_ERROR_CODE.DELIVERY_UNCONFIRMED
+            }
+          ]
+        },
+        transaction
+      }
+    );
+  },
   findAutomationState: (companyId, conversationId, transaction) =>
     ConversationAutomationState.findOne({
       where: { companyId, conversationId },
@@ -352,7 +383,7 @@ class BaileysDomainEventService {
       );
       // O ack do WhatsApp tambem faz o comando avancar: sent -> delivered -> read.
       // Sem isso o comando ficava "sent" para sempre mesmo com entrega confirmada.
-      if (command && typeof command.update === "function") {
+      if (command) {
         const rank: Record<string, number> = {
           [MESSAGE_COMMAND_STATUS.SENT]: 1,
           [MESSAGE_COMMAND_STATUS.DELIVERED]: 2,
@@ -367,7 +398,11 @@ class BaileysDomainEventService {
               ? MESSAGE_COMMAND_STATUS.DELIVERED
               : null;
         if (target && rank[command.status] && rank[target] > rank[command.status]) {
-          await command.update({ status: target }, { transaction });
+          await this.dependencies.advanceCommandStatus(
+            command.id,
+            target,
+            transaction
+          );
         }
       }
       const localMessageId = command?.messageId || input.providerMessageId;

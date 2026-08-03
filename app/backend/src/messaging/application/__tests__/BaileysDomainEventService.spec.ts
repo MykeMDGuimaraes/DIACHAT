@@ -444,12 +444,12 @@ describe("BaileysDomainEventService", () => {
     const command = {
       id: "command-1",
       messageId: "local-message-1",
-      status: "sent",
-      update: jest.fn().mockResolvedValue(undefined)
+      status: "sent"
     };
     const dependencies = {
       transaction: jest.fn((callback: any) => callback("tx")),
       findCommandByProviderMessageId: jest.fn().mockResolvedValue(command),
+      advanceCommandStatus: jest.fn().mockResolvedValue(undefined),
       findCommandByMessageId: jest.fn().mockResolvedValue(null),
       findMessage: jest.fn().mockResolvedValue({
         id: "local-message-1",
@@ -467,9 +467,10 @@ describe("BaileysDomainEventService", () => {
       ack: 3
     });
 
-    expect(command.update).toHaveBeenCalledWith(
-      { status: "delivered" },
-      { transaction: "tx" }
+    expect(dependencies.advanceCommandStatus).toHaveBeenCalledWith(
+      "command-1",
+      "delivered",
+      "tx"
     );
   });
 
@@ -477,12 +478,12 @@ describe("BaileysDomainEventService", () => {
     const command = {
       id: "command-1",
       messageId: "local-message-1",
-      status: "delivered",
-      update: jest.fn().mockResolvedValue(undefined)
+      status: "delivered"
     };
     const dependencies = {
       transaction: jest.fn((callback: any) => callback("tx")),
       findCommandByProviderMessageId: jest.fn().mockResolvedValue(command),
+      advanceCommandStatus: jest.fn().mockResolvedValue(undefined),
       findCommandByMessageId: jest.fn().mockResolvedValue(null),
       findMessage: jest.fn().mockResolvedValue({
         id: "local-message-1",
@@ -500,9 +501,10 @@ describe("BaileysDomainEventService", () => {
       ack: 4
     });
 
-    expect(command.update).toHaveBeenCalledWith(
-      { status: "read" },
-      { transaction: "tx" }
+    expect(dependencies.advanceCommandStatus).toHaveBeenCalledWith(
+      "command-1",
+      "read",
+      "tx"
     );
   });
 
@@ -510,12 +512,12 @@ describe("BaileysDomainEventService", () => {
     const command = {
       id: "command-1",
       messageId: "local-message-1",
-      status: "read",
-      update: jest.fn().mockResolvedValue(undefined)
+      status: "read"
     };
     const dependencies = {
       transaction: jest.fn((callback: any) => callback("tx")),
       findCommandByProviderMessageId: jest.fn().mockResolvedValue(command),
+      advanceCommandStatus: jest.fn().mockResolvedValue(undefined),
       findCommandByMessageId: jest.fn().mockResolvedValue(null),
       findMessage: jest.fn().mockResolvedValue({
         id: "local-message-1",
@@ -533,7 +535,7 @@ describe("BaileysDomainEventService", () => {
       ack: 3
     });
 
-    expect(command.update).not.toHaveBeenCalled();
+    expect(dependencies.advanceCommandStatus).not.toHaveBeenCalled();
   });
 
   it("recognizes an API provider id so the echoed upsert can be skipped", async () => {

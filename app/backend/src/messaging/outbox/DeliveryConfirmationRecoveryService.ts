@@ -35,7 +35,11 @@ class DeliveryConfirmationRecoveryService {
       attributes: ["id"],
       where: {
         status: MESSAGE_COMMAND_STATUS.SENT,
-        completedAt: { [Op.lte]: cutoff }
+        // completedAt nulo (dado legado/artificial) cai no updatedAt
+        [Op.or]: [
+          { completedAt: { [Op.lte]: cutoff } },
+          { completedAt: null, updatedAt: { [Op.lte]: cutoff } }
+        ]
       },
       order: [["completedAt", "ASC"]],
       limit: SWEEP_BATCH_SIZE
@@ -57,10 +61,13 @@ class DeliveryConfirmationRecoveryService {
       });
       if (!command) return 0;
 
+      // Lock na Message também: um ack concorrente grava nela, e sem o lock
+      // o snapshot de ack podia ficar para trás e gerar falso "não confirmado".
       const message = command.messageId
         ? await Message.findOne({
             where: { id: command.messageId, companyId: command.companyId },
-            transaction
+            transaction,
+            lock: transaction.LOCK.UPDATE
           })
         : null;
       const ack = typeof message?.ack === "number" ? message.ack : 0;
