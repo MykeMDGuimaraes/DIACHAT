@@ -183,9 +183,12 @@ export const adaptBaileysMessageEvents = (
     messageId,
     occurredAt,
     jid: raw.key?.remoteJid ?? null,
-    lid: String(raw.key?.remoteJidAlt || "").endsWith("@lid")
-      ? raw.key.remoteJidAlt
-      : null,
+    lid: [
+      raw.key?.remoteJid,
+      raw.key?.remoteJidAlt,
+      raw.key?.participant,
+      raw.key?.participantAlt
+    ].find(value => String(value || "").endsWith("@lid")) || null,
     actorType: raw.key?.fromMe ? "human" : "contact",
     kind,
     fromMe: Boolean(raw.key?.fromMe),

@@ -7,8 +7,8 @@ import {
   PrimaryKey,
   AutoIncrement,
   AllowNull,
-  Unique,
   Default,
+  DataType,
   HasMany,
   ForeignKey,
   BelongsTo
@@ -29,10 +29,18 @@ class Contact extends Model<Contact> {
   @Column
   name: string;
 
+  @AllowNull(true)
+  @Column(DataType.STRING)
+  number: string | null;
+
   @AllowNull(false)
-  @Unique
-  @Column
-  number: string;
+  @Default("phone")
+  @Column(DataType.STRING(16))
+  jidServer: "phone" | "lid" | "group";
+
+  @AllowNull(true)
+  @Column(DataType.STRING)
+  lid: string | null;
 
   @AllowNull(false)
   @Default("")

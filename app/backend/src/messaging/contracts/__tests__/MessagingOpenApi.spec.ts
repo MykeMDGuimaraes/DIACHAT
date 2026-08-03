@@ -93,6 +93,14 @@ describe("MessagingOpenApi 1.3", () => {
       "/api/v1/channels/meta-cloud/{whatsappId}"
     ].forEach(path => expect(Object.prototype.hasOwnProperty.call(messagingAdminOpenApi.paths, path)).toBe(true));
     expect(messagingAdminOpenApi.paths).not.toHaveProperty("/api/v1/messages");
+    const webhookCreateSchema = messagingAdminOpenApi.paths[
+      "/api/v1/webhook-subscriptions"
+    ].post.requestBody.content["application/json"].schema;
+    expect(webhookCreateSchema.properties.excludeFilters.items.enum).toEqual([
+      "fromMe",
+      "group",
+      "apiOriginated"
+    ]);
   });
 
   it("publishes every Router P0 path as an authenticated full API path", () => {

@@ -50,6 +50,16 @@ for (const file of walk(sourceRoot)) {
       `${relative}: envie mensagens somente pela porta de mensageria`
     );
   }
+
+  if (
+    /`\$\{(?:ticket\.)?contact\.number\}@\$\{[\s\S]{0,120}(?:s\.whatsapp\.net|g\.us)/.test(
+      source
+    )
+  ) {
+    violations.push(
+      `${relative}: resolva o JID pelo ContactAddressResolver; contact.number pode ser nulo ou LID`
+    );
+  }
 }
 
 if (violations.length) {

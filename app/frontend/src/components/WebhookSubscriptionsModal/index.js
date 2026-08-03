@@ -14,7 +14,7 @@ import {
   TextField,
   Typography
 } from "@material-ui/core";
-import { DeleteOutline, Replay } from "@material-ui/icons";
+import { DeleteOutline, Edit, Replay } from "@material-ui/icons";
 
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
@@ -38,6 +38,7 @@ export const WEBHOOK_EVENTS = [
   "ticket.updated",
   "contact.updated"
 ];
+
 export const WEBHOOK_MESSAGE_KINDS = [
   "text",
   "image",
@@ -47,17 +48,47 @@ export const WEBHOOK_MESSAGE_KINDS = [
   "template"
 ];
 
-const WebhookSubscriptionsModal = ({ open, onClose, connections = [] }) => {
+export const WEBHOOK_EXCLUDE_FILTERS = [
+  { value: "fromMe", label: "Mensagens enviadas pelo atendente" },
+  { value: "group", label: "Mensagens de grupos" },
+  { value: "apiOriginated", label: "Eventos originados pela API" }
+];
+
+const emptyForm = initialConnectionId => ({
+  name: "",
+  url: "",
+  method: "POST",
+  selectedEvents: WEBHOOK_EVENTS,
+  selectedKinds: [],
+  connectionIds: initialConnectionId ? [Number(initialConnectionId)] : [],
+  includeApiOrigin: false,
+  excludeFilters: [],
+  enabled: true
+});
+
+export const webhookFormFromSubscription = subscription => ({
+  name: subscription.name || "",
+  url: subscription.url || "",
+  method: subscription.method || "POST",
+  selectedEvents: subscription.events || [],
+  selectedKinds: subscription.messageKinds || [],
+  connectionIds: subscription.connectionIds || [],
+  includeApiOrigin: subscription.includeApiOrigin === true,
+  excludeFilters: subscription.excludeFilters || [],
+  enabled: subscription.enabled !== false
+});
+
+const WebhookSubscriptionsModal = ({
+  open,
+  onClose,
+  connections = [],
+  initialConnectionId = null
+}) => {
   const [items, setItems] = useState([]);
   const [deliveries, setDeliveries] = useState([]);
-  const [name, setName] = useState("");
-  const [url, setUrl] = useState("");
-  const [method, setMethod] = useState("POST");
-  const [includeApiOrigin, setIncludeApiOrigin] = useState(false);
+  const [form, setForm] = useState(() => emptyForm(initialConnectionId));
+  const [editingId, setEditingId] = useState(null);
   const [createdSecret, setCreatedSecret] = useState("");
-  const [selectedEvents, setSelectedEvents] = useState(WEBHOOK_EVENTS);
-  const [selectedKinds, setSelectedKinds] = useState([]);
-  const [connectionIds, setConnectionIds] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -72,32 +103,40 @@ const WebhookSubscriptionsModal = ({ open, onClose, connections = [] }) => {
     }
   }, []);
 
+  const reset = useCallback(() => {
+    setEditingId(null);
+    setForm(emptyForm(initialConnectionId));
+    setCreatedSecret("");
+  }, [initialConnectionId]);
+
   useEffect(() => {
-    if (open) load();
-  }, [open, load]);
+    if (open) {
+      reset();
+      load();
+    }
+  }, [open, load, reset]);
+
+  const payload = () => ({
+    name: form.name,
+    url: form.url,
+    method: form.method,
+    events: form.selectedEvents,
+    messageKinds: form.selectedKinds,
+    connectionIds: form.connectionIds,
+    includeApiOrigin: form.includeApiOrigin,
+    excludeFilters: form.excludeFilters,
+    enabled: form.enabled
+  });
 
   const create = async () => {
     try {
-      const { data } = await api.post("/api/v1/webhook-subscriptions", {
-        name,
-        url,
-        method,
-        events: selectedEvents,
-        messageKinds: selectedKinds,
-        connectionIds: connectionIds
-          .split(",")
-          .map(value => value.trim())
-          .filter(Boolean)
-          .map(Number)
-          .filter(Number.isInteger),
-        includeApiOrigin,
-        enabled: true
-      });
+      const { data } = await api.post(
+        "/api/v1/webhook-subscriptions",
+        payload()
+      );
       setCreatedSecret(data.signingSecret || "");
-      setName("");
-      setUrl("");
-      setMethod("POST");
-      setConnectionIds("");
+      setEditingId(null);
+      setForm(emptyForm(initialConnectionId));
       await load();
       toast.success("Webhook criado.");
     } catch (error) {
@@ -105,7 +144,7 @@ const WebhookSubscriptionsModal = ({ open, onClose, connections = [] }) => {
     }
   };
 
-  const update = async (id, changes) => {
+  const update = async (id, changes = payload()) => {
     try {
       const { data } = await api.put(
         `/api/v1/webhook-subscriptions/${id}`,
@@ -113,21 +152,30 @@ const WebhookSubscriptionsModal = ({ open, onClose, connections = [] }) => {
       );
       if (data.signingSecret) setCreatedSecret(data.signingSecret);
       await load();
+      toast.success("Webhook atualizado.");
     } catch (error) {
       toastError(error);
     }
   };
 
-  const toggleSelection = (value, setter) =>
-    setter(current =>
-      current.includes(value)
-        ? current.filter(item => item !== value)
-        : [...current, value]
-    );
+  const toggle = (field, value) =>
+    setForm(current => ({
+      ...current,
+      [field]: current[field].includes(value)
+        ? current[field].filter(item => item !== value)
+        : [...current[field], value]
+    }));
+
+  const edit = item => {
+    setEditingId(item.id);
+    setForm(webhookFormFromSubscription(item));
+    setCreatedSecret("");
+  };
 
   const remove = async id => {
     try {
       await api.delete(`/api/v1/webhook-subscriptions/${id}`);
+      if (editingId === id) reset();
       await load();
     } catch (error) {
       toastError(error);
@@ -145,58 +193,59 @@ const WebhookSubscriptionsModal = ({ open, onClose, connections = [] }) => {
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
-      <DialogTitle>Webhooks externos</DialogTitle>
+      <DialogTitle>
+        {editingId ? "Editar webhook" : "Nova assinatura de webhook"}
+      </DialogTitle>
       <DialogContent dividers>
-        <Typography variant="h6">Nova assinatura</Typography>
-        <TextField fullWidth margin="dense" variant="outlined" label="Nome" value={name} onChange={event => setName(event.target.value)} />
-        <TextField fullWidth margin="dense" variant="outlined" label="URL HTTPS" value={url} onChange={event => setUrl(event.target.value)} />
-        <TextField
-          select
-          fullWidth
-          margin="dense"
-          variant="outlined"
-          label="Método HTTP"
-          value={method}
-          onChange={event => setMethod(event.target.value)}
-          helperText="Método usado na requisição enviada ao seu endpoint"
-        >
-          {["POST", "PUT", "PATCH"].map(option => (
-            <MenuItem key={option} value={option}>{option}</MenuItem>
-          ))}
+        <TextField fullWidth margin="dense" variant="outlined" label="Nome" value={form.name} onChange={event => setForm(current => ({ ...current, name: event.target.value }))} />
+        <TextField fullWidth margin="dense" variant="outlined" label="URL HTTPS" value={form.url} onChange={event => setForm(current => ({ ...current, url: event.target.value }))} />
+        <TextField select fullWidth margin="dense" variant="outlined" label="Método HTTP" value={form.method} onChange={event => setForm(current => ({ ...current, method: event.target.value }))}>
+          {["POST", "PUT", "PATCH"].map(option => <MenuItem key={option} value={option}>{option}</MenuItem>)}
         </TextField>
+
+        <Typography color="textSecondary">Conexões (vazio recebe todas)</Typography>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+          {connections.map(connection => (
+            <Chip key={connection.id} label={connection.name} color={form.connectionIds.includes(Number(connection.id)) ? "primary" : "default"} onClick={() => toggle("connectionIds", Number(connection.id))} />
+          ))}
+        </div>
+
         <Typography color="textSecondary">Eventos</Typography>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
           {WEBHOOK_EVENTS.map(event => (
-            <Chip
-              key={event}
-              label={event}
-              color={selectedEvents.includes(event) ? "primary" : "default"}
-              onClick={() => toggleSelection(event, setSelectedEvents)}
-            />
+            <Chip key={event} label={event} color={form.selectedEvents.includes(event) ? "primary" : "default"} onClick={() => toggle("selectedEvents", event)} />
           ))}
         </div>
+
         <Typography color="textSecondary">Tipos de mensagem (vazio recebe todos)</Typography>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
           {WEBHOOK_MESSAGE_KINDS.map(kind => (
-            <Chip
-              key={kind}
-              label={kind}
-              color={selectedKinds.includes(kind) ? "primary" : "default"}
-              onClick={() => toggleSelection(kind, setSelectedKinds)}
-            />
+            <Chip key={kind} label={kind} color={form.selectedKinds.includes(kind) ? "primary" : "default"} onClick={() => toggle("selectedKinds", kind)} />
           ))}
         </div>
-        <TextField
-          fullWidth
-          margin="dense"
-          variant="outlined"
-          label="IDs das conexões (separados por vírgula; vazio recebe todas)"
-          value={connectionIds}
-          onChange={event => setConnectionIds(event.target.value)}
-          helperText={connections.map(item => `${item.id}: ${item.name}`).join(" · ")}
-        />
-        <FormControlLabel control={<Switch checked={includeApiOrigin} onChange={event => setIncludeApiOrigin(event.target.checked)} color="primary" />} label="Incluir eventos originados pela API pública" />
-        <Button color="primary" variant="contained" onClick={create}>Criar webhook</Button>
+
+        <Typography color="textSecondary">Excluir dos eventos escutados</Typography>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+          {WEBHOOK_EXCLUDE_FILTERS.map(filter => (
+            <Chip key={filter.value} label={filter.label} color={form.excludeFilters.includes(filter.value) ? "secondary" : "default"} onClick={() => toggle("excludeFilters", filter.value)} />
+          ))}
+        </div>
+
+        <FormControlLabel control={<Switch checked={form.includeApiOrigin} onChange={event => setForm(current => ({ ...current, includeApiOrigin: event.target.checked }))} color="primary" />} label="Permitir eventos originados pela API pública" />
+        <FormControlLabel control={<Switch checked={form.enabled} onChange={event => setForm(current => ({ ...current, enabled: event.target.checked }))} color="primary" />} label="Assinatura habilitada" />
+
+        <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+          {editingId ? (
+            <>
+              <Button color="primary" variant="contained" onClick={() => update(editingId)}>Salvar</Button>
+              <Button color="primary" variant="outlined" onClick={create}>Salvar como novo</Button>
+              <Button onClick={reset}>Cancelar</Button>
+            </>
+          ) : (
+            <Button color="primary" variant="contained" disabled={!form.name.trim() || !form.url.trim() || !form.selectedEvents.length} onClick={create}>Criar webhook</Button>
+          )}
+        </div>
+
         {createdSecret && <TextField fullWidth margin="dense" variant="outlined" label="Segredo HMAC (exibido uma única vez)" value={createdSecret} InputProps={{ readOnly: true }} />}
 
         <Typography variant="h6" style={{ marginTop: 24 }}>Assinaturas</Typography>
@@ -204,13 +253,10 @@ const WebhookSubscriptionsModal = ({ open, onClose, connections = [] }) => {
           <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 8, margin: "8px 0" }}>
             <Chip label={item.pausedAt ? "Pausado" : item.enabled ? "Ativo" : "Desativado"} color={item.pausedAt ? "secondary" : "primary"} />
             <Typography style={{ flex: 1 }}>{item.name} — {item.method || "POST"} {item.url}</Typography>
-            <Button size="small" onClick={() => update(item.id, { enabled: !item.enabled })}>
-              {item.enabled ? "Desativar" : "Ativar"}
-            </Button>
-            <Button size="small" onClick={() => update(item.id, { rotateSecret: true })}>
-              Rotacionar segredo
-            </Button>
-            <IconButton onClick={() => remove(item.id)}><DeleteOutline /></IconButton>
+            <IconButton aria-label="Editar webhook" onClick={() => edit(item)}><Edit /></IconButton>
+            <Button size="small" onClick={() => update(item.id, { enabled: !item.enabled })}>{item.enabled ? "Desativar" : "Ativar"}</Button>
+            <Button size="small" onClick={() => update(item.id, { rotateSecret: true })}>Rotacionar segredo</Button>
+            <IconButton aria-label="Excluir webhook" onClick={() => remove(item.id)}><DeleteOutline /></IconButton>
           </div>
         ))}
 

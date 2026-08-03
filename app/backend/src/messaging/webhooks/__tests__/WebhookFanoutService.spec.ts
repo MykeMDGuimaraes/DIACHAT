@@ -305,6 +305,37 @@ describe("WebhookFanoutService", () => {
     expect(createDelivery).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["fromMe", { fromMe: true, origin: "provider" }],
+    ["group", { isGroup: true, origin: "provider" }],
+    ["apiOriginated", { origin: "api" }]
+  ])("excludes %s events before creating deliveries", async (filter, payload) => {
+    const createDelivery = jest.fn();
+    const service = new WebhookFanoutService({
+      transaction: callback => callback({}),
+      claimEvent: jest.fn().mockResolvedValue({
+        id: "evt_excluded",
+        companyId: 7,
+        eventType: "message.received",
+        aggregateId: "msg_excluded",
+        payload
+      }),
+      findSubscriptions: jest.fn().mockResolvedValue([
+        {
+          id: "sub_1",
+          events: ["message.received"],
+          includeApiOrigin: true,
+          excludeFilters: [filter]
+        }
+      ]),
+      createDelivery,
+      completeEvent: jest.fn()
+    });
+
+    await service.fanoutOne();
+    expect(createDelivery).not.toHaveBeenCalled();
+  });
+
   it.each(["projection", "encryption"])(
     "does not complete the claimed event after %s failure",
     async failure => {

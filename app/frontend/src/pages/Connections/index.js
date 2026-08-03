@@ -109,6 +109,7 @@ const Connections = () => {
 	const [providerModalOpen, setProviderModalOpen] = useState(false);
 	const [metaCloudModalOpen, setMetaCloudModalOpen] = useState(false);
 	const [webhooksModalOpen, setWebhooksModalOpen] = useState(false);
+	const [selectedWebhookConnectionId, setSelectedWebhookConnectionId] = useState(null);
 	const [apiCredentialsModalOpen, setApiCredentialsModalOpen] = useState(false);
 	const [routerIntegrationModalOpen, setRouterIntegrationModalOpen] = useState(false);
 	const [qrModalOpen, setQrModalOpen] = useState(false);
@@ -177,6 +178,11 @@ const Connections = () => {
 		} else {
 			setWhatsAppModalOpen(true);
 		}
+	};
+
+	const handleOpenConnectionWebhooks = whatsAppId => {
+		setSelectedWebhookConnectionId(whatsAppId);
+		setWebhooksModalOpen(true);
 	};
 
 	const handleOpenConfirmationModal = (action, whatsAppId) => {
@@ -351,8 +357,12 @@ const Connections = () => {
 			/>
 			<WebhookSubscriptionsModal
 				open={webhooksModalOpen}
-				onClose={() => setWebhooksModalOpen(false)}
+				onClose={() => {
+					setWebhooksModalOpen(false);
+					setSelectedWebhookConnectionId(null);
+				}}
 				connections={whatsApps}
+				initialConnectionId={selectedWebhookConnectionId}
 			/>
 			<ApiCredentialsModal
 				open={apiCredentialsModalOpen}
@@ -386,7 +396,10 @@ const Connections = () => {
 					<Button
 						variant="outlined"
 						color="primary"
-						onClick={() => setWebhooksModalOpen(true)}
+						onClick={() => {
+							setSelectedWebhookConnectionId(null);
+							setWebhooksModalOpen(true);
+						}}
 						style={{ marginRight: 8 }}
 					>
 						Webhooks
@@ -484,6 +497,12 @@ const Connections = () => {
 														>
 															<Edit />
 														</IconButton>
+														<Button
+															size="small"
+															onClick={() => handleOpenConnectionWebhooks(whatsApp.id)}
+														>
+															Webhook
+														</Button>
 
 														<IconButton
 															size="small"

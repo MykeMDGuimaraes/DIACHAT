@@ -14,7 +14,9 @@ import {
   WAMessageStubType,
   WAMessageUpdate,
   WASocket,
-  sendBaileysSocketMessage
+  sendBaileysSocketMessage,
+  parseBaileysContactIdentity,
+  resolveContactJid
 } from "../../messaging/public/baileys";
 import Contact from "../../models/Contact";
 import Ticket from "../../models/Ticket";
@@ -95,6 +97,7 @@ interface ImessageUpsert {
 interface IMe {
   name: string;
   id: string;
+  alternateId?: string;
 }
 export const isNumeric = (value: string) => /^-?\d+$/.test(value);
 
@@ -249,7 +252,7 @@ export const sendMessageImage = async (
   try {
     sentMessage = await sendBaileysSocketMessage(
       wbot,
-      `${contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`,
+      resolveContactJid({ ...contact, isGroup: ticket.isGroup }),
       {
         image: url
           ? { url }
@@ -262,7 +265,7 @@ export const sendMessageImage = async (
   } catch (error) {
     sentMessage = await sendBaileysSocketMessage(
       wbot,
-      `${contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`,
+      resolveContactJid({ ...contact, isGroup: ticket.isGroup }),
       {
         text: formatBody(
           "Não consegui enviar a imagem, tente novamente!",
@@ -285,7 +288,7 @@ export const sendMessageLink = async (
   try {
     sentMessage = await sendBaileysSocketMessage(
       wbot,
-      `${contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`,
+      resolveContactJid({ ...contact, isGroup: ticket.isGroup }),
       {
         document: url
           ? { url }
@@ -298,7 +301,7 @@ export const sendMessageLink = async (
   } catch (error) {
     sentMessage = await sendBaileysSocketMessage(
       wbot,
-      `${contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`,
+      resolveContactJid({ ...contact, isGroup: ticket.isGroup }),
       {
         text: formatBody("Não consegui enviar o PDF, tente novamente!", contact)
       }
@@ -469,15 +472,25 @@ const getSenderMessage = (
 };
 
 const getContactMessage = async (msg: proto.IWebMessageInfo, wbot: Session) => {
-  const isGroup = msg.key.remoteJid.includes("g.us");
-  const rawNumber = msg.key.remoteJid.replace(/\D/g, "");
+  const key = msg.key as typeof msg.key & {
+    remoteJidAlt?: string;
+    participantAlt?: string;
+  };
+  const isGroup = msg.key.remoteJid?.includes("g.us");
+  const primaryId = isGroup
+    ? msg.participant || msg.key.participant || msg.key.remoteJid
+    : msg.key.remoteJid;
+  const alternateId = isGroup ? key.participantAlt : key.remoteJidAlt;
+  const rawNumber = String(primaryId || "").replace(/\D/g, "");
   return isGroup
     ? {
-        id: getSenderMessage(msg, wbot),
+        id: primaryId || getSenderMessage(msg, wbot),
+        alternateId,
         name: msg.pushName
       }
     : {
-        id: msg.key.remoteJid,
+        id: primaryId,
+        alternateId,
         name: msg.key.fromMe ? rawNumber : msg.pushName
       };
 };
@@ -536,9 +549,19 @@ const verifyContact = async (
     profilePicUrl = `${process.env.FRONTEND_URL}/nopicture.png`;
   }
 
+  const identity = parseBaileysContactIdentity({
+    primaryJid: msgContact.id,
+    alternateJid:
+      process.env.BAILEYS_LID_CORRELATION_ENABLED === "true"
+        ? msgContact.alternateId
+        : null,
+    whatsappId: wbot.id
+  });
   const contactData = {
-    name: msgContact?.name || msgContact.id.replace(/\D/g, ""),
-    number: msgContact.id.replace(/\D/g, ""),
+    name: msgContact?.name || identity.number || identity.lid || "Contato WhatsApp",
+    number: identity.number,
+    lid: identity.lid,
+    jidServer: identity.jidServer,
     profilePicUrl,
     isGroup: msgContact.id.includes("g.us"),
     companyId,
@@ -1097,7 +1120,7 @@ const verifyQueue = async (
 
       await sendBaileysSocketMessage(
         wbot,
-        `${contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`,
+        resolveContactJid({ ...contact, isGroup: ticket.isGroup }),
         {
           text: body
         }
@@ -1178,7 +1201,7 @@ const verifyQueue = async (
 
     const sendMsg = await sendBaileysSocketMessage(
       wbot,
-      `${contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`,
+      resolveContactJid({ ...contact, isGroup: ticket.isGroup }),
       textMessage
     );
 
@@ -1230,7 +1253,7 @@ const verifyQueue = async (
           );
           const sentMessage = await sendBaileysSocketMessage(
             wbot,
-            `${contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`,
+            resolveContactJid({ ...contact, isGroup: ticket.isGroup }),
             {
               text: body
             }
@@ -1289,7 +1312,7 @@ const verifyQueue = async (
       if (choosenQueue.greetingMessage) {
         const sentMessage = await sendBaileysSocketMessage(
           wbot,
-          `${contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`,
+          resolveContactJid({ ...contact, isGroup: ticket.isGroup }),
           {
             text: body
           }
@@ -1530,7 +1553,7 @@ const handleChartbot = async (
     //   };
 
     //   const sendMsg = await sendBaileysSocketMessage(wbot,
-    //     `${ticket.contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`,
+    //     resolveContactJid({ ...ticket.contact, isGroup: ticket.isGroup }),
     //     listMessage
     //   );
 
@@ -1560,9 +1583,7 @@ const handleChartbot = async (
 
       const sendMsg = await sendBaileysSocketMessage(
         wbot,
-        `${ticket.contact.number}@${
-          ticket.isGroup ? "g.us" : "s.whatsapp.net"
-        }`,
+        resolveContactJid({ ...ticket.contact, isGroup: ticket.isGroup }),
         buttonMessage
       );
 
@@ -1587,9 +1608,7 @@ const handleChartbot = async (
 
       const sendMsg = await sendBaileysSocketMessage(
         wbot,
-        `${ticket.contact.number}@${
-          ticket.isGroup ? "g.us" : "s.whatsapp.net"
-        }`,
+        resolveContactJid({ ...ticket.contact, isGroup: ticket.isGroup }),
         textMessage
       );
 
@@ -1657,9 +1676,7 @@ const handleChartbot = async (
 
         const sendMsg = await sendBaileysSocketMessage(
           wbot,
-          `${ticket.contact.number}@${
-            ticket.isGroup ? "g.us" : "s.whatsapp.net"
-          }`,
+          resolveContactJid({ ...ticket.contact, isGroup: ticket.isGroup }),
           listMessage
         );
 
@@ -1689,9 +1706,7 @@ const handleChartbot = async (
 
         const sendMsg = await sendBaileysSocketMessage(
           wbot,
-          `${ticket.contact.number}@${
-            ticket.isGroup ? "g.us" : "s.whatsapp.net"
-          }`,
+          resolveContactJid({ ...ticket.contact, isGroup: ticket.isGroup }),
           buttonMessage
         );
 
@@ -1715,9 +1730,7 @@ const handleChartbot = async (
 
         const sendMsg = await sendBaileysSocketMessage(
           wbot,
-          `${ticket.contact.number}@${
-            ticket.isGroup ? "g.us" : "s.whatsapp.net"
-          }`,
+          resolveContactJid({ ...ticket.contact, isGroup: ticket.isGroup }),
           textMessage
         );
 
@@ -2402,9 +2415,7 @@ const handleMessage = async (
             async () => {
               await sendBaileysSocketMessage(
                 wbot,
-                `${ticket.contact.number}@${
-                  ticket.isGroup ? "g.us" : "s.whatsapp.net"
-                }`,
+                resolveContactJid({ ...ticket.contact, isGroup: ticket.isGroup }),
                 {
                   text: body
                 }
@@ -2454,9 +2465,7 @@ const handleMessage = async (
                 async () => {
                   await sendBaileysSocketMessage(
                     wbot,
-                    `${ticket.contact.number}@${
-                      ticket.isGroup ? "g.us" : "s.whatsapp.net"
-                    }`,
+                    resolveContactJid({ ...ticket.contact, isGroup: ticket.isGroup }),
                     {
                       text: body
                     }
@@ -2779,9 +2788,7 @@ const handleMessage = async (
               async () => {
                 await sendBaileysSocketMessage(
                   wbot,
-                  `${ticket.contact.number}@${
-                    ticket.isGroup ? "g.us" : "s.whatsapp.net"
-                  }`,
+                  resolveContactJid({ ...ticket.contact, isGroup: ticket.isGroup }),
                   {
                     text: body
                   }
@@ -2826,9 +2833,7 @@ const handleMessage = async (
           async () => {
             await sendBaileysSocketMessage(
               wbot,
-              `${ticket.contact.number}@${
-                ticket.isGroup ? "g.us" : "s.whatsapp.net"
-              }`,
+              resolveContactJid({ ...ticket.contact, isGroup: ticket.isGroup }),
               {
                 text: whatsapp.greetingMessage
               }

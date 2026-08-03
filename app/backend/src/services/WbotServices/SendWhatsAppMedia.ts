@@ -1,4 +1,4 @@
-import { sendBaileysSocketMessage } from "../../messaging/public/baileys";
+import { resolveContactJid, sendBaileysSocketMessage } from "../../messaging/public/baileys";
 import { WAMessage, AnyMessageContent } from "../../messaging/public/baileys";
 import * as Sentry from "@sentry/node";
 import fs from "fs";
@@ -174,7 +174,7 @@ const SendWhatsAppMedia = async ({
 
     const sentMessage = await sendBaileysSocketMessage(
       wbot,
-      `${ticket.contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`,
+      resolveContactJid({ ...ticket.contact, isGroup: ticket.isGroup }),
       {
         ...options
       }

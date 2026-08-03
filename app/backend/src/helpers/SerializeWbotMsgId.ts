@@ -1,10 +1,12 @@
 import Message from "../models/Message";
 import Ticket from "../models/Ticket";
+import { resolveContactJid } from "../messaging/public/baileys";
 
 const SerializeWbotMsgId = (ticket: Ticket, message: Message): string => {
-  const serializedMsgId = `${message.fromMe}_${ticket.contact.number}@${
-    ticket.isGroup ? "g" : "c"
-  }.us_${message.id}`;
+  const serializedMsgId = `${message.fromMe}_${resolveContactJid({
+    ...ticket.contact,
+    isGroup: ticket.isGroup
+  })}_${message.id}`;
 
   return serializedMsgId;
 };

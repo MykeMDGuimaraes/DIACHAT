@@ -38,6 +38,7 @@ const subscriptionResponseFields = [
   "connectionIds",
   "messageKinds",
   "includeApiOrigin",
+  "excludeFilters",
   "consecutiveFailures",
   "pausedAt",
   "lastSuccessAt",

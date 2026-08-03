@@ -11,7 +11,8 @@ describe("createWebhookSubscription", () => {
         events: ["message.received", "message.status.updated"],
         connectionIds: [42],
         messageKinds: ["text"],
-        includeApiOrigin: false
+        includeApiOrigin: false,
+        excludeFilters: ["fromMe", "group", "fromMe"]
       },
       {
         create,
@@ -28,8 +29,43 @@ describe("createWebhookSubscription", () => {
       secretCiphertext: "ciphertext",
       keyVersion: "v1",
       connectionIds: [42],
-      includeApiOrigin: false
+      includeApiOrigin: false,
+      excludeFilters: ["fromMe", "group"]
     }));
+  });
+
+  it("rejects unknown exclusion filters", async () => {
+    await expect(
+      createWebhookSubscription(
+        {
+          companyId: 7,
+          name: "invalid",
+          url: "https://hooks.example.com/diachat",
+          events: ["message.received"],
+          excludeFilters: ["phoneNumber" as any]
+        },
+        {
+          create: jest.fn(),
+          generateSecret: jest.fn(),
+          encryptSecret: jest.fn(),
+          keyring: { activeKeyId: "v1", keys: { v1: "unused" } }
+        }
+      )
+    ).rejects.toMatchObject({ statusCode: 400 });
+  });
+
+  it("allows clearing exclusion filters on update", async () => {
+    const subscription = { update: jest.fn() };
+    await updateWebhookSubscription(
+      { companyId: 7, id: "sub_1", excludeFilters: [] },
+      {
+        find: jest.fn().mockResolvedValue(subscription),
+        generateSecret: jest.fn(),
+        encryptSecret: jest.fn(),
+        keyring: { activeKeyId: "v1", keys: { v1: "unused" } }
+      }
+    );
+    expect(subscription.update).toHaveBeenCalledWith({ excludeFilters: [] });
   });
 
   it("rotates the signing secret without returning the previous plaintext", async () => {

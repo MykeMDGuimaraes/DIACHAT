@@ -1,4 +1,4 @@
-import { sendBaileysSocketMessage } from "../../messaging/public/baileys";
+import { resolveContactJid, sendBaileysSocketMessage } from "../../messaging/public/baileys";
 import {
   WAMessage,
   AnyMessageContent,
@@ -72,12 +72,12 @@ export const typeSimulation = async (ticket: Ticket, presence: WAPresence) => {
 
   await wbot.sendPresenceUpdate(
     presence,
-    `${contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`
+    resolveContactJid({ ...contact, isGroup: ticket.isGroup })
   );
   await delay(5000);
   await wbot.sendPresenceUpdate(
     "paused",
-    `${contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`
+    resolveContactJid({ ...contact, isGroup: ticket.isGroup })
   );
 };
 
@@ -157,7 +157,7 @@ const SendWhatsAppMediaFlow = async ({
 
     const sentMessage = await sendBaileysSocketMessage(
       wbot,
-      `${contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`,
+      resolveContactJid({ ...contact, isGroup: ticket.isGroup }),
       {
         ...options
       }

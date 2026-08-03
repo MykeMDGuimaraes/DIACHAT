@@ -1,4 +1,4 @@
-import { sendBaileysSocketMessage } from "../../messaging/public/baileys";
+import { resolveContactJid, sendBaileysSocketMessage } from "../../messaging/public/baileys";
 import moment from "moment";
 import * as Sentry from "@sentry/node";
 import CheckContactOpenTickets from "../../helpers/CheckContactOpenTickets";
@@ -200,9 +200,7 @@ const UpdateTicketService = async ({
 
         const queueChangedMessage = await sendBaileysSocketMessage(
           wbot,
-          `${ticket.contact.number}@${
-            ticket.isGroup ? "g.us" : "s.whatsapp.net"
-          }`,
+          resolveContactJid({ ...ticket.contact, isGroup: ticket.isGroup }),
           {
             text: translatedMessage[language]
           }
@@ -237,9 +235,7 @@ const UpdateTicketService = async ({
 
         const queueChangedMessage = await sendBaileysSocketMessage(
           wbot,
-          `${ticket.contact.number}@${
-            ticket.isGroup ? "g.us" : "s.whatsapp.net"
-          }`,
+          resolveContactJid({ ...ticket.contact, isGroup: ticket.isGroup }),
           {
             text: translatedMessage[language]
           }
@@ -283,9 +279,7 @@ const UpdateTicketService = async ({
 
         const queueChangedMessage = await sendBaileysSocketMessage(
           wbot,
-          `${ticket.contact.number}@${
-            ticket.isGroup ? "g.us" : "s.whatsapp.net"
-          }`,
+          resolveContactJid({ ...ticket.contact, isGroup: ticket.isGroup }),
           {
             text: translatedMessage[language]
           }
@@ -318,9 +312,7 @@ const UpdateTicketService = async ({
 
         const queueChangedMessage = await sendBaileysSocketMessage(
           wbot,
-          `${ticket.contact.number}@${
-            ticket.isGroup ? "g.us" : "s.whatsapp.net"
-          }`,
+          resolveContactJid({ ...ticket.contact, isGroup: ticket.isGroup }),
           {
             text: translatedMessage[language]
           }

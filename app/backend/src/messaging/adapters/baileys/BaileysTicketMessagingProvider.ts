@@ -2,6 +2,7 @@ import type { WAMessage, WASocket } from "baileys";
 import type Ticket from "../../../models/Ticket";
 import { RetryableSendError } from "../../contracts/ProviderSendError";
 import { sendBaileysSocketMessage } from "./BaileysSocketPort";
+import { resolveContactJid } from "./BaileysContactIdentity";
 
 type TicketSocket = Pick<WASocket, "sendMessage"> & {
   relayMessage?: WASocket["relayMessage"];
@@ -81,9 +82,12 @@ class BaileysTicketMessagingProvider {
         }
       });
     }
-    const jid = `${ticket.contact.number}@${
-      ticket.isGroup ? "g.us" : "s.whatsapp.net"
-    }`;
+    const jid = resolveContactJid({
+      number: ticket.contact.number,
+      lid: (ticket.contact as any).lid,
+      jidServer: (ticket.contact as any).jidServer,
+      isGroup: ticket.isGroup
+    });
 
     return sendBaileysSocketMessage(
       socket,
@@ -118,9 +122,12 @@ class BaileysTicketMessagingProvider {
         message: "Socket Baileys sem suporte interativo"
       });
     }
-    const jid = `${ticket.contact.number}@${
-      ticket.isGroup ? "g.us" : "s.whatsapp.net"
-    }`;
+    const jid = resolveContactJid({
+      number: ticket.contact.number,
+      lid: (ticket.contact as any).lid,
+      jidServer: (ticket.contact as any).jidServer,
+      isGroup: ticket.isGroup
+    });
     return this.nativeButtonsRelay(
       socket as Pick<WASocket, "relayMessage" | "user">,
       jid,
