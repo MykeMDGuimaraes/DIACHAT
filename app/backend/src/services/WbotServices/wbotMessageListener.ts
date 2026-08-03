@@ -2951,6 +2951,10 @@ const wbotMessageListener = async (
 ): Promise<void> => {
   try {
     wbot.ev.on("messages.upsert", async (messageUpsert: ImessageUpsert) => {
+      // LOG TEMPORÁRIO de diagnóstico (WA_RAW_EVENT_LOG=true): remover após uso
+      if (process.env.WA_RAW_EVENT_LOG === "true") {
+        console.log("[WA_RAW_EVENT]", JSON.stringify(messageUpsert));
+      }
       const messages = messageUpsert.messages
         .filter(filterMessages)
         .map(msg => msg);
