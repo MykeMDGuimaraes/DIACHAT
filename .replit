@@ -93,3 +93,4 @@ MESSAGING_ENCRYPTION_ACTIVE_KEY_ID = "k1"
 META_GRAPH_VERSION = "v23.0"
 
 [userenv.development]
+WA_RAW_EVENT_LOG = "true"
