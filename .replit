@@ -91,5 +91,3 @@ build = ["bash", "scripts/deploy-build.sh"]
 DB_SSL = "true"
 MESSAGING_ENCRYPTION_ACTIVE_KEY_ID = "k1"
 META_GRAPH_VERSION = "v23.0"
-PRODUCTION_SEED_CONFIRMATION = "I_UNDERSTAND"
-RUN_SEEDS = "true"
