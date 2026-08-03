@@ -6,10 +6,19 @@ import Queue from "../../models/Queue";
 import Tag from "../../models/Tag";
 import Whatsapp from "../../models/Whatsapp";
 
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 const ShowTicketUUIDService = async (
   uuid: string,
   companyId: number
 ): Promise<Ticket> => {
+  // Evita 500 por cast inválido no Postgres quando o parâmetro não é UUID
+  // (ex.: string "undefined" vinda do frontend).
+  if (!UUID_PATTERN.test(uuid)) {
+    throw new AppError("ERR_NO_TICKET_FOUND", 404);
+  }
+
   const ticket = await Ticket.findOne({
     where: {
       uuid,

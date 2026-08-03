@@ -40,7 +40,6 @@ app.use(
 app.use(cookieParser());
 app.use(Sentry.Handlers.requestHandler());
 app.use("/public", mediaAuth, express.static(uploadConfig.directory));
-app.use(routes);
 
 const frontendBuildDir = path.resolve(
   __dirname,
@@ -49,13 +48,33 @@ const frontendBuildDir = path.resolve(
   "frontend",
   "build"
 );
-const serveFrontend = fs.existsSync(path.join(frontendBuildDir, "index.html"));
+const indexHtmlPath = path.join(frontendBuildDir, "index.html");
+const serveFrontend = fs.existsSync(indexHtmlPath);
+
+// Navegação direta/refresh em rotas do SPA (ex.: /tickets/:uuid): o request de
+// documento não carrega Authorization e cairia nas rotas da API (isAuth -> 401
+// JSON). Servimos o index.html antes das rotas quando é um GET de documento.
+if (serveFrontend) {
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    const accept = req.headers.accept || "";
+    if (
+      req.method === "GET" &&
+      accept.includes("text/html") &&
+      !req.headers.authorization
+    ) {
+      return res.sendFile(indexHtmlPath);
+    }
+    return next();
+  });
+}
+
+app.use(routes);
 
 if (serveFrontend) {
   app.use(express.static(frontendBuildDir));
   app.get("*", (req: Request, res: Response, next: NextFunction) => {
     if (req.method === "GET" && req.accepts("html")) {
-      return res.sendFile(path.join(frontendBuildDir, "index.html"));
+      return res.sendFile(indexHtmlPath);
     }
     return next();
   });

@@ -72,6 +72,12 @@ const Ticket = () => {
   const socketManager = useContext(SocketContext);
 
   useEffect(() => {
+    if (!ticketId) {
+      // Rota /tickets sem ticket selecionado: não há o que buscar
+      // (evita GET /tickets/u/undefined -> 500).
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     const delayDebounceFn = setTimeout(() => {
       const fetchTicket = async () => {

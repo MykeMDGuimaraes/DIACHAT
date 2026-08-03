@@ -26,10 +26,13 @@ export const provider = async (
   contact: Contact,
   wbot: WASocket
 ) => {
+  // O contato fresco de verifyContact carrega number/lid/jidServer completos;
+  // ticket.contact pode vir de includes com atributos limitados (sem lid),
+  // o que derrubava resolveContactJid para contatos @lid.
   const ticketJid = resolveContactJid({
-    number: ticket.contact.number,
-    lid: ticket.contact.lid,
-    jidServer: ticket.contact.jidServer,
+    number: contact?.number ?? ticket.contact.number,
+    lid: contact?.lid ?? ticket.contact.lid,
+    jidServer: contact?.jidServer ?? ticket.contact.jidServer,
     isGroup: ticket.isGroup
   });
   const filaescolhida = ticket.queue?.name;
