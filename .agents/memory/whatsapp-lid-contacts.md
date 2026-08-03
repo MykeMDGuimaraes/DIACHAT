@@ -13,6 +13,8 @@ Quarta armadilha: o senderPn vem SEM o nono dígito brasileiro em algumas regiõ
 
 Quinta armadilha (a mais cara): existem **dois caminhos de envio por API** — o legado `/api/messages/send` (MessageController → CreateOrUpdateContactService) e o novo `/api/v1/messages` (PublicTextMessageService, com busca de contato PRÓPRIA e exata). Corrigir um não corrige o outro. Para saber qual o cliente usa: AuditLog `legacy_messages_send_accessed` (legado) vs `messaging."MessageCommands"` (novo). Toda correção de identidade de contato precisa cobrir os dois lados.
 
+Sexta observação (ago/2026): `messages.upsert` NÃO dispara para mensagens enviadas pelo próprio socket Baileys (envios pela tela ou por API) — só para o que o servidor do WhatsApp empurra (recebidas, ou fromMe enviadas do app do celular pareado). Log de evento baseado em upsert (WA_RAW_EVENT) portanto não serve para verificar envios; para isso, conferir a tabela Messages. Bônus: ids de mensagem são texto hex/uuid — ordenar por `createdAt`, nunca por id.
+
 **Why:** incidente em produção (ago/2026): contato criado sem número, conversa sem mensagens; causa raiz = include limitado + flag de correlação desligada.
 
 **How to apply:** (1) manter `BAILEYS_LID_CORRELATION_ENABLED=true` no app/backend/.env; (2) qualquer include de Contact usado em fluxos de mensagem precisa incluir `lid` e `jidServer` nos attributes — ou usar o contato fresco do verifyContact; (3) CreateOrUpdateContactService preenche number ausente quando um evento posterior traz o telefone (busca por lid primeiro), então contatos legados @lid se autocorrigem na próxima mensagem recebida.
