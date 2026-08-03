@@ -3,6 +3,7 @@ import { publishTenantEvent } from "../../libs/tenantEvents";
 import { toContactDTO } from "../InternalV1Services/Dtos";
 import Contact from "../../models/Contact";
 import ContactCustomField from "../../models/ContactCustomField";
+import brazilianNinthDigitVariants from "../../helpers/brazilianNinthDigitVariants";
 
 interface ExtraInfo extends ContactCustomField {
   name: string;
@@ -56,7 +57,12 @@ const CreateOrUpdateContactService = async ({
       ? await Contact.findOne({ where: { companyId, whatsappId, lid } })
       : null;
   if (!contact && number) {
-    contact = await Contact.findOne({ where: { companyId, number } });
+    const numberCandidates = isGroup
+      ? [number]
+      : brazilianNinthDigitVariants(number);
+    contact = await Contact.findOne({
+      where: { companyId, number: numberCandidates }
+    });
   }
 
   if (contact) {
@@ -68,7 +74,10 @@ const CreateOrUpdateContactService = async ({
     if (!contact.lid && lid) changes.lid = lid;
     if (!contact.number && number) {
       const numberOwner = await Contact.findOne({
-        where: { companyId, number }
+        where: {
+          companyId,
+          number: isGroup ? [number] : brazilianNinthDigitVariants(number)
+        }
       });
       if (!numberOwner || numberOwner.id === contact.id) {
         changes.number = number;
