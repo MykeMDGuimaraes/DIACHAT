@@ -60,10 +60,40 @@ echo "[deploy-run] executando migrações..."
 
 # Seeds só rodam quando explicitamente habilitados (primeiro deploy), para não
 # mascarar erros reais em todo restart. Defina RUN_SEEDS=true nos secrets de
-# produção na primeira publicação e remova depois.
+# produção na primeira publicação e remova depois (e republique: variáveis de
+# produção só são aplicadas em deployments novos).
 if [ "${RUN_SEEDS:-}" = "true" ]; then
-  echo "[deploy-run] executando seeds (RUN_SEEDS=true)..."
-  ./node_modules/.bin/sequelize db:seed:all
+  # Guard de idempotência: os seeders legados (create-default-company etc.)
+  # fazem insert direto e NÃO são idempotentes. Se um boot morre depois de
+  # semear (ex.: timeout ao abrir a porta) e RUN_SEEDS segue ativo, cada retry
+  # re-roda as seeds e aborta em chave duplicada (set -e) — crash loop.
+  SEEDED=$(node -e '
+    (async () => {
+      const { Client } = require("pg");
+      const c = new Client({
+        host: process.env.DB_HOST, port: Number(process.env.DB_PORT || 5432),
+        database: process.env.DB_NAME, user: process.env.DB_USER, password: process.env.DB_PASS,
+        ssl: process.env.DB_SSL === "true" ? { require: true, rejectUnauthorized: false } : false
+      });
+      try {
+        await c.connect();
+        const r = await c.query(`SELECT count(*)::int AS n FROM "Plans"`);
+        console.log(r.rows[0].n > 0 ? "yes" : "no");
+      } catch (e) {
+        console.error("[deploy-run] falha ao verificar seeds:", e.message);
+        console.log("unknown");
+      } finally { await c.end().catch(() => {}); }
+    })();
+  ')
+  case "$SEEDED" in
+    yes)
+      echo "[deploy-run] seeds pulados: banco já semeado (remova RUN_SEEDS e republique).";;
+    no)
+      echo "[deploy-run] executando seeds (RUN_SEEDS=true)..."
+      ./node_modules/.bin/sequelize db:seed:all;;
+    *)
+      echo "[deploy-run] AVISO: não foi possível verificar seeds; pulando por segurança (o banco pode estar vazio).";;
+  esac
 else
   echo "[deploy-run] seeds ignorados (defina RUN_SEEDS=true para rodar)."
 fi
