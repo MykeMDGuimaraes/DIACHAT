@@ -186,7 +186,9 @@ export const initWASocket = async (whatsapp: Whatsapp): Promise<Session> => {
 
             // O log acima serializa o erro como "[object Object]". Registrar o
             // codigo de desconexao de forma estruturada: 401/403/428/515
-            // indicam logout ou restricao no lado do WhatsApp.
+            // indicam logout ou restricao no lado do WhatsApp. Nao logar
+            // `data`/`payload` brutos: sao conteudo do protocolo vindo do
+            // servidor, sem formato garantido e potencialmente sensiveis.
             if (lastDisconnect?.error) {
               const disconnectErr = lastDisconnect.error as Boom;
               logger.warn(
@@ -194,8 +196,6 @@ export const initWASocket = async (whatsapp: Whatsapp): Promise<Session> => {
                   whatsappId: id,
                   connection: connection || null,
                   statusCode: disconnectErr?.output?.statusCode || null,
-                  payload: disconnectErr?.output?.payload || null,
-                  data: disconnectErr?.data || null,
                   message: disconnectErr?.message || null
                 },
                 "wbot: conexao fechada com erro do WhatsApp"
