@@ -2987,6 +2987,19 @@ const wbotMessageListener = async (
       messageUpdate.forEach(async (message: WAMessageUpdate) => {
         (wbot as WASocket)!.readMessages([message.key]);
 
+        // [DIAG temporario #53] registrar acks devolvidos pelo servidor do
+        // WhatsApp para mensagens nossas — prova se o ack volta apos o
+        // re-pareamento do canal.
+        if (message.key.fromMe) {
+          logger.info(
+            {
+              messageId: message.key.id,
+              status: message.update.status
+            },
+            "wbot: ack recebido para mensagem enviada (diagnostico #53)"
+          );
+        }
+
         handleMsgAck(message, message.update.status, companyId);
       });
     });

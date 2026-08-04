@@ -184,6 +184,24 @@ export const initWASocket = async (whatsapp: Whatsapp): Promise<Session> => {
               }`
             );
 
+            // [DIAG temporario #53] capturar codigo de desconexao do Baileys:
+            // 401/403/428/515 indicam logout ou restricao no lado do WhatsApp.
+            // O log acima serializa o objeto como "[object Object]".
+            if (lastDisconnect?.error) {
+              const diagErr = lastDisconnect.error as Boom;
+              logger.warn(
+                {
+                  whatsappId: id,
+                  connection: connection || null,
+                  statusCode: diagErr?.output?.statusCode || null,
+                  payload: diagErr?.output?.payload || null,
+                  data: diagErr?.data || null,
+                  message: diagErr?.message || null
+                },
+                "wbot: connection.update com lastDisconnect (diagnostico #53)"
+              );
+            }
+
             if (connection === "close") {
               if ((lastDisconnect?.error as Boom)?.output?.statusCode === 403) {
                 await whatsapp.update({ status: "PENDING", session: "" });
