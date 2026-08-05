@@ -7,11 +7,11 @@ import makeWASocket, {
   fetchLatestBaileysVersion,
   makeCacheableSignalKeyStore,
   // makeInMemoryStore,
-  isJidBroadcast
+  isJidBroadcast,
+  BaileysLogger as MAIN_LOGGER
 } from "../messaging/public/baileys";
 import Whatsapp from "../models/Whatsapp";
 import { logger } from "../utils/logger";
-import { BaileysLogger as MAIN_LOGGER } from "../messaging/public/baileys";
 import authState from "../helpers/authState";
 import AppError from "../errors/AppError";
 import { getIO } from "./socket";
@@ -23,6 +23,7 @@ import waitForSessionReady, {
 } from "./waitForSessionReady";
 import { registerBaileysConnectionLifecycle } from "../services/WbotServices/BaileysConnectionLifecycle";
 import { decideDisconnect } from "../services/WbotServices/BaileysDisconnectPolicy";
+import { handleAuthWritePersistentFailure } from "../services/WbotServices/authWriteFailurePolicy";
 import {
   configureSessionManager,
   getSessionManager
@@ -106,10 +107,19 @@ export const createWASocket = async (
 
   // Persistencia de auth-state guardada pela geracao: vale para creds.update
   // E para o keys.set interno do Baileys — um socket substituido nao grava
-  // mais nada (ver authState).
-  const { state, saveState } = await authState(whatsapp, () =>
-    getSessionManager().isCurrent(id, generation)
-  );
+  // mais nada (ver authState). As escritas passam pela fila serializada do
+  // canal (Task 3); falhas repetidas de escrita obrigatoria encerram e
+  // sinalizam a sessao preservando o ultimo snapshot valido — a politica
+  // reavalia o fence antes de qualquer efeito (authWriteFailurePolicy).
+  const { state, saveState } = await authState(whatsapp, {
+    shouldPersist: () => getSessionManager().isCurrent(id, generation),
+    onPersistentFailure: () =>
+      handleAuthWritePersistentFailure({
+        whatsapp,
+        generation,
+        emit: (room, event, payload) => io.to(room).emit(event, payload)
+      })
+  });
 
   const msgRetryCounterCache = new NodeCache();
 
@@ -144,9 +154,9 @@ export const createWASocket = async (
   // Fence dos listeners do mirror (connection.update/messages.*): callbacks
   // de geracao substituida nao publicam eventos do provedor. O 4o arg fica
   // undefined para manter o registerMirror padrao.
-  const fenceMirrorListener = (handler: (value: any) => Promise<void>) => (
-    value: any
-  ) => fenced(() => handler(value));
+  const fenceMirrorListener =
+    (handler: (value: any) => Promise<void>) => (value: any) =>
+      fenced(() => handler(value));
 
   registerBaileysConnectionLifecycle(
     wsocket,
@@ -182,8 +192,7 @@ export const createWASocket = async (
       if (connection === "close") {
         // Politica centralizada: decide acao, destino da credencial e teto
         // de reconexao para o statusCode do WhatsApp.
-        const statusCode = (lastDisconnect?.error as Boom)?.output
-          ?.statusCode;
+        const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode;
         const decision = decideDisconnect(statusCode);
         logger.warn(
           {
@@ -214,11 +223,7 @@ export const createWASocket = async (
           // Stop condicional a ESTA geracao: se um replace publicou outra
           // sessao enquanto este callback aguardava, nada e derrubado e
           // nenhuma reconexao e agendada.
-          const stopped = await manager.stopIfCurrent(
-            id,
-            generation,
-            "close"
-          );
+          const stopped = await manager.stopIfCurrent(id, generation, "close");
           if (stopped && decision.action === "reconnect") {
             // Reconexao com teto da policy, agendada so pelo manager:
             // replace/stop cancelam este timer junto com a geracao.
@@ -227,7 +232,9 @@ export const createWASocket = async (
               2000,
               decision.maxReconnectAttempts,
               () => {
-                void StartWhatsAppSession(whatsapp, whatsapp.companyId);
+                StartWhatsAppSession(whatsapp, whatsapp.companyId).catch(err =>
+                  logger.error(err)
+                );
               }
             );
           }
@@ -301,9 +308,12 @@ export const createWASocket = async (
     fenceMirrorListener
   );
   // Persistencia de credenciais fenced: um creds.update de geracao vencida
-  // nao sobrescreve o pareamento da sessao nova (a serializacao das
-  // escritas de credenciais e Task 3).
-  wsocket.ev.on("creds.update", () => fenced(() => saveState()));
+  // nao sobrescreve o pareamento da sessao nova. A escrita aguarda a fila
+  // do canal (Task 3); a fila ja loga falhas de forma estruturada, entao o
+  // catch aqui apenas evita rejeicao nao tratada no emitter do Baileys.
+  wsocket.ev.on("creds.update", () =>
+    fenced(() => saveState().catch(() => undefined))
+  );
 
   return wsocket;
 };
@@ -320,7 +330,9 @@ configureSessionManager({
     Whatsapp.findByPk(whatsappId)
       .then(whatsappModel => {
         if (whatsappModel) {
-          void StartWhatsAppSession(whatsappModel, whatsappModel.companyId);
+          StartWhatsAppSession(whatsappModel, whatsappModel.companyId).catch(
+            err => logger.error(err)
+          );
         }
       })
       .catch(err => logger.error(err));

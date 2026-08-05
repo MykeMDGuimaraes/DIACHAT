@@ -5,6 +5,7 @@ import type {
 } from "../messaging/public/baileys";
 import { BufferJSON, initAuthCreds, proto } from "../messaging/public/baileys";
 import Whatsapp from "../models/Whatsapp";
+import { enqueueAuthStateWrite } from "./authStateWriter";
 
 const KEY_MAP: { [T in keyof SignalDataTypeMap]: string } = {
   "pre-key": "preKeys",
@@ -15,28 +16,47 @@ const KEY_MAP: { [T in keyof SignalDataTypeMap]: string } = {
   "sender-key-memory": "senderKeyMemory"
 };
 
+export interface AuthStateOptions {
+  /**
+   * Fence de geração (Task 2/3 do hardening): vale para creds.update E para
+   * o keys.set interno do Baileys. Avaliado na EXECUÇÃO da fila — uma
+   * escrita enfileirada vigente mas executada após um replace fica inerte.
+   */
+  shouldPersist?: () => boolean;
+  /**
+   * Chamado uma única vez quando as falhas consecutivas de escrita atingem
+   * o limite (ver authStateWriter): o dono do ciclo de vida fecha e
+   * sinaliza a sessão, preservando o último snapshot válido.
+   */
+  onPersistentFailure?: (whatsappId: number) => void | Promise<void>;
+}
+
 const authState = async (
   whatsapp: Whatsapp,
-  shouldPersist: () => boolean = () => true
-): Promise<{ state: AuthenticationState; saveState: () => void }> => {
+  options: AuthStateOptions = {}
+): Promise<{
+  state: AuthenticationState;
+  saveState: () => Promise<void>;
+}> => {
+  const shouldPersist = options.shouldPersist ?? (() => true);
   let creds: AuthenticationCreds;
   let keys: any = {};
 
-  const saveState = async () => {
-    // Fencing de geracao (Task 2 do hardening): vale para creds.update E
-    // para o keys.set abaixo — um socket de geracao substituida nao grava
-    // mais nada, nao sobrescreve o pareamento da sessao nova.
-    if (!shouldPersist()) return;
-    try {
-      await whatsapp.update({
-        session: JSON.stringify({ creds, keys }, BufferJSON.replacer, 0)
-      });
-    } catch (error) {
-      console.log(error);
-    }
-  };
-
-  // const getSessionDatabase = await whatsappById(whatsapp.id);
+  // Toda escrita entra na fila serializada do canal (Task 3): o snapshot é
+  // obtido DENTRO da fila, então mutações concorrentes de keys.set já foram
+  // aplicadas ao estado em memória e nenhuma chave se perde entre
+  // enfileirar e persistir. O formato JSON monolítico e o BufferJSON são
+  // mantidos — armazenamento por chave criptografada é Task 6.
+  const saveState = (): Promise<void> =>
+    enqueueAuthStateWrite({
+      whatsappId: whatsapp.id,
+      shouldWrite: shouldPersist,
+      onPersistentFailure: options.onPersistentFailure,
+      persist: () =>
+        whatsapp.update({
+          session: JSON.stringify({ creds, keys }, BufferJSON.replacer, 0)
+        })
+    });
 
   if (whatsapp.session && whatsapp.session !== null) {
     const result = JSON.parse(whatsapp.session, BufferJSON.reviver);
@@ -71,7 +91,10 @@ const authState = async (
             keys[key] = keys[key] || {};
             Object.assign(keys[key], data[i]);
           }
-          saveState();
+          // keys.set aguarda a fila: quem chama com await (libsignal) só
+          // continua após a escrita assentar; quem não aguarda fica coberto
+          // pelo guard de rejeição do escritor.
+          return saveState();
         }
       }
     },

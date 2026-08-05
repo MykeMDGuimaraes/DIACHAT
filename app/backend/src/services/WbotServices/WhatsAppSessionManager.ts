@@ -152,6 +152,7 @@ export class WhatsAppSessionManager {
     number,
     { token: object; generation?: string }
   >();
+
   private readonly revokedAttempts = new Set<object>();
 
   constructor({
@@ -187,9 +188,7 @@ export class WhatsAppSessionManager {
     // mesmo antes do lease existir (ver acquireAndStart).
     const token = {};
     this.pendingByChannel.set(id, { token });
-    const attempt = this.enqueue(id, () =>
-      this.acquireAndStart(input, token)
-    );
+    const attempt = this.enqueue(id, () => this.acquireAndStart(input, token));
     this.inFlightConnections.set(id, attempt);
     try {
       return await attempt;
@@ -367,9 +366,7 @@ export class WhatsAppSessionManager {
       return true;
     }
     const session = this.activeSessions.get(whatsappId);
-    return (
-      !!session && !session.closing && session.generation === generation
-    );
+    return !!session && !session.closing && session.generation === generation;
   }
 
   /**
@@ -389,6 +386,27 @@ export class WhatsAppSessionManager {
       return undefined;
     }
     return effect();
+  }
+
+  /**
+   * Executa um efeito serializado na fila de lifecycle do canal: operacoes
+   * de start/stop/replace nao intercalam com o efeito. A geracao e validada
+   * na entrada da fila; efeitos com fronteiras assincronas devem revalidar
+   * isCurrent internamente (a revogacao sincrona de um replace nao espera
+   * a fila). Retorna false quando a geracao nao e mais vigente.
+   */
+  async runLifecycleEffect(
+    whatsappId: number,
+    generation: string,
+    effect: () => Promise<void>
+  ): Promise<boolean> {
+    return this.enqueue(whatsappId, async () => {
+      if (!this.isCurrent(whatsappId, generation)) {
+        return false;
+      }
+      await effect();
+      return true;
+    });
   }
 
   /** Agenda a unica reconexao permitida por canal (timers soltos morrem aqui). */
@@ -613,7 +631,7 @@ export class WhatsAppSessionManager {
     const { whatsappId } = session;
     this.stopHeartbeat(whatsappId);
     const timer = setInterval(() => {
-      void this.heartbeatTick(session);
+      this.heartbeatTick(session).catch(() => undefined);
     }, this.heartbeatIntervalMs);
     if (typeof timer.unref === "function") timer.unref();
     this.heartbeatTimers.set(whatsappId, timer);
@@ -674,7 +692,7 @@ export class WhatsAppSessionManager {
     { allowReconnect }: { allowReconnect: boolean }
   ): void {
     if (this.activeSessions.get(session.whatsappId) !== session) return;
-    void this.teardownSession(session).catch(() => undefined);
+    this.teardownSession(session).catch(() => undefined);
     if (allowReconnect && this.onSessionEnded) {
       this.scheduleReconnect(
         session.whatsappId,

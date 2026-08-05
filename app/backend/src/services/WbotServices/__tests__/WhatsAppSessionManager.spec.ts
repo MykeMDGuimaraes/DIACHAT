@@ -276,9 +276,11 @@ describe("lease e fencing", () => {
     expect(manager.diagnostics(1).activeSocketCount).toBe(1);
     expect(manager.diagnostics(1).renewalFailures).toBe(1);
 
-    await (manager as any).heartbeatTick(manager.getActiveIfPresent(1) ?? {
-      whatsappId: 1
-    });
+    await (manager as any).heartbeatTick(
+      manager.getActiveIfPresent(1) ?? {
+        whatsappId: 1
+      }
+    );
     expect(socket.ws.close).toHaveBeenCalled();
     expect(manager.diagnostics(1).activeSocketCount).toBe(0);
   });
@@ -299,7 +301,10 @@ describe("lease e fencing", () => {
   it("heartbeat nao sobrepoe ticks enquanto uma renovacao esta pendente", async () => {
     let resolveRenew: (v: boolean) => void = () => undefined;
     renewMock.mockImplementation(
-      () => new Promise<boolean>(resolve => { resolveRenew = resolve; })
+      () =>
+        new Promise<boolean>(resolve => {
+          resolveRenew = resolve;
+        })
     );
     const manager = makeManager(jest.fn().mockResolvedValue(makeFakeSocket()));
     await manager.start(input());
@@ -364,9 +369,7 @@ describe("getReady e getActive", () => {
   });
 
   it("getReady expira com 503 quando a sessao nao autentica a tempo", async () => {
-    const manager = makeManager(
-      jest.fn().mockResolvedValue(makeFakeSocket())
-    );
+    const manager = makeManager(jest.fn().mockResolvedValue(makeFakeSocket()));
     await manager.start(input());
 
     await expect(manager.getReady(1, 30)).rejects.toMatchObject({
@@ -376,9 +379,7 @@ describe("getReady e getActive", () => {
   });
 
   it("getActive devolve sessao em QR/opening e falha quando ausente", async () => {
-    const manager = makeManager(
-      jest.fn().mockResolvedValue(makeFakeSocket())
-    );
+    const manager = makeManager(jest.fn().mockResolvedValue(makeFakeSocket()));
     await manager.start(input());
 
     expect(manager.getActive(1)).toMatchObject({ whatsappId: 1 });
@@ -450,7 +451,7 @@ describe("corridas de lifecycle serializadas por canal", () => {
     await manager.start(input());
     const stopPromise = manager.stop(1, "close");
     const startPromise = manager.start(input());
-    const [_, session] = await Promise.all([stopPromise, startPromise]);
+    const [, session] = await Promise.all([stopPromise, startPromise]);
 
     expect(factory).toHaveBeenCalledTimes(2);
     expect(session.socket).toBe(second);
@@ -530,9 +531,7 @@ describe("monotonicidade de geracao e teto de reconexao", () => {
   });
 
   it("stop manual zera o contador de tentativas de reconexao", async () => {
-    const manager = makeManager(
-      jest.fn().mockResolvedValue(makeFakeSocket())
-    );
+    const manager = makeManager(jest.fn().mockResolvedValue(makeFakeSocket()));
     await manager.start(input());
     manager.tryScheduleReconnect(1, 60000, 5, jest.fn());
     expect(manager.diagnostics(1).reconnectAttempts).toBe(1);
@@ -554,9 +553,7 @@ describe("contadores de QR e reconexao", () => {
   });
 
   it("stop limpa o contador de QR do canal", async () => {
-    const manager = makeManager(
-      jest.fn().mockResolvedValue(makeFakeSocket())
-    );
+    const manager = makeManager(jest.fn().mockResolvedValue(makeFakeSocket()));
     await manager.start(input());
     manager.incrementQrRetries(1);
 
@@ -632,14 +629,12 @@ describe("contadores de QR e reconexao", () => {
 
   it("stop durante start em voo revoga a geracao pendente (isCurrent nega na hora)", async () => {
     let resolveFactory!: (socket: unknown) => void;
-    const factory = jest
-      .fn()
-      .mockImplementationOnce(
-        () =>
-          new Promise(resolve => {
-            resolveFactory = resolve;
-          })
-      );
+    const factory = jest.fn().mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          resolveFactory = resolve;
+        })
+    );
     const manager = makeManager(factory);
 
     const startPromise = manager.start(input());
@@ -657,6 +652,48 @@ describe("contadores de QR e reconexao", () => {
     });
     await stopPromise;
     expect(manager.getActiveIfPresent(1)).toBeUndefined();
+  });
+
+  it("runLifecycleEffect nao executa quando a geracao nao e vigente", async () => {
+    const manager = makeManager(jest.fn());
+    const effect = jest.fn(async () => undefined);
+
+    const ran = await manager.runLifecycleEffect(1, "9", effect);
+
+    expect(ran).toBe(false);
+    expect(effect).not.toHaveBeenCalled();
+  });
+
+  it("runLifecycleEffect serializa com replace: efeito em voo termina antes", async () => {
+    const factory = jest
+      .fn()
+      .mockImplementation(() => Promise.resolve(makeFakeSocket()));
+    const manager = makeManager(factory);
+    await manager.start(input());
+    const order: string[] = [];
+    let releaseEffect!: () => void;
+
+    const effectPromise = manager.runLifecycleEffect(1, "1", async () => {
+      order.push("effect:start");
+      await new Promise<void>(resolve => {
+        releaseEffect = resolve;
+      });
+      order.push("effect:end");
+    });
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    const replacePromise = manager.replace(input(), "manual").then(session => {
+      order.push("replace:done");
+      return session;
+    });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    // O replace aguarda na fila do canal enquanto o efeito esta em voo.
+    expect(order).toEqual(["effect:start"]);
+
+    releaseEffect();
+    await effectPromise;
+    await replacePromise;
+    expect(order).toEqual(["effect:start", "effect:end", "replace:done"]);
   });
 
   it("listActiveSessionIds reflete os canais publicados e remove no stop", async () => {
