@@ -1,0 +1,112 @@
+Relatório de progresso — WhatsApp Delivery Hardening
+Estado atual
+Branch: codex/whatsapp-delivery-hardening
+HEAD: 3d8542ff94bbd97c3e51f2064d1bcab534d2784e
+Worktree: limpo
+Commits sobre origin/main: 9
+Alterações: 35 arquivos, aproximadamente 3.898 adições e 332 remoções
+Push/PR/deploy: ainda não realizados
+Plano executado: [2026-08-04-whatsapp-delivery-hardening.md](C:/Users/marco/Documents/DiaChat/docs/superpowers/plans/2026-08-04-whatsapp-delivery-hardening.md)
+Commits criados
+3360931 — restauração dos lockfiles portáveis.
+ef5e6bb — Session Manager e exclusividade por canal.
+7222765 — fortalecimento da lease e ownership.
+7c19f77 — fencing do lifecycle e acesso gerenciado ao socket.
+a280694 — tratamento seguro da persistência assíncrona de autenticação.
+bda33d5 — correção do evento Socket.IO canônico.
+024d0b0 — centralização de lifecycle, listeners e reconexão.
+df38d41 — fencing dos efeitos até o teardown.
+3d8542f — revogação de reconnect após logout/stop explícito.
+Task 0 — Concluída
+Os lockfiles do frontend foram corrigidos para eliminar referências ao registry interno da Replit.
+Evidência:
+node scripts/checkPortableLockfiles.js: exit code 0.
+Baileys permanece em file:vendor/baileys-6.7.24.tgz.
+Task 1 — Concluída e aprovada
+Foi implementada a autoridade central de sessões WhatsApp.
+Principais entregas:
+Single-flight local para impedir múltiplos starts simultâneos.
+Lease PostgreSQL para ownership entre réplicas.
+fencingToken monotônico representado como string, evitando perda de precisão de BIGINT.
+Relógio da lease baseado em NOW() do PostgreSQL.
+Heartbeat sem sobreposição.
+Perda definitiva de ownership fecha o socket imediatamente.
+Falhas transitórias de renovação possuem tolerância controlada.
+getReady valida que a réplica ainda possui a lease.
+runFenced protege efeitos persistentes e falha fechado.
+Factory retorna o socket ainda em opening, permitindo heartbeat durante QR/pareamento.
+Remoção do array legado de sessões e dos timers/contadores paralelos.
+Política centralizada para 401, 403, 408, 428, 440, 463, 500, 503 e 515.
+Código desconhecido recebe somente uma tentativa controlada.
+Backoff só é zerado após conexão efetivamente aberta.
+Logs novos não serializam objetos de erro que possam conter PII ou credenciais.
+Persistência assíncrona de creds.update e keys.set passou a capturar rejeições.
+Estado OPENING é persistido sob fence e emitido no evento canônico:
+company-${companyId}-whatsappSession.
+A Task 1 passou por três rodadas de revisão independente até aprovação.
+Task 2 — Implementada; revisão final interrompida
+Todos os pontos de registro de listeners foram inventariados e migrados para o manager:
+connection.update;
+creds.update;
+mirror lifecycle;
+messages.upsert;
+messages.update;
+CB:call;
+contacts.upsert;
+wbotMessageListener;
+wbotMonitor.
+Também foram implementados:
+Listeners capturam a geração correspondente.
+Listeners antigos ficam inertes após replace.
+Callbacks já iniciados revalidam a geração depois de operações assíncronas.
+stopGeneration não consegue fechar uma geração nova.
+Reconnect é autorizado condicionalmente pela geração.
+store → start, update → replace e remove → stop("logout").
+Logout remove listeners antes de chamar o provedor.
+Limpeza final de status e credenciais ocorre como finalizer fenced.
+O boot agora aguarda as inicializações em vez de descartar Promises em forEach.
+Teste real cobre corrida entre boot, start manual e fechamento 408.
+Teste composicional cobre:callback de lifecycle iniciado;
+callback suspenso em um await;
+execução de replace;
+retomada do callback antigo;
+confirmação de que ele não emite, fecha ou reconecta a sessão nova.
+
+stop/logout invalida a geração, impedindo reconnect tardio depois de desconexão manual.
+A última revisão independente foi interrompida antes do veredito final. Portanto, a Task 2 está implementada, mas ainda não deve ser marcada formalmente como aprovada até repetir essa re-revisão curta do commit 3d8542f.
+Evidências de testes acumuladas
+Durante os ciclos RED–GREEN foram executados:
+Task 1 inicial: 5 suítes, 38 testes.
+Task 1 fix round 1: 7 suítes, 57 testes.
+Task 1 fix round 2: 4 suítes, 26 testes.
+Task 1 fix round 3: 4 testes focados e 6 de regressão.
+Task 2 inicial: 5 suítes, 37 testes.
+Task 2 fix round 1: 6 suítes, 46 testes.
+Task 2 fix round 2: 6 suítes, 48 testes.
+Os builds TypeScript executados depois das últimas alterações passaram.
+O lint explícito dos arquivos alterados terminou com zero erros. Permanecem avisos e violações anteriores em arquivos legados. O script oficial npm run lint utiliza um glob que não funciona corretamente no PowerShell.
+Pendências do plano
+Ainda não foram formalmente executadas:
+Task 2: repetir a re-revisão final interrompida.
+Task 3: fila serializada dedicada para persistência do JSON atual de autenticação.
+Task 4: unificação de UI, API interna, API pública e automações no outbox.
+Task 5: saúde do canal, projeção de entrega e interface completa de ACK.
+Task 6: credenciais criptografadas por chave no PostgreSQL, dual-write e backfill.
+Task 7: métricas, alertas, redaction e runbook operacional.
+Task 8: lanes ordenadas por canal, caches limitados e medição de desempenho.
+Task 9: suite completa, frontend, migrations reais, CI, homologação e rollout.
+O watchdog de mensagens sem ACK já existia na main, mas saúde do canal, UI, autoridade única de ACK e recuperação operacional completa ainda pertencem às próximas tarefas.
+Gating externo pendente
+Não havia PostgreSQL disponível localmente na porta 5432. Ainda precisa ser executado na CI PostgreSQL 16:
+migration apply;
+rollback;
+reapply;
+validação da PK/FK da lease;
+suite Jest dependente de banco.
+Também ainda não foram executados:
+suite completa do backend;
+testes e build final do frontend;
+CI completa;
+homologação com duas réplicas;
+canário de 24 horas;
+teste real com WhatsApp controlado.
