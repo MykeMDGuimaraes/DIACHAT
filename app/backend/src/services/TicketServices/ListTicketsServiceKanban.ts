@@ -75,7 +75,8 @@ const ListTicketsServiceKanban = async ({
     {
       model: Whatsapp,
       as: "whatsapp",
-      attributes: ["name"]
+      // id + deliveryHealth (T5): banner de canal degradado no ticket.
+      attributes: ["id", "name", "deliveryHealth"]
     }
   ];
 

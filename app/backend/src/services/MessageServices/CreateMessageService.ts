@@ -8,6 +8,8 @@ import Message from "../../models/Message";
 import Ticket from "../../models/Ticket";
 import Whatsapp from "../../models/Whatsapp";
 import { publishPersistedBaileysMessageEvents } from "../../messaging/public/domainEvents";
+import { attachDeliveryProjection } from "../../messaging/public/delivery";
+import { logger } from "../../utils/logger";
 
 export interface MessageData {
   id: string;
@@ -29,10 +31,17 @@ interface Request {
   companyId: number;
 }
 
-export const notifyCreatedMessage = (
+export const notifyCreatedMessage = async (
   message: Message,
   companyId: number
-): void => {
+): Promise<void> => {
+  // Projeção aditiva de entrega (T5): anexa o estado do comando do outbox.
+  // Uma falha na projeção nunca pode impedir a emissão da mensagem.
+  try {
+    await attachDeliveryProjection(companyId, message);
+  } catch (error) {
+    logger.warn({ err: error }, "message: falha ao anexar projecao de entrega");
+  }
   const io = getIO();
   io.to(message.ticketId.toString())
     .to(`company-${companyId}-${message.ticket.status}`)
@@ -70,7 +79,8 @@ const CreateMessageService = async ({
           {
             model: Whatsapp,
             as: "whatsapp",
-            attributes: ["name"]
+            // id + deliveryHealth (T5): banner de canal degradado no ticket.
+            attributes: ["id", "name", "deliveryHealth"]
           }
         ]
       },
@@ -95,7 +105,7 @@ const CreateMessageService = async ({
     message.ticket,
     companyId
   );
-  notifyCreatedMessage(message, companyId);
+  await notifyCreatedMessage(message, companyId);
 
   return message;
 };

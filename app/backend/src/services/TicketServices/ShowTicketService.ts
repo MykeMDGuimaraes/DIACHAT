@@ -32,7 +32,9 @@ const ShowTicketService = async (
       {
         model: Whatsapp,
         as: "whatsapp",
-        attributes: ["name"]
+        // id + deliveryHealth (T5): o banner de canal degradado precisa
+        // casar o canal do ticket com o evento de saúde no socket.
+        attributes: ["id", "name", "deliveryHealth"]
       },
       {
         model: Tag,

@@ -1515,6 +1515,10 @@ const messages = {
         deletedMessage: "Essa mensagem foi apagada pelo contato",
         edited: "Editada",
         saudation: "Diga olá para seu novo contato!",
+        delivery: {
+          unconfirmed: "Entrega não confirmada pelo WhatsApp. Verifique o destinatário antes de tentar novamente.",
+          channelDegraded: "Canal com entregas instáveis: as mensagens podem não estar chegando. Verifique a conexão deste número.",
+        },
       },
       messagesInput: {
         placeholderOpen: "Digite uma mensagem",

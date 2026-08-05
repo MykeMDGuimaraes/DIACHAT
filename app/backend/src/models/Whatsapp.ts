@@ -113,6 +113,28 @@ class Whatsapp extends Model<Whatsapp> {
   @Column
   token: string;
 
+  // Saúde de entrega do canal (Hardening T5): degradada quando duas falhas de
+  // confirmação de entrega ocorrem dentro da janela; curada por ACK tardio.
+  @Default("healthy")
+  @Column
+  deliveryHealth: string;
+
+  @Column(DataType.DATE)
+  deliveryHealthChangedAt: Date;
+
+  @Column(DataType.DATE)
+  lastConfirmedDeliveryAt: Date;
+
+  @Default(0)
+  @Column(DataType.INTEGER)
+  consecutiveUnconfirmedDeliveries: number;
+
+  @Column(DataType.STRING)
+  lastDeliveryErrorCode: string;
+
+  @Column(DataType.DATE)
+  lastUnconfirmedDeliveryAt: Date;
+
   // @Default(0)
   // @Column
   // timeSendQueue: number;

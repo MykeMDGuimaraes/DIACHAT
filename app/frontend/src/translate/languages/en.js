@@ -1488,6 +1488,10 @@ const messages = {
 				deletedMessage: "This message was deleted by the contact",
 				edited: "Edited",
 				saudation: "Say hello to your new contact!",
+				delivery: {
+					unconfirmed: "Delivery not confirmed by WhatsApp. Check the recipient before trying again.",
+					channelDegraded: "Channel with unstable deliveries: messages may not be arriving. Check this number's connection.",
+				},
 			},
 			messagesInput: {
 				placeholderOpen: "Type a message",

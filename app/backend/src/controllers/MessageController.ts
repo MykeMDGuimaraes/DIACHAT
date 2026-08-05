@@ -50,14 +50,19 @@ const emitUpfrontMessage = async (
         include: [
           "contact",
           "queue",
-          { model: Whatsapp, as: "whatsapp", attributes: ["name"] }
+          {
+            model: Whatsapp,
+            as: "whatsapp",
+            // id + deliveryHealth (T5): banner de canal degradado no ticket.
+            attributes: ["id", "name", "deliveryHealth"]
+          }
         ]
       },
       { model: Message, as: "quotedMsg", include: ["contact"] }
     ]
   });
   if (full) {
-    notifyCreatedMessage(full, companyId);
+    await notifyCreatedMessage(full, companyId);
   }
 };
 

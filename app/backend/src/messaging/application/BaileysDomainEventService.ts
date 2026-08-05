@@ -12,6 +12,7 @@ import {
 import { adaptBaileysMessageEvents } from "../adapters/baileys/BaileysProviderEventAdapter";
 import { WhatsAppProviderEvent } from "../domain/WhatsAppProviderEvent";
 import WhatsAppProviderEventPublisher from "./WhatsAppProviderEventPublisher";
+import ChannelDeliveryHealthService from "./ChannelDeliveryHealthService";
 
 const validOpaqueButtonId = (value: unknown): value is string =>
   typeof value === "string" &&
@@ -81,9 +82,14 @@ interface Dependencies {
     events: readonly WhatsAppProviderEvent[],
     transaction: any
   ): Promise<void>;
+  recordConfirmedDelivery(
+    whatsappId: number,
+    transaction: any
+  ): Promise<unknown>;
 }
 
 const providerEventPublisher = new WhatsAppProviderEventPublisher();
+const channelDeliveryHealth = new ChannelDeliveryHealthService();
 
 const defaultDependencies: Dependencies = {
   transaction: callback => sequelize.transaction(callback),
@@ -152,7 +158,9 @@ const defaultDependencies: Dependencies = {
   mirrorEnabled: () =>
     process.env.MESSAGING_WEBHOOK_MIRROR_V1_ENABLED === "true",
   persistProviderEvents: (events, transaction) =>
-    providerEventPublisher.persist(events, transaction)
+    providerEventPublisher.persist(events, transaction),
+  recordConfirmedDelivery: (whatsappId, transaction) =>
+    channelDeliveryHealth.recordConfirmedDelivery(whatsappId, transaction)
 };
 
 const parseData = (dataJson: unknown): any => {
@@ -374,7 +382,8 @@ class BaileysDomainEventService {
     companyId: number;
     providerMessageId: string;
     ack: number | null | undefined;
-  }): Promise<any | null> {
+  }): Promise<{ message: any; healthChangedChannel: unknown | null } | null> {
+    let healthChangedChannel: unknown | null = null;
     const message = await this.dependencies.transaction(async transaction => {
       const command = await this.dependencies.findCommandByProviderMessageId(
         input.companyId,
@@ -397,12 +406,43 @@ class BaileysDomainEventService {
             : typeof input.ack === "number" && input.ack >= 3
               ? MESSAGE_COMMAND_STATUS.DELIVERED
               : null;
-        if (target && rank[command.status] && rank[target] > rank[command.status]) {
+        // ACK tardio (T5): um unknown por DELIVERY_UNCONFIRMED se cura com
+        // ack >= 2 — volta a constar como sent/delivered/read e a entrega
+        // confirmada zera o contador de falhas e restaura a saúde do canal.
+        const isUnconfirmedUnknown =
+          command.status === MESSAGE_COMMAND_STATUS.UNKNOWN &&
+          command.errorCode === MESSAGE_COMMAND_ERROR_CODE.DELIVERY_UNCONFIRMED;
+        let advanced = false;
+        if (
+          target &&
+          (isUnconfirmedUnknown ||
+            (rank[command.status] && rank[target] > rank[command.status]))
+        ) {
           await this.dependencies.advanceCommandStatus(
             command.id,
             target,
             transaction
           );
+          advanced = true;
+        } else if (
+          !target &&
+          isUnconfirmedUnknown &&
+          typeof input.ack === "number" &&
+          input.ack >= 2
+        ) {
+          await this.dependencies.advanceCommandStatus(
+            command.id,
+            MESSAGE_COMMAND_STATUS.SENT,
+            transaction
+          );
+          advanced = true;
+        }
+        if (advanced) {
+          healthChangedChannel =
+            await this.dependencies.recordConfirmedDelivery(
+              command.whatsappId,
+              transaction
+            );
         }
       }
       const localMessageId = command?.messageId || input.providerMessageId;
@@ -425,7 +465,7 @@ class BaileysDomainEventService {
       messageId: String(message.id),
       ack: input.ack
     });
-    return message;
+    return { message, healthChangedChannel };
   }
 }
 

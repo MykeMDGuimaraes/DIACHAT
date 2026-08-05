@@ -7,6 +7,7 @@ import Company from "./models/Company";
 import { startQueueProcess } from "./queues";
 import { TransferTicketQueue } from "./wbotTransferTicketQueue";
 import { startMessagingRuntime } from "./messaging/public/runtime";
+import emitChannelHealthChanged from "./services/WhatsappService/emitChannelHealthChanged";
 import cron from "node-cron";
 
 const server = app.listen(process.env.PORT, async () => {
@@ -19,7 +20,9 @@ const server = app.listen(process.env.PORT, async () => {
 
   Promise.all(allPromises).then(() => {
     startQueueProcess();
-    const stopMessagingRuntime = startMessagingRuntime();
+    const stopMessagingRuntime = startMessagingRuntime({
+      onChannelHealthChanged: emitChannelHealthChanged
+    });
     process.once("SIGTERM", stopMessagingRuntime);
     process.once("SIGINT", stopMessagingRuntime);
   });

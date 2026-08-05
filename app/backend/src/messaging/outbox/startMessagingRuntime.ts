@@ -4,7 +4,15 @@ import MessagingRetentionService, {
   recordRetentionFailure
 } from "../operations/MessagingRetentionService";
 
-export const startMessagingRuntime = (): (() => void) => {
+export interface MessagingRuntimeOptions {
+  // Callback injetado pelo núcleo (server.ts) para notificar mudanças de
+  // saúde de entrega dos canais — o módulo de mensageria não emite socket.
+  onChannelHealthChanged?: (channel: any) => void;
+}
+
+export const startMessagingRuntime = (
+  options: MessagingRuntimeOptions = {}
+): (() => void) => {
   const runtime = createMessagingRuntime();
   const retention = new MessagingRetentionService();
   let running = false;
@@ -16,7 +24,16 @@ export const startMessagingRuntime = (): (() => void) => {
 
     running = true;
     try {
-      await runtime.runOnce();
+      const result = await runtime.runOnce();
+      if (options.onChannelHealthChanged) {
+        for (const channel of result.healthChangedChannels) {
+          try {
+            options.onChannelHealthChanged(channel);
+          } catch (error) {
+            logger.error(error);
+          }
+        }
+      }
     } catch (error) {
       logger.error(error);
     } finally {

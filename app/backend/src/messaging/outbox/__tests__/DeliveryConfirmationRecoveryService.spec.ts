@@ -48,7 +48,7 @@ describe("DeliveryConfirmationRecoveryService", () => {
 
     await expect(
       new DeliveryConfirmationRecoveryService().recover()
-    ).resolves.toEqual({ recovered: 1 });
+    ).resolves.toMatchObject({ recovered: 1 });
 
     expect(command.update).toHaveBeenCalledWith(
       {
@@ -85,7 +85,7 @@ describe("DeliveryConfirmationRecoveryService", () => {
 
     await expect(
       new DeliveryConfirmationRecoveryService().recover()
-    ).resolves.toEqual({ recovered: 1 });
+    ).resolves.toMatchObject({ recovered: 1 });
 
     expect(command.update).toHaveBeenCalledWith(
       { status: MESSAGE_COMMAND_STATUS.DELIVERED },
@@ -107,7 +107,7 @@ describe("DeliveryConfirmationRecoveryService", () => {
 
     await expect(
       new DeliveryConfirmationRecoveryService().recover()
-    ).resolves.toEqual({ recovered: 0 });
+    ).resolves.toMatchObject({ recovered: 0 });
 
     expect(command.update).not.toHaveBeenCalled();
   });
@@ -125,7 +125,7 @@ describe("DeliveryConfirmationRecoveryService", () => {
 
     await expect(
       new DeliveryConfirmationRecoveryService().recover()
-    ).resolves.toEqual({ recovered: 1 });
+    ).resolves.toMatchObject({ recovered: 1 });
 
     expect(command.update).toHaveBeenCalledWith(
       { status: MESSAGE_COMMAND_STATUS.READ },
@@ -142,7 +142,7 @@ describe("DeliveryConfirmationRecoveryService", () => {
 
     await expect(
       new DeliveryConfirmationRecoveryService().recover()
-    ).resolves.toEqual({ recovered: 0 });
+    ).resolves.toMatchObject({ recovered: 0 });
   });
 
   it("does not touch commands still inside the confirmation window", async () => {
@@ -153,7 +153,7 @@ describe("DeliveryConfirmationRecoveryService", () => {
 
     await expect(
       new DeliveryConfirmationRecoveryService().recover()
-    ).resolves.toEqual({ recovered: 0 });
+    ).resolves.toMatchObject({ recovered: 0 });
 
     expect(findAll).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -162,5 +162,52 @@ describe("DeliveryConfirmationRecoveryService", () => {
         })
       })
     );
+  });
+
+  it("records the delivery failure on the channel health when marking unknown", async () => {
+    const command = buildCommand({ whatsappId: 5 });
+    mockTransaction();
+    jest
+      .spyOn(MessageCommand, "findAll")
+      .mockResolvedValue([{ id: command.id }] as any);
+    jest.spyOn(MessageCommand, "findOne").mockResolvedValue(command as any);
+    jest
+      .spyOn(Message, "findOne")
+      .mockResolvedValue({ id: "msg_1", ack: 0 } as any);
+    jest.spyOn(MessagingOutboxEvent, "create").mockResolvedValue({} as any);
+    const channelHealth = {
+      recordUnconfirmedDelivery: jest.fn().mockResolvedValue(null)
+    };
+
+    await new DeliveryConfirmationRecoveryService(channelHealth).recover();
+
+    expect(channelHealth.recordUnconfirmedDelivery).toHaveBeenCalledWith(
+      5,
+      MESSAGE_COMMAND_ERROR_CODE.DELIVERY_UNCONFIRMED,
+      expect.any(Object)
+    );
+  });
+
+  it("surfaces channels whose health degraded so the core can notify after commit", async () => {
+    const command = buildCommand({ whatsappId: 5 });
+    mockTransaction();
+    jest
+      .spyOn(MessageCommand, "findAll")
+      .mockResolvedValue([{ id: command.id }] as any);
+    jest.spyOn(MessageCommand, "findOne").mockResolvedValue(command as any);
+    jest
+      .spyOn(Message, "findOne")
+      .mockResolvedValue({ id: "msg_1", ack: 0 } as any);
+    jest.spyOn(MessagingOutboxEvent, "create").mockResolvedValue({} as any);
+    const degradedChannel = { id: 5, deliveryHealth: "degraded" };
+    const channelHealth = {
+      recordUnconfirmedDelivery: jest.fn().mockResolvedValue(degradedChannel)
+    };
+
+    const result = await new DeliveryConfirmationRecoveryService(
+      channelHealth
+    ).recover();
+
+    expect(result.healthChangedChannels).toEqual([degradedChannel]);
   });
 });

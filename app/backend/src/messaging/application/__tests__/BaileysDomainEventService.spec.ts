@@ -419,7 +419,7 @@ describe("BaileysDomainEventService", () => {
         providerMessageId: "wa-provider-1",
         ack: 4
       })
-    ).resolves.toBe(localMessage);
+    ).resolves.toMatchObject({ message: localMessage });
 
     expect(dependencies.findMessage).toHaveBeenCalledWith(
       7,
@@ -550,5 +550,109 @@ describe("BaileysDomainEventService", () => {
     await expect(
       service.isApiProviderMessage(7, "wa-provider-1")
     ).resolves.toBe(true);
+  });
+
+  it("heals an unconfirmed unknown command when a late server-level ACK arrives (ack 2)", async () => {
+    const command = {
+      id: "command-1",
+      messageId: "local-message-1",
+      status: "unknown",
+      errorCode: "DELIVERY_UNCONFIRMED",
+      whatsappId: 5
+    };
+    const dependencies = {
+      transaction: jest.fn((callback: any) => callback("tx")),
+      findCommandByProviderMessageId: jest.fn().mockResolvedValue(command),
+      advanceCommandStatus: jest.fn().mockResolvedValue(undefined),
+      findCommandByMessageId: jest.fn().mockResolvedValue(null),
+      findMessage: jest
+        .fn()
+        .mockResolvedValue({ id: "local-message-1", companyId: 7, ticketId: 91 }),
+      updateMessage: jest.fn().mockResolvedValue(undefined),
+      findOrCreateEvent: jest.fn().mockResolvedValue(undefined),
+      recordConfirmedDelivery: jest.fn().mockResolvedValue(null)
+    };
+    const service = new BaileysDomainEventService(dependencies as any);
+
+    await service.acknowledgeProviderMessage({
+      companyId: 7,
+      providerMessageId: "wa-provider-1",
+      ack: 2
+    });
+
+    expect(dependencies.advanceCommandStatus).toHaveBeenCalledWith(
+      "command-1",
+      "sent",
+      "tx"
+    );
+    expect(dependencies.recordConfirmedDelivery).toHaveBeenCalledWith(5, "tx");
+  });
+
+  it("heals unknown straight to delivered on a late ack 3 and returns the restored channel", async () => {
+    const command = {
+      id: "command-1",
+      messageId: "local-message-1",
+      status: "unknown",
+      errorCode: "DELIVERY_UNCONFIRMED",
+      whatsappId: 5
+    };
+    const restoredChannel = { id: 5, deliveryHealth: "healthy" };
+    const dependencies = {
+      transaction: jest.fn((callback: any) => callback("tx")),
+      findCommandByProviderMessageId: jest.fn().mockResolvedValue(command),
+      advanceCommandStatus: jest.fn().mockResolvedValue(undefined),
+      findCommandByMessageId: jest.fn().mockResolvedValue(null),
+      findMessage: jest
+        .fn()
+        .mockResolvedValue({ id: "local-message-1", companyId: 7, ticketId: 91 }),
+      updateMessage: jest.fn().mockResolvedValue(undefined),
+      findOrCreateEvent: jest.fn().mockResolvedValue(undefined),
+      recordConfirmedDelivery: jest.fn().mockResolvedValue(restoredChannel)
+    };
+    const service = new BaileysDomainEventService(dependencies as any);
+
+    const result = await service.acknowledgeProviderMessage({
+      companyId: 7,
+      providerMessageId: "wa-provider-1",
+      ack: 3
+    });
+
+    expect(dependencies.advanceCommandStatus).toHaveBeenCalledWith(
+      "command-1",
+      "delivered",
+      "tx"
+    );
+    expect(result?.healthChangedChannel).toBe(restoredChannel);
+  });
+
+  it("never regresses a delivered command when a stale lower ACK arrives", async () => {
+    const command = {
+      id: "command-1",
+      messageId: "local-message-1",
+      status: "delivered",
+      whatsappId: 5
+    };
+    const dependencies = {
+      transaction: jest.fn((callback: any) => callback("tx")),
+      findCommandByProviderMessageId: jest.fn().mockResolvedValue(command),
+      advanceCommandStatus: jest.fn().mockResolvedValue(undefined),
+      findCommandByMessageId: jest.fn().mockResolvedValue(null),
+      findMessage: jest
+        .fn()
+        .mockResolvedValue({ id: "local-message-1", companyId: 7, ticketId: 91 }),
+      updateMessage: jest.fn().mockResolvedValue(undefined),
+      findOrCreateEvent: jest.fn().mockResolvedValue(undefined),
+      recordConfirmedDelivery: jest.fn().mockResolvedValue(null)
+    };
+    const service = new BaileysDomainEventService(dependencies as any);
+
+    await service.acknowledgeProviderMessage({
+      companyId: 7,
+      providerMessageId: "wa-provider-1",
+      ack: 2
+    });
+
+    expect(dependencies.advanceCommandStatus).not.toHaveBeenCalled();
+    expect(dependencies.recordConfirmedDelivery).not.toHaveBeenCalled();
   });
 });

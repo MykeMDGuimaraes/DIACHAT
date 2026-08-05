@@ -21,6 +21,7 @@ import {
 } from "../../adapters/meta-cloud/MetaProviderEventAdapter";
 import { WhatsAppProviderEvent } from "../../domain/WhatsAppProviderEvent";
 import WhatsAppProviderEventPublisher from "../../application/WhatsAppProviderEventPublisher";
+import ChannelDeliveryHealthService from "../../application/ChannelDeliveryHealthService";
 
 interface ClaimedInbox {
   id: string;
@@ -41,7 +42,7 @@ interface MetaInboxProcessorDependencies {
     companyId: number,
     whatsappId: number,
     status: NormalizedMetaStatus
-  ): Promise<void>;
+  ): Promise<{ healthChangedChannel?: unknown | null }>;
   resolveMedia?(
     companyId: number,
     whatsappId: number,
@@ -111,6 +112,7 @@ export interface MetaMessagePersistenceDependencies {
 }
 
 const providerEventPublisher = new WhatsAppProviderEventPublisher();
+const channelDeliveryHealth = new ChannelDeliveryHealthService();
 
 const metaMessagePersistenceDependencies: MetaMessagePersistenceDependencies = {
   transaction: callback => sequelize.transaction(callback),
@@ -159,7 +161,9 @@ const metaMessagePersistenceDependencies: MetaMessagePersistenceDependencies = {
             {
               model: Whatsapp,
               as: "whatsapp",
-              attributes: ["name"]
+              // id + deliveryHealth (T5): banner de canal degradado
+              // também nos tickets alimentados pelo Meta Cloud.
+              attributes: ["id", "name", "deliveryHealth"]
             }
           ]
         },
@@ -173,7 +177,7 @@ const metaMessagePersistenceDependencies: MetaMessagePersistenceDependencies = {
   notifyMessage: async (message, companyId) => {
     const { notifyCreatedMessage } =
       await import("../../../services/MessageServices/CreateMessageService");
-    notifyCreatedMessage(message, companyId);
+    await notifyCreatedMessage(message, companyId);
   },
   mirrorEnabled: () =>
     process.env.MESSAGING_WEBHOOK_MIRROR_V1_ENABLED === "true",
@@ -381,7 +385,7 @@ const defaultDependencies: MetaInboxProcessorDependencies = {
     }),
   persistMessage: persistMetaMessage,
   persistStatus: async (companyId, whatsappId, incoming) => {
-    await sequelize.transaction(async transaction => {
+    return sequelize.transaction(async transaction => {
       const command = await MessageCommand.findOne({
         where: {
           companyId,
@@ -395,7 +399,7 @@ const defaultDependencies: MetaInboxProcessorDependencies = {
         !command ||
         !shouldApplyMetaStatusUpdate(command.status, incoming.status)
       ) {
-        return;
+        return { healthChangedChannel: null };
       }
       await command.update(
         {
@@ -432,6 +436,17 @@ const defaultDependencies: MetaInboxProcessorDependencies = {
         } as any,
         { transaction }
       );
+      // Saúde do canal (T5): a confirmação Meta também zera o contador e
+      // restaura healthy, espelhando o caminho Baileys — dentro da mesma
+      // transação; o canal alterado sobe para emissão pós-commit no núcleo.
+      const healthChangedChannel =
+        incoming.ack >= 2
+          ? await channelDeliveryHealth.recordConfirmedDelivery(
+              whatsappId,
+              transaction
+            )
+          : null;
+      return { healthChangedChannel };
     });
   },
   complete: id =>
@@ -514,6 +529,7 @@ class MetaInboxProcessor {
 
   async processOne(): Promise<{
     status: "idle" | "processed" | "retry" | "dead_letter";
+    healthChangedChannels?: unknown[];
   }> {
     const inbox = await this.dependencies.claimNext();
     if (!inbox) return { status: "idle" };
@@ -535,12 +551,16 @@ class MetaInboxProcessor {
           message
         );
       }
+      const healthChangedChannels: unknown[] = [];
       for (const status of parsed.statuses) {
-        await this.dependencies.persistStatus(
+        const result = await this.dependencies.persistStatus(
           inbox.companyId,
           inbox.whatsappId,
           status
         );
+        if (result?.healthChangedChannel) {
+          healthChangedChannels.push(result.healthChangedChannel);
+        }
       }
       await this.dependencies.publishLifecycle(
         inbox.companyId,
@@ -548,7 +568,7 @@ class MetaInboxProcessor {
         inbox.payload
       );
       await this.dependencies.complete(inbox.id);
-      return { status: "processed" };
+      return { status: "processed", healthChangedChannels };
     } catch (error) {
       const reason =
         error instanceof Error

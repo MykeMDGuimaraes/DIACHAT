@@ -12,6 +12,7 @@ import TicketHeader from "../TicketHeader";
 import TicketInfo from "../TicketInfo";
 import TicketActionButtons from "../TicketActionButtonsCustom";
 import MessagesList from "../MessagesList";
+import DeliveryHealthBanner from "../DeliveryHealthBanner";
 import api from "../../services/api";
 import { ReplyMessageProvider } from "../../context/ReplyingMessage/ReplyingMessageContext";
 import toastError from "../../errors/toastError";
@@ -167,6 +168,7 @@ const Ticket = () => {
           ticketId={ticket.id}
           isGroup={ticket.isGroup}
         ></MessagesList>
+        <DeliveryHealthBanner ticket={ticket} />
         <MessageInput ticketId={ticket.id} ticketStatus={ticket.status} />
       </>
     );

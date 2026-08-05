@@ -21,6 +21,7 @@ import {
   OutboundMessageService,
   stageMessagingMedia
 } from "../../messaging/public/outbound";
+import { attachDeliveryProjection } from "../../messaging/public/delivery";
 import Contact from "../../models/Contact";
 import Ticket from "../../models/Ticket";
 import Message from "../../models/Message";
@@ -39,6 +40,7 @@ import CreateOrUpdateContactService from "../ContactServices/CreateOrUpdateConta
 import FindOrCreateTicketService from "../TicketServices/FindOrCreateTicketService";
 import ShowWhatsAppService from "../WhatsappService/ShowWhatsAppService";
 import UpdateTicketService from "../TicketServices/UpdateTicketService";
+import emitChannelHealthChanged from "../WhatsappService/emitChannelHealthChanged";
 import formatBody from "../../helpers/Mustache";
 import { Store } from "../../libs/store";
 import TicketTraking from "../../models/TicketTraking";
@@ -2899,12 +2901,15 @@ const handleMsgAck = async (
   const io = getIO();
 
   try {
-    const messageToUpdate = await acknowledgeBaileysProviderMessage(
+    const ackResult = await acknowledgeBaileysProviderMessage(
       companyId,
       msg.key.id,
       chat
     );
-    if (!messageToUpdate) return;
+    if (!ackResult) return;
+    const { message: messageToUpdate, healthChangedChannel } = ackResult;
+    // Projeção aditiva de entrega (T5): a conversa recebe o estado do comando.
+    await attachDeliveryProjection(companyId, messageToUpdate);
     io.to(messageToUpdate.ticketId.toString()).emit(
       `company-${messageToUpdate.companyId}-appMessage`,
       {
@@ -2915,6 +2920,10 @@ const handleMsgAck = async (
     publishTenantEvent(messageToUpdate.companyId, "message.updated", {
       message: toConversationMessageDTO(messageToUpdate)
     });
+    // ACK tardio curou a saúde do canal: notifica pós-commit (banner).
+    if (healthChangedChannel) {
+      emitChannelHealthChanged(healthChangedChannel as any);
+    }
   } catch (err) {
     Sentry.captureException(err);
     logger.error(`Error handling message ack. Err: ${err}`);

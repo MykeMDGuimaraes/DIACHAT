@@ -15,7 +15,10 @@ import WebhookDeliveryBackfillService from "../webhooks/WebhookDeliveryBackfillS
 import { logger } from "../../utils/logger";
 
 interface RecoveryRunner {
-  recover: () => Promise<{ recovered: number }>;
+  recover: () => Promise<{
+    recovered: number;
+    healthChangedChannels?: unknown[];
+  }>;
 }
 
 interface DispatchRunner {
@@ -25,6 +28,7 @@ interface DispatchRunner {
 interface InboxRunner {
   processOne: () => Promise<{
     status: "idle" | "processed" | "retry" | "dead_letter";
+    healthChangedChannels?: unknown[];
   }>;
 }
 
@@ -203,6 +207,7 @@ class MessagingRuntime {
     webhookDeliveriesCreated: number;
     webhooksDispatched: number;
     capacitySamplesObserved: number;
+    healthChangedChannels: unknown[];
   }> {
     const startup = await this.webhookBackfill.runBatch();
     if (!startup.safeToDispatch) {
@@ -212,10 +217,12 @@ class MessagingRuntime {
         processedInbox: 0,
         webhookDeliveriesCreated: 0,
         webhooksDispatched: 0,
-        capacitySamplesObserved: 0
+        capacitySamplesObserved: 0,
+        healthChangedChannels: []
       };
     }
-    const { recovered } = await this.recovery.recover();
+    const { recovered, healthChangedChannels = [] } =
+      await this.recovery.recover();
     let dispatched = 0;
     let processedInbox = 0;
     let webhookDeliveriesCreated = 0;
@@ -232,6 +239,10 @@ class MessagingRuntime {
       const result = await this.inbox.processOne();
       if (result.status === "idle") break;
       if (result.status === "processed") processedInbox += 1;
+      // Confirmações Meta (T5) também restauram a saúde do canal.
+      if (result.healthChangedChannels) {
+        healthChangedChannels.push(...result.healthChangedChannels);
+      }
     }
 
     for (let index = 0; index < this.batchSize; index += 1) {
@@ -257,7 +268,8 @@ class MessagingRuntime {
       processedInbox,
       webhookDeliveriesCreated,
       webhooksDispatched,
-      capacitySamplesObserved
+      capacitySamplesObserved,
+      healthChangedChannels
     };
   }
 }
@@ -280,7 +292,10 @@ export const createMessagingRuntime = (): MessagingRuntime =>
             webhooks.deliveries +
             webhooks.events +
             inbox.recovered +
-            conversations.recovered
+            conversations.recovered,
+          // Canais cuja saúde de entrega mudou neste ciclo (T5): o núcleo
+          // emite o socket pós-commit — mensageria não emite (fronteira).
+          healthChangedChannels: delivery.healthChangedChannels
         };
       }
     },

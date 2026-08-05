@@ -1453,6 +1453,10 @@ const messages = {
         deletedMessage: "Este mensaje fue borrado por el contacto",
         edited: "Editado",
         saudation: "¡Saluda a tu nuevo contacto!",
+        delivery: {
+          unconfirmed: "Entrega no confirmada por WhatsApp. Verifica el destinatario antes de intentarlo de nuevo.",
+          channelDegraded: "Canal con entregas inestables: es posible que los mensajes no estén llegando. Verifica la conexión de este número.",
+        },
       },
       messagesInput: {
         placeholderOpen: "Escribe un mensaje",

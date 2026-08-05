@@ -1,6 +1,8 @@
 import { Op } from "sequelize";
 import sequelize from "../../database";
 import Message from "../../models/Message";
+import Whatsapp from "../../models/Whatsapp";
+import ChannelDeliveryHealthService from "../application/ChannelDeliveryHealthService";
 import {
   DELIVERY_CONFIRM_TIMEOUT_MS,
   MESSAGE_COMMAND_ERROR_CODE,
@@ -29,7 +31,16 @@ const SWEEP_BATCH_SIZE = 50;
  *   publico de status, deixando de constar como enviado com sucesso.
  */
 class DeliveryConfirmationRecoveryService {
-  async recover(now = new Date()): Promise<{ recovered: number }> {
+  constructor(
+    private readonly channelHealth: Pick<
+      ChannelDeliveryHealthService,
+      "recordUnconfirmedDelivery"
+    > = new ChannelDeliveryHealthService()
+  ) {}
+
+  async recover(
+    now = new Date()
+  ): Promise<{ recovered: number; healthChangedChannels: Whatsapp[] }> {
     const cutoff = new Date(now.getTime() - DELIVERY_CONFIRM_TIMEOUT_MS);
     const candidates = await MessageCommand.findAll({
       attributes: ["id"],
@@ -46,20 +57,28 @@ class DeliveryConfirmationRecoveryService {
     });
 
     let recovered = 0;
+    const healthChangedChannels: Whatsapp[] = [];
     for (const candidate of candidates) {
-      recovered += await this.reconcile(candidate.id, now);
+      const result = await this.reconcile(candidate.id, now);
+      recovered += result.recovered;
+      if (result.healthChangedChannel) {
+        healthChangedChannels.push(result.healthChangedChannel);
+      }
     }
-    return { recovered };
+    return { recovered, healthChangedChannels };
   }
 
-  private async reconcile(commandId: string, now: Date): Promise<number> {
+  private async reconcile(
+    commandId: string,
+    now: Date
+  ): Promise<{ recovered: number; healthChangedChannel: Whatsapp | null }> {
     return sequelize.transaction(async transaction => {
       const command = await MessageCommand.findOne({
         where: { id: commandId, status: MESSAGE_COMMAND_STATUS.SENT },
         transaction,
         lock: transaction.LOCK.UPDATE
       });
-      if (!command) return 0;
+      if (!command) return { recovered: 0, healthChangedChannel: null };
 
       // Lock na Message também: um ack concorrente grava nela, e sem o lock
       // o snapshot de ack podia ficar para trás e gerar falso "não confirmado".
@@ -77,19 +96,19 @@ class DeliveryConfirmationRecoveryService {
           { status: MESSAGE_COMMAND_STATUS.READ },
           { transaction }
         );
-        return 1;
+        return { recovered: 1, healthChangedChannel: null };
       }
       if (ack >= 3) {
         await command.update(
           { status: MESSAGE_COMMAND_STATUS.DELIVERED },
           { transaction }
         );
-        return 1;
+        return { recovered: 1, healthChangedChannel: null };
       }
       if (ack >= 2) {
         // ack 2 = o servidor do WhatsApp aceitou a mensagem: nao esta
         // perdida, apenas sem confirmacao do aparelho. Mantem "sent".
-        return 0;
+        return { recovered: 0, healthChangedChannel: null };
       }
 
       await command.update(
@@ -107,11 +126,19 @@ class DeliveryConfirmationRecoveryService {
         ) as any,
         { transaction }
       );
+      // Saúde do canal: a falha conta dentro da mesma transação; o núcleo é
+      // quem emite o evento de socket depois do commit (fronteira).
+      const healthChangedChannel =
+        await this.channelHealth.recordUnconfirmedDelivery(
+          command.whatsappId,
+          MESSAGE_COMMAND_ERROR_CODE.DELIVERY_UNCONFIRMED,
+          transaction
+        );
       logger.warn(
         { commandId: command.id, messageId: command.messageId || null },
         "messaging: comando sem ack do WhatsApp; marcado como unknown (DELIVERY_UNCONFIRMED)"
       );
-      return 1;
+      return { recovered: 1, healthChangedChannel };
     });
   }
 }

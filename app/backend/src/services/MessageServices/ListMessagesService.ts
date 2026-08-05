@@ -4,6 +4,7 @@ import Message from "../../models/Message";
 import Ticket from "../../models/Ticket";
 import ShowTicketService from "../TicketServices/ShowTicketService";
 import Queue from "../../models/Queue";
+import { attachDeliveryProjection } from "../../messaging/public/delivery";
 
 interface Request {
   ticketId: string;
@@ -71,6 +72,10 @@ const ListMessagesService = async ({
   });
 
   const hasMore = count > offset + messages.length;
+
+  // Projeção aditiva de entrega (T5): GET expõe delivery { status, errorCode,
+  // updatedAt } do comando do outbox sem alterar os campos existentes.
+  await attachDeliveryProjection(companyId, messages);
 
   return {
     messages: messages.reverse(),

@@ -188,7 +188,8 @@ describe("MessagingRuntime", () => {
       processedInbox: 1,
       webhookDeliveriesCreated: 2,
       webhooksDispatched: 1,
-      capacitySamplesObserved: 0
+      capacitySamplesObserved: 0,
+      healthChangedChannels: []
     });
     expect(events).toEqual(["recover", "inbox", "dispatch"]);
   });
@@ -265,10 +266,33 @@ describe("MessagingRuntime", () => {
       processedInbox: 0,
       webhookDeliveriesCreated: 0,
       webhooksDispatched: 0,
-      capacitySamplesObserved: 0
+      capacitySamplesObserved: 0,
+      healthChangedChannels: []
     });
     expect(recover).not.toHaveBeenCalled();
     expect(webhookFanout.fanoutOne).not.toHaveBeenCalled();
     expect(webhookDispatcher.dispatchOne).not.toHaveBeenCalled();
+  });
+
+  it("propagates channels healed by Meta inbox confirmations for post-commit emit", async () => {
+    const channel = { id: 42, deliveryHealth: "healthy" };
+    const processOne = jest
+      .fn()
+      .mockResolvedValueOnce({
+        status: "processed" as const,
+        healthChangedChannels: [channel]
+      })
+      .mockResolvedValue({ status: "idle" as const });
+    const runtime = new MessagingRuntime(
+      { recover: jest.fn().mockResolvedValue({ recovered: 0 }) },
+      { dispatchOne: jest.fn().mockResolvedValue({ status: "idle" }) },
+      5,
+      { processOne }
+    );
+
+    await expect(runtime.runOnce()).resolves.toMatchObject({
+      processedInbox: 1,
+      healthChangedChannels: [channel]
+    });
   });
 });

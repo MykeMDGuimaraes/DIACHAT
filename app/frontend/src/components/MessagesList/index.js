@@ -10,6 +10,7 @@ import {
   Divider,
   IconButton,
   makeStyles,
+  Tooltip,
 } from "@material-ui/core";
 
 import {
@@ -17,6 +18,7 @@ import {
   Block,
   Done,
   DoneAll,
+  ErrorOutline,
   ExpandMore,
   GetApp,
 } from "@material-ui/icons";
@@ -255,6 +257,13 @@ const useStyles = makeStyles((theme) => ({
 
   ackDoneAllIcon: {
     color: green[500],
+    fontSize: 18,
+    verticalAlign: "middle",
+    marginLeft: 4,
+  },
+
+  ackErrorIcon: {
+    color: "#e53935",
     fontSize: 18,
     verticalAlign: "middle",
     marginLeft: 4,
@@ -515,6 +524,19 @@ const MessagesList = ({ ticket, ticketId, isGroup }) => {
   };
 
   const renderMessageAck = (message) => {
+    // Projeção de entrega (T5): unknown vira ícone vermelho com tooltip;
+    // queued/sending mostram o relógio enquanto o outbox processa.
+    const deliveryStatus = message.delivery && message.delivery.status;
+    if (deliveryStatus === "unknown") {
+      return (
+        <Tooltip title={i18n.t("messagesList.delivery.unconfirmed")}>
+          <ErrorOutline fontSize="small" className={classes.ackErrorIcon} />
+        </Tooltip>
+      );
+    }
+    if (deliveryStatus === "queued" || deliveryStatus === "sending") {
+      return <AccessTime fontSize="small" className={classes.ackIcons} />;
+    }
     if (message.ack === 1) {
       return <AccessTime fontSize="small" className={classes.ackIcons} />;
     }
