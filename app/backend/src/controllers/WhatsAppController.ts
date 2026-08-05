@@ -171,7 +171,9 @@ export const remove = async (
   await ShowWhatsAppService(whatsappId, companyId);
 
   await DeleteWhatsAppService(whatsappId);
-  removeWbot(+whatsappId);
+  // Teardown serializado: aguarda o stop do manager (lease + socket) antes
+  // de confirmar a exclusao do canal.
+  await removeWbot(+whatsappId);
 
   const io = getIO();
   io.to(`company-${companyId}-mainchannel`).emit(

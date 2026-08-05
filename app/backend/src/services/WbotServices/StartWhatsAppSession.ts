@@ -1,10 +1,11 @@
 import * as Sentry from "@sentry/node";
-import { initWASocket } from "../../libs/wbot";
 import Whatsapp from "../../models/Whatsapp";
 import { wbotMessageListener } from "./wbotMessageListener";
 import { getIO } from "../../libs/socket";
 import wbotMonitor from "./wbotMonitor";
 import { logger } from "../../utils/logger";
+import { getSessionManager } from "./WhatsAppSessionManager";
+import type { Session } from "../../libs/wbot";
 
 export const StartWhatsAppSession = async (
   whatsapp: Whatsapp,
@@ -19,9 +20,18 @@ export const StartWhatsAppSession = async (
   });
 
   try {
-    const wbot = await initWASocket(whatsapp);
-    wbotMessageListener(wbot, companyId);
-    wbotMonitor(wbot, whatsapp, companyId);
+    // Toda entrada (boot, endpoint conectar, callback de reconexao) passa
+    // pelo single-flight do SessionManager: no maximo uma tentativa e um
+    // socket por canal. onCreated dispara uma unica vez por sessao nova —
+    // starts reutilizados nunca duplicam listeners.
+    await getSessionManager().start({
+      whatsapp,
+      onCreated: created => {
+        const socket = created.socket as Session;
+        wbotMessageListener(socket, companyId);
+        wbotMonitor(socket, whatsapp, companyId);
+      }
+    });
   } catch (err) {
     Sentry.captureException(err);
     logger.error(err);
