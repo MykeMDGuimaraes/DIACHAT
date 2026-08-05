@@ -387,23 +387,25 @@ describe("getReady e getActive", () => {
 });
 
 describe("corridas de lifecycle serializadas por canal", () => {
-  it("stop durante start aguarda a tentativa e derruba a sessao publicada", async () => {
-    const socket = makeFakeSocket();
+  it("stop durante start revoga a tentativa: sessao nao publica nem abre socket", async () => {
     const factory = jest.fn(
       () =>
         new Promise<ManagedSocket>(resolve =>
-          setTimeout(() => resolve(socket), 10)
+          setTimeout(() => resolve(makeFakeSocket()), 10)
         )
     );
     const manager = makeManager(factory);
 
     const startPromise = manager.start(input());
     const stopPromise = manager.stop(1, "close");
-    const session = await startPromise;
+
+    await expect(startPromise).rejects.toMatchObject({
+      message: "ERR_WAPP_SESSION_SUPERSEDED"
+    });
     await stopPromise;
 
-    expect(session).toBeDefined();
-    expect(socket.ws.close).toHaveBeenCalled();
+    // Revogada antes do lease: a factory nem roda e a lease e liberada.
+    expect(factory).not.toHaveBeenCalled();
     expect(manager.diagnostics(1).activeSocketCount).toBe(0);
     expect(releaseMock).toHaveBeenCalledWith({
       whatsappId: 1,
@@ -412,23 +414,9 @@ describe("corridas de lifecycle serializadas por canal", () => {
     });
   });
 
-  it("replace durante start nunca deixa dois sockets ativos e bumpha a geracao", async () => {
-    const first = makeFakeSocket();
+  it("replace durante start revoga a tentativa antiga e publica a geracao nova", async () => {
     const second = makeFakeSocket();
-    const factory = jest
-      .fn()
-      .mockImplementationOnce(
-        () =>
-          new Promise<ManagedSocket>(resolve =>
-            setTimeout(() => resolve(first), 10)
-          )
-      )
-      .mockImplementationOnce(
-        () =>
-          new Promise<ManagedSocket>(resolve =>
-            setTimeout(() => resolve(second), 10)
-          )
-      );
+    const factory = jest.fn().mockResolvedValue(second);
     acquireMock
       .mockResolvedValueOnce({ ...LEASE })
       .mockResolvedValueOnce({ ...LEASE, fencingToken: "2" });
@@ -436,12 +424,14 @@ describe("corridas de lifecycle serializadas por canal", () => {
 
     const startPromise = manager.start(input());
     const replacePromise = manager.replace(input(), "manual");
-    const firstSession = await startPromise;
+
+    await expect(startPromise).rejects.toMatchObject({
+      message: "ERR_WAPP_SESSION_SUPERSEDED"
+    });
     const secondSession = await replacePromise;
 
-    expect(factory).toHaveBeenCalledTimes(2);
-    expect(first.ws.close).toHaveBeenCalled();
-    expect(secondSession).not.toBe(firstSession);
+    // A tentativa antiga morre antes da factory; so a substituta abre socket.
+    expect(factory).toHaveBeenCalledTimes(1);
     expect(secondSession.generation).toBe("2");
     expect(manager.diagnostics(1).activeSocketCount).toBe(1);
     expect(manager.isCurrent(1, "1")).toBe(false);
@@ -597,5 +587,89 @@ describe("contadores de QR e reconexao", () => {
     } finally {
       jest.useRealTimers();
     }
+  });
+
+  it("replace durante start em voo: geracao pendente nao publica nem notifica onCreated", async () => {
+    acquireMock
+      .mockReset()
+      .mockResolvedValueOnce({ ...LEASE, fencingToken: "1" })
+      .mockResolvedValue({ ...LEASE, fencingToken: "2" });
+    let resolveFactory!: (socket: unknown) => void;
+    const firstSocket = makeFakeSocket();
+    const factory = jest
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise(resolve => {
+            resolveFactory = resolve;
+          })
+      )
+      .mockImplementation(() => Promise.resolve(makeFakeSocket()));
+    const manager = makeManager(factory);
+    const onCreatedFirst = jest.fn();
+
+    const startPromise = manager.start(
+      input(onCreatedFirst as StartSessionInput["onCreated"])
+    );
+    // lease da primeira tentativa resolve; factory fica em voo
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    const replacement = manager.replace({ whatsapp: { id: 1, companyId: 10 } });
+    resolveFactory(firstSocket);
+
+    await expect(startPromise).rejects.toMatchObject({
+      message: "ERR_WAPP_SESSION_SUPERSEDED"
+    });
+    const session = await replacement;
+
+    expect(onCreatedFirst).not.toHaveBeenCalled();
+    expect(firstSocket.ev.removeAllListeners).toHaveBeenCalled();
+    expect(firstSocket.ws.close).toHaveBeenCalled();
+    expect(manager.isCurrent(1, "1")).toBe(false);
+    expect(session.generation).toBe("2");
+    expect(factory).toHaveBeenCalledTimes(2);
+  });
+
+  it("stop durante start em voo revoga a geracao pendente (isCurrent nega na hora)", async () => {
+    let resolveFactory!: (socket: unknown) => void;
+    const factory = jest
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise(resolve => {
+            resolveFactory = resolve;
+          })
+      );
+    const manager = makeManager(factory);
+
+    const startPromise = manager.start(input());
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    // fencingToken do LEASE ("1") e a geracao pendente: vigente em voo
+    expect(manager.isCurrent(1, "1")).toBe(true);
+
+    const stopPromise = manager.stop(1, "close");
+    expect(manager.isCurrent(1, "1")).toBe(false);
+
+    resolveFactory(makeFakeSocket());
+    await expect(startPromise).rejects.toMatchObject({
+      message: "ERR_WAPP_SESSION_SUPERSEDED"
+    });
+    await stopPromise;
+    expect(manager.getActiveIfPresent(1)).toBeUndefined();
+  });
+
+  it("listActiveSessionIds reflete os canais publicados e remove no stop", async () => {
+    const factory = jest
+      .fn()
+      .mockImplementation(() => Promise.resolve(makeFakeSocket()));
+    const manager = makeManager(factory);
+
+    await manager.start({ whatsapp: { id: 7, companyId: 10 } });
+    await manager.start({ whatsapp: { id: 8, companyId: 10 } });
+    expect(manager.listActiveSessionIds().sort()).toEqual([7, 8]);
+
+    await manager.stop(7, "close");
+    expect(manager.listActiveSessionIds()).toEqual([8]);
   });
 });

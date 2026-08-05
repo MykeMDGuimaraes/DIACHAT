@@ -16,6 +16,7 @@ import { logger } from "../../utils/logger";
 import createOrUpdateBaileysService from "../BaileysServices/CreateOrUpdateBaileysService";
 import CreateMessageService from "../MessageServices/CreateMessageService";
 import Company from "../../models/Company";
+import { fenceSessionListener } from "./sessionListenerGuard";
 
 type Session = WASocket & {
   id?: number;
@@ -25,10 +26,15 @@ type Session = WASocket & {
 const wbotMonitor = async (
   wbot: Session,
   whatsapp: Whatsapp,
-  companyId: number
+  companyId: number,
+  generation?: string
 ): Promise<void> => {
   try {
-    wbot.ws.on("CB:call", async (node: BinaryNode) => {
+    // Handlers fenced por geracao: eventos de uma sessao substituida ficam
+    // inertes (nao enviam mensagens nem gravam nada).
+    wbot.ws.on(
+      "CB:call",
+      fenceSessionListener(whatsapp.id, generation, async (node: BinaryNode) => {
       const content = node.content[0] as any;
 
       if (content.tag === "offer") {
@@ -100,14 +106,18 @@ const wbotMonitor = async (
           return CreateMessageService({ messageData, companyId: companyId });
         }
       }
-    });
+      })
+    );
 
-    wbot.ev.on("contacts.upsert", async (contacts: BContact[]) => {
-      await createOrUpdateBaileysService({
-        whatsappId: whatsapp.id,
-        contacts
-      });
-    });
+    wbot.ev.on(
+      "contacts.upsert",
+      fenceSessionListener(whatsapp.id, generation, async (contacts: BContact[]) => {
+        await createOrUpdateBaileysService({
+          whatsappId: whatsapp.id,
+          contacts
+        });
+      })
+    );
   } catch (err) {
     Sentry.captureException(err);
     logger.error(err);

@@ -1,5 +1,3 @@
-import * as Sentry from "@sentry/node";
-
 import { randomUUID } from "crypto";
 import { Boom } from "@hapi/boom";
 import NodeCache from "node-cache";
@@ -9,8 +7,7 @@ import makeWASocket, {
   fetchLatestBaileysVersion,
   makeCacheableSignalKeyStore,
   // makeInMemoryStore,
-  isJidBroadcast,
-  CacheStore
+  isJidBroadcast
 } from "../messaging/public/baileys";
 import Whatsapp from "../models/Whatsapp";
 import { logger } from "../utils/logger";
@@ -39,39 +36,27 @@ export type Session = WASocket & {
   store?: Store;
 };
 
-// Array legado de sockets: leituras passaram a delegar ao SessionManager
-// (Task 1 do hardening); o array so permanece ate a migracao completa dos
-// listeners e callers na Task 2. Toda remocao e por identidade de socket,
-// nunca so por ID — ver wbotLegacySessions.
-import {
-  getLegacySession,
-  removeLegacySessionIfCurrent,
-  trackLegacySession
-} from "./wbotLegacySessions";
-
-export { getWbotSessionIds } from "./wbotLegacySessions";
+// O SessionManager e o unico dono do ciclo de vida dos sockets (Task 2 do
+// hardening): nao existe mais array legado — todas as leituras delegam a ele.
+export const getWbotSessionIds = (): number[] =>
+  getSessionManager().listActiveSessionIds();
 
 export const getWbot = (whatsappId: number): Session => {
   const managed = getSessionManager().getActiveIfPresent(whatsappId);
-  if (managed) return managed.socket as Session;
-
-  const legacy = getLegacySession<Session>(whatsappId);
-  if (!legacy) {
+  if (!managed) {
     throw new AppError("ERR_WAPP_NOT_INITIALIZED");
   }
-  return legacy;
+  return managed.socket as Session;
 };
 
 const findReadySession = (whatsappId: number): Session | undefined => {
   const managed = getSessionManager().getActiveIfPresent(whatsappId);
-  if (managed && managed.socket.user) {
-    return managed.socket as Session;
-  }
-  const legacy = getLegacySession<Session>(whatsappId);
   // A session is only usable for sending after Baileys authenticates it
   // ("open" connection populates `user`). Sessions registered while showing
   // a QR code are not ready.
-  if (legacy && legacy.user) return legacy;
+  if (managed && managed.socket.user) {
+    return managed.socket as Session;
+  }
   return undefined;
 };
 
@@ -87,53 +72,18 @@ export const waitForWbot = async (
 ): Promise<Session> =>
   waitForSessionReady(() => findReadySession(whatsappId), timeoutMs);
 
-export const removeWbot = async (
-  whatsappId: number,
-  isLogout = true
-): Promise<void> => {
-  // Captura ANTES do stop os sockets que esta chamada deve encerrar: entre o
-  // stop e a limpeza, uma start concorrente pode registrar um socket novo no
-  // canal — ele nao pode ser tocado por esta remocao.
-  const managedSocket = getSessionManager().getActiveIfPresent(whatsappId)
-    ?.socket as Session | undefined;
-  const legacySocket = getLegacySession<Session>(whatsappId);
-  const targetSocket = managedSocket ?? legacySocket;
-
-  try {
-    // O SessionManager e o proprietario do socket: teardown, heartbeat e
-    // liberacao da lease acontecem aqui.
-    await getSessionManager().stop(
-      whatsappId,
-      isLogout ? "logout" : "close"
-    );
-  } catch (err) {
-    logger.error(err);
-  }
-
-  try {
-    if (!managedSocket && legacySocket && isLogout) {
-      // Socket que o manager nao conhece: logout/close locais.
-      legacySocket.logout();
-      legacySocket.ws.close();
-    }
-    // Remove a entrada legada SOMENTE se ela ainda for o socket capturado;
-    // uma geracao nova registrada no meio-tempo e preservada.
-    if (targetSocket) {
-      removeLegacySessionIfCurrent(whatsappId, targetSocket);
-    }
-  } catch (err) {
-    logger.error(err);
-  }
-};
-
 /**
  * Cria o socket Baileys e registra o callback de conexao. Retorna o socket
  * ainda em "opening" (QR/pareamento) — e a factory injetada no
- * SessionManager, que passa a ser o proprietario do ciclo de vida.
+ * SessionManager, proprietario do ciclo de vida.
+ *
+ * A geracao e obrigatoria: todo efeito persistente do lifecycle (banco,
+ * emits, stop, reconexao, saveState) so executa se a geracao do socket
+ * ainda for a vigente; callbacks de sessoes substituidas ficam inertes.
  */
 export const createWASocket = async (
   whatsapp: Whatsapp,
-  generation?: string
+  generation: string
 ): Promise<Session> => {
   const io = getIO();
 
@@ -154,7 +104,12 @@ export const createWASocket = async (
   logger.info(`isLegacy: ${isLegacy}`);
   logger.info(`Starting session ${name}`);
 
-  const { state, saveState } = await authState(whatsapp);
+  // Persistencia de auth-state guardada pela geracao: vale para creds.update
+  // E para o keys.set interno do Baileys — um socket substituido nao grava
+  // mais nada (ver authState).
+  const { state, saveState } = await authState(whatsapp, () =>
+    getSessionManager().isCurrent(id, generation)
+  );
 
   const msgRetryCounterCache = new NodeCache();
 
@@ -170,23 +125,28 @@ export const createWASocket = async (
     msgRetryCounterCache,
     shouldIgnoreJid: jid => isJidBroadcast(jid)
   });
+  // Identidade do canal no proprio socket: handlers de mensagem e monitor
+  // usam wbot.id para tickets, contatos e logs.
+  wsocket.id = id;
 
   // Efeitos persistentes do lifecycle (banco, emits, stop, reconexao) so
   // executam se a geracao do socket ainda for a vigente: callbacks de
-  // sessoes substituidas ficam inertes. Sem geracao (chamador legado via
-  // initWASocket) os efeitos executam direto, como antes.
+  // sessoes substituidas ficam inertes.
   const fenced = async (effect: () => Promise<void> | void): Promise<void> => {
-    if (!generation) {
-      await effect();
-      return;
-    }
     await getSessionManager().runFenced(id, generation, effect);
   };
 
   // Revalidacao nas fronteiras assincronas: entre um await e outro um
   // replace pode ter publicado uma geracao nova.
   const stillCurrent = (): boolean =>
-    !generation || getSessionManager().isCurrent(id, generation);
+    getSessionManager().isCurrent(id, generation);
+
+  // Fence dos listeners do mirror (connection.update/messages.*): callbacks
+  // de geracao substituida nao publicam eventos do provedor. O 4o arg fica
+  // undefined para manter o registerMirror padrao.
+  const fenceMirrorListener = (handler: (value: any) => Promise<void>) => (
+    value: any
+  ) => fenced(() => handler(value));
 
   registerBaileysConnectionLifecycle(
     wsocket,
@@ -254,9 +214,11 @@ export const createWASocket = async (
           // Stop condicional a ESTA geracao: se um replace publicou outra
           // sessao enquanto este callback aguardava, nada e derrubado e
           // nenhuma reconexao e agendada.
-          const stopped = generation
-            ? await manager.stopIfCurrent(id, generation, "close")
-            : await removeWbot(id, false).then(() => true);
+          const stopped = await manager.stopIfCurrent(
+            id,
+            generation,
+            "close"
+          );
           if (stopped && decision.action === "reconnect") {
             // Reconexao com teto da policy, agendada so pelo manager:
             // replace/stop cancelam este timer junto com a geracao.
@@ -269,12 +231,13 @@ export const createWASocket = async (
               }
             );
           }
-          if (stopped) removeLegacySessionIfCurrent(id, wsocket);
         });
       }
 
       if (connection === "open") {
         await fenced(async () => {
+          // "open" publica CONNECTED como estado da conexao Baileys — NAO
+          // declara entrega saudavel (confirmacao de entrega e Task 5).
           await whatsapp.update({
             status: "CONNECTED",
             qrcode: "",
@@ -290,8 +253,6 @@ export const createWASocket = async (
               session: whatsapp
             }
           );
-
-          trackLegacySession(whatsapp.id, wsocket);
         });
       }
 
@@ -314,10 +275,7 @@ export const createWASocket = async (
             sessionManager.resetQrRetries(id);
             // O manager e o proprietario do socket: teardown e liberacao da
             // lease acontecem no stop condicional a esta geracao.
-            const stopped = generation
-              ? await sessionManager.stopIfCurrent(id, generation, "close")
-              : await removeWbot(id, false).then(() => true);
-            if (stopped) removeLegacySessionIfCurrent(id, wsocket);
+            await sessionManager.stopIfCurrent(id, generation, "close");
           } else {
             logger.info(`Session QRCode Generate ${name}`);
             sessionManager.incrementQrRetries(id);
@@ -327,8 +285,6 @@ export const createWASocket = async (
               status: "qrcode",
               retries: 0
             });
-
-            trackLegacySession(whatsapp.id, wsocket);
 
             io.to(`company-${whatsapp.companyId}-mainchannel`).emit(
               `company-${whatsapp.companyId}-whatsappSession`,
@@ -340,9 +296,14 @@ export const createWASocket = async (
           }
         });
       }
-    }
+    },
+    undefined,
+    fenceMirrorListener
   );
-  wsocket.ev.on("creds.update", saveState);
+  // Persistencia de credenciais fenced: um creds.update de geracao vencida
+  // nao sobrescreve o pareamento da sessao nova (a serializacao das
+  // escritas de credenciais e Task 3).
+  wsocket.ev.on("creds.update", () => fenced(() => saveState()));
 
   return wsocket;
 };
@@ -352,7 +313,7 @@ export const createWASocket = async (
 configureSessionManager({
   ownerId: process.env.WAPP_SESSION_OWNER_ID || randomUUID(),
   socketFactory: input =>
-    createWASocket(input.whatsapp as Whatsapp, input.generation),
+    createWASocket(input.whatsapp as Whatsapp, input.generation as string),
   // Rearme gerenciado: so dispara em perda transitoria da lease (banco
   // indisponivel); takeover por outro owner nunca rearma.
   onSessionEnded: whatsappId => {
@@ -365,22 +326,3 @@ configureSessionManager({
       .catch(err => logger.error(err));
   }
 });
-
-/**
- * Comportamento historico: resolve somente quando a conexao abre. Chamadores
- * novos devem preferir o SessionManager (start/getReady), que devolve o
- * socket ja em "opening" para heartbeat durante QR/pareamento.
- */
-export const initWASocket = async (whatsapp: Whatsapp): Promise<Session> => {
-  const wsocket = await createWASocket(whatsapp);
-  if (wsocket.user) return wsocket;
-  return new Promise(resolve => {
-    let resolved = false;
-    wsocket.ev.on("connection.update", (update: { connection?: string }) => {
-      if (!resolved && update.connection === "open") {
-        resolved = true;
-        resolve(wsocket);
-      }
-    });
-  });
-};

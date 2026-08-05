@@ -33,9 +33,14 @@ export const StartAllWhatsAppsSessions = async (
         "StartAllWhatsAppsSessions: sessoes sem credencial ignoradas no boot"
       );
     }
-    withCredentials.forEach(whatsapp => {
-      StartWhatsAppSession(whatsapp, companyId);
-    });
+    // Aguarda as inicializacoes: o boot so termina quando todas as
+    // tentativas de conexao foram aceitas/concluidas no manager (sem
+    // forEach descartando Promises).
+    await Promise.all(
+      withCredentials.map(whatsapp =>
+        StartWhatsAppSession(whatsapp, companyId)
+      )
+    );
   } catch (e) {
     Sentry.captureException(e);
   }

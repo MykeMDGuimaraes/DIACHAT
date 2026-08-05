@@ -57,4 +57,43 @@ describe("BaileysConnectionLifecycle", () => {
       "manager:open"
     ]);
   });
+
+  it("com fence, os listeners do mirror sao envelopados (geracao substituida fica inerte)", async () => {
+    const handlers: Array<(value: any) => Promise<void>> = [];
+    const socket = {
+      ev: {
+        on: (
+          event: string,
+          handler: (value: any) => Promise<void>
+        ): unknown => {
+          if (event === "connection.update") handlers.push(handler);
+          return undefined;
+        }
+      }
+    };
+    const publish = jest.fn(async () => undefined);
+    const manager = jest.fn(async () => undefined);
+    // Fence que suprime tudo: simula geracao substituida.
+    const fence = jest.fn(
+      () => async (): Promise<void> => undefined
+    );
+
+    registerBaileysConnectionLifecycle(
+      socket,
+      { companyId: 7, whatsappId: 42 },
+      manager,
+      (target, context) =>
+        registerBaileysMirrorLifecycleListeners(target, context, publish),
+      fence
+    );
+    for (const handler of handlers) {
+      await handler({ connection: "open" });
+    }
+
+    // O mirror registrou seu connection.update via facade (envelopado);
+    // o connection manager segue direto no socket.
+    expect(fence).toHaveBeenCalled();
+    expect(publish).not.toHaveBeenCalled();
+    expect(manager).toHaveBeenCalledWith({ connection: "open" });
+  });
 });

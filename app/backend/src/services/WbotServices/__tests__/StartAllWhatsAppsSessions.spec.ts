@@ -55,4 +55,17 @@ describe("StartAllWhatsAppsSessions", () => {
 
     expect(mockedStart).not.toHaveBeenCalled();
   });
+
+  it("aguarda a conclusao das inicializacoes (sem descartar Promises)", async () => {
+    let finished = false;
+    mockedStart.mockImplementation(async () => {
+      await new Promise(resolve => setTimeout(resolve, 20));
+      finished = true;
+    });
+    mockedList.mockResolvedValue([{ id: 26, session: pairedSession }]);
+
+    await StartAllWhatsAppsSessions(1);
+
+    expect(finished).toBe(true);
+  });
 });

@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { getIO } from "../libs/socket";
-import { removeWbot } from "../libs/wbot";
+import { getSessionManager } from "../services/WbotServices/WhatsAppSessionManager";
+import { logger } from "../utils/logger";
 import { StartWhatsAppSession } from "../services/WbotServices/StartWhatsAppSession";
 
 import CreateWhatsAppService from "../services/WhatsappService/CreateWhatsAppService";
@@ -171,9 +172,13 @@ export const remove = async (
   await ShowWhatsAppService(whatsappId, companyId);
 
   await DeleteWhatsAppService(whatsappId);
-  // Teardown serializado: aguarda o stop do manager (lease + socket) antes
+  // Teardown serializado: aguarda o stop do manager (socket + lease) antes
   // de confirmar a exclusao do canal.
-  await removeWbot(+whatsappId);
+  try {
+    await getSessionManager().stop(+whatsappId, "logout");
+  } catch (err) {
+    logger.error(err);
+  }
 
   const io = getIO();
   io.to(`company-${companyId}-mainchannel`).emit(

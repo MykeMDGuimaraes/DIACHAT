@@ -16,12 +16,17 @@ const KEY_MAP: { [T in keyof SignalDataTypeMap]: string } = {
 };
 
 const authState = async (
-  whatsapp: Whatsapp
+  whatsapp: Whatsapp,
+  shouldPersist: () => boolean = () => true
 ): Promise<{ state: AuthenticationState; saveState: () => void }> => {
   let creds: AuthenticationCreds;
   let keys: any = {};
 
   const saveState = async () => {
+    // Fencing de geracao (Task 2 do hardening): vale para creds.update E
+    // para o keys.set abaixo — um socket de geracao substituida nao grava
+    // mais nada, nao sobrescreve o pareamento da sessao nova.
+    if (!shouldPersist()) return;
     try {
       await whatsapp.update({
         session: JSON.stringify({ creds, keys }, BufferJSON.replacer, 0)

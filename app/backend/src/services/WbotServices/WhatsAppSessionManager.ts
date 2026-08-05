@@ -145,6 +145,15 @@ export class WhatsAppSessionManager {
 
   private readonly renewalFailures = new Map<number, number>();
 
+  // Tentativa em voo por canal (factory/lease ainda nao publicados) e
+  // revogacoes: stop/replace marcam o token da tentativa; acquireAndStart
+  // confere nas fronteiras e desfaz a geracao sem publicar.
+  private readonly pendingByChannel = new Map<
+    number,
+    { token: object; generation?: string }
+  >();
+  private readonly revokedAttempts = new Set<object>();
+
   constructor({
     ownerId,
     socketFactory,
@@ -174,7 +183,13 @@ export class WhatsAppSessionManager {
     const inFlight = this.inFlightConnections.get(id);
     if (inFlight) return inFlight;
 
-    const attempt = this.enqueue(id, () => this.acquireAndStart(input));
+    // Token da tentativa: stop/replace revogam a geracao em voo por ele,
+    // mesmo antes do lease existir (ver acquireAndStart).
+    const token = {};
+    this.pendingByChannel.set(id, { token });
+    const attempt = this.enqueue(id, () =>
+      this.acquireAndStart(input, token)
+    );
     this.inFlightConnections.set(id, attempt);
     try {
       return await attempt;
@@ -205,13 +220,18 @@ export class WhatsAppSessionManager {
     // devolve enquanto o teardown aguarda na fila.
     const condemned = this.activeSessions.get(id);
     if (condemned) condemned.closing = true;
+    // Revoga a tentativa em voo (se houver): a geracao pendente nao publica
+    // nem processa eventos — desfaz o socket ao retornar da factory.
+    this.revokeInFlight(id);
 
+    const token = {};
+    this.pendingByChannel.set(id, { token });
     const attempt = this.enqueue(id, async () => {
       const previous = this.activeSessions.get(id);
       if (previous) {
         await this.teardownSession(previous);
       }
-      return this.acquireAndStart(input);
+      return this.acquireAndStart(input, token);
     });
     this.inFlightConnections.set(id, attempt);
     try {
@@ -235,6 +255,9 @@ export class WhatsAppSessionManager {
     // devolve enquanto o teardown aguarda na fila.
     const condemned = this.activeSessions.get(whatsappId);
     if (condemned) condemned.closing = true;
+    // Revoga a tentativa em voo: nenhum socket sobrevive a um stop, mesmo um
+    // que ainda nem terminou de ser criado.
+    this.revokeInFlight(whatsappId);
 
     await this.enqueue(whatsappId, async () => {
       const session = this.activeSessions.get(whatsappId);
@@ -258,6 +281,20 @@ export class WhatsAppSessionManager {
   ): Promise<boolean> {
     const session = this.activeSessions.get(whatsappId);
     if (!session || session.closing || session.generation !== generation) {
+      // Geracao ainda em voo (factory nao retornou): se a geracao pendente
+      // for exatamente a informada, revoga a tentativa — ela se desfaz sem
+      // publicar, e o chamador pode tratar como stop efetivo.
+      const pending = this.pendingByChannel.get(whatsappId);
+      if (
+        pending &&
+        pending.generation === generation &&
+        !this.revokedAttempts.has(pending.token)
+      ) {
+        this.revokedAttempts.add(pending.token);
+        this.cancelReconnect(whatsappId);
+        this.qrRetryCounters.delete(whatsappId);
+        return true;
+      }
       return false;
     }
     session.closing = true;
@@ -310,7 +347,25 @@ export class WhatsAppSessionManager {
     return session && !session.closing ? session : undefined;
   }
 
+  /** IDs dos canais com sessao gerenciada publicada (nao encerrando). */
+  listActiveSessionIds(): number[] {
+    return [...this.activeSessions.entries()]
+      .filter(([, session]) => !session.closing)
+      .map(([whatsappId]) => whatsappId);
+  }
+
   isCurrent(whatsappId: number, generation: string): boolean {
+    // Geracao em voo conta como vigente enquanto nao for revogada:
+    // callbacks do pareamento (QR, creds.update, keys.set) funcionam antes
+    // da publicacao. Tentativa revogada nunca mais e vigente.
+    const pending = this.pendingByChannel.get(whatsappId);
+    if (
+      pending &&
+      pending.generation === generation &&
+      !this.revokedAttempts.has(pending.token)
+    ) {
+      return true;
+    }
     const session = this.activeSessions.get(whatsappId);
     return (
       !!session && !session.closing && session.generation === generation
@@ -433,8 +488,21 @@ export class WhatsAppSessionManager {
     return next;
   }
 
+  /**
+   * Revoga a tentativa em voo do canal: acquireAndStart confere o token nas
+   * fronteiras (pos-lease e pos-factory) e desfaz a geracao sem publicar —
+   * o socket nao processa eventos nem persiste nada depois disso.
+   */
+  private revokeInFlight(whatsappId: number): void {
+    const pending = this.pendingByChannel.get(whatsappId);
+    if (pending) {
+      this.revokedAttempts.add(pending.token);
+    }
+  }
+
   private async acquireAndStart(
-    input: StartSessionInput
+    input: StartSessionInput,
+    attemptToken: object
   ): Promise<ManagedSession> {
     const { id, companyId } = input.whatsapp;
 
@@ -448,6 +516,19 @@ export class WhatsAppSessionManager {
     });
     if (!lease) {
       throw new AppError("ERR_WAPP_SESSION_LEASE_UNAVAILABLE", 409);
+    }
+
+    // A geracao passa a ser reconhecida por isCurrent/stopIfCurrent enquanto
+    // a factory estiver em voo (callbacks do pareamento dependem disso).
+    const pending = this.pendingByChannel.get(id);
+    if (pending && pending.token === attemptToken) {
+      pending.generation = lease.fencingToken;
+    }
+
+    // Revogada enquanto o lease era adquirido: nem abre socket.
+    if (this.revokedAttempts.has(attemptToken)) {
+      await this.releaseLeaseQuietly(id, lease.fencingToken);
+      throw new AppError("ERR_WAPP_SESSION_SUPERSEDED", 409);
     }
 
     try {
@@ -465,6 +546,13 @@ export class WhatsAppSessionManager {
         socket,
         closing: false
       };
+      // Revogada durante o voo da factory: teardown sem publicar — o socket
+      // nao emite, nao persiste e nao processa eventos (a lease sai no
+      // catch, como qualquer falha de start).
+      if (this.revokedAttempts.has(attemptToken)) {
+        await this.teardownSession(session);
+        throw new AppError("ERR_WAPP_SESSION_SUPERSEDED", 409);
+      }
       this.activeSessions.set(id, session);
       this.renewalFailures.delete(id);
       this.startHeartbeat(session);
@@ -473,6 +561,12 @@ export class WhatsAppSessionManager {
     } catch (error) {
       await this.releaseLeaseQuietly(id, lease.fencingToken);
       throw error;
+    } finally {
+      this.revokedAttempts.delete(attemptToken);
+      const current = this.pendingByChannel.get(id);
+      if (current && current.token === attemptToken) {
+        this.pendingByChannel.delete(id);
+      }
     }
   }
 

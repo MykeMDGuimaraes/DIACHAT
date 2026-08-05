@@ -61,6 +61,7 @@ import {
 import typebotListener from "../TypebotServices/typebotListener";
 import QueueIntegrations from "../../models/QueueIntegrations";
 import ShowQueueIntegrationService from "../QueueIntegrationServices/ShowQueueIntegrationService";
+import { fenceSessionListener } from "./sessionListenerGuard";
 
 import { FlowBuilderModel } from "../../models/FlowBuilder";
 import { FlowCampaignModel } from "../../models/FlowCampaign";
@@ -2952,10 +2953,15 @@ const filterMessages = (msg: WAMessage): boolean => {
 
 const wbotMessageListener = async (
   wbot: Session,
-  companyId: number
+  companyId: number,
+  whatsappId?: number,
+  generation?: string
 ): Promise<void> => {
   try {
-    wbot.ev.on("messages.upsert", async (messageUpsert: ImessageUpsert) => {
+    // Handlers fenced por geracao: eventos de uma sessao substituida ficam
+    // inertes — nao processam mensagens, nao emitem, nao tocam na sessao
+    // nova (ver sessionListenerGuard e o inventario em StartWhatsAppSession).
+    const onMessagesUpsert = async (messageUpsert: ImessageUpsert) => {
       // Log de diagnóstico para baterias de teste: só ativa com
       // WA_RAW_EVENT_LOG=true no ambiente (nunca ligar em produção).
       if (process.env.WA_RAW_EVENT_LOG === "true") {
@@ -2980,16 +2986,26 @@ const wbotMessageListener = async (
           await verifyCampaignMessageAndCloseTicket(message, companyId);
         }
       }
-    });
+    };
 
-    wbot.ev.on("messages.update", (messageUpdate: WAMessageUpdate[]) => {
+    wbot.ev.on(
+      "messages.upsert",
+      fenceSessionListener(whatsappId, generation, onMessagesUpsert)
+    );
+
+    const onMessagesUpdate = (messageUpdate: WAMessageUpdate[]) => {
       if (messageUpdate.length === 0) return;
       messageUpdate.forEach(async (message: WAMessageUpdate) => {
         (wbot as WASocket)!.readMessages([message.key]);
 
         handleMsgAck(message, message.update.status, companyId);
       });
-    });
+    };
+
+    wbot.ev.on(
+      "messages.update",
+      fenceSessionListener(whatsappId, generation, onMessagesUpdate)
+    );
 
     // wbot.ev.on("messages.set", async (messageSet: IMessage) => {
     //   messageSet.messages.filter(filterMessages).map(msg => msg);
