@@ -11,6 +11,7 @@ import * as Sentry from "@sentry/node";
 import "./database";
 import uploadConfig from "./config/upload";
 import mediaAuth from "./middleware/mediaAuth";
+import { privateMediaDirectory } from "./messaging/public/outbound";
 import AppError from "./errors/AppError";
 import routes from "./routes";
 import { logger } from "./utils/logger";
@@ -40,6 +41,13 @@ app.use(
 app.use(cookieParser());
 app.use(Sentry.Handlers.requestHandler());
 app.use("/public", mediaAuth, express.static(uploadConfig.directory));
+// Midia privada do outbox (storage/messaging): mesmo contrato de auth do
+// /public, servida da raiz storage/ para URLs /media/messaging/<arquivo>.
+app.use(
+  "/media",
+  mediaAuth,
+  express.static(path.dirname(privateMediaDirectory))
+);
 
 const frontendBuildDir = path.resolve(
   __dirname,

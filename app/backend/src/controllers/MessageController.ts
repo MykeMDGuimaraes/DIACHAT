@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { UniqueConstraintError } from "sequelize";
+import { v4 as uuidv4 } from "uuid";
 import AppError from "../errors/AppError";
 import V1MessageIdempotency from "../models/V1MessageIdempotency";
 
@@ -7,6 +8,7 @@ import SetTicketMessagesAsRead from "../helpers/SetTicketMessagesAsRead";
 import { getIO } from "../libs/socket";
 import Message from "../models/Message";
 import Queue from "../models/Queue";
+import Ticket from "../models/Ticket";
 import User from "../models/User";
 import Whatsapp from "../models/Whatsapp";
 import formatBody from "../helpers/Mustache";
@@ -16,11 +18,48 @@ import ShowTicketService from "../services/TicketServices/ShowTicketService";
 import FindOrCreateTicketService from "../services/TicketServices/FindOrCreateTicketService";
 import UpdateTicketService from "../services/TicketServices/UpdateTicketService";
 import DeleteWhatsAppMessage from "../services/WbotServices/DeleteWhatsAppMessage";
-import SendWhatsAppMedia from "../services/WbotServices/SendWhatsAppMedia";
-import SendWhatsAppMessage from "../services/WbotServices/SendWhatsAppMessage";
 import CheckContactNumber from "../services/WbotServices/CheckNumber";
 import GetProfilePicUrl from "../services/WbotServices/GetProfilePicUrl";
 import CreateOrUpdateContactService from "../services/ContactServices/CreateOrUpdateContactService";
+import GetTicketWbot from "../helpers/GetTicketWbot";
+import {
+  OutboundMessageService,
+  persistMessagingUpload,
+  messageKindForMime
+} from "../messaging/public/outbound";
+import { notifyCreatedMessage } from "../services/MessageServices/CreateMessageService";
+
+// Nucleo unico de aceitacao de envios (Task 4): todo envio da tela/API
+// interna vira Message + MessageCommand + evento de outbox na mesma
+// transacao; a entrega acontece no dispatcher (202 = aceito, nao enviado).
+const outboundMessageService = new OutboundMessageService();
+
+// A Message criada upfront precisa aparecer na tela imediatamente: o eco
+// fromMe nao emite (key.id == commandId, Message ja existe), entao o
+// controller publica o mesmo evento do CreateMessageService.
+const emitUpfrontMessage = async (
+  messageId: string,
+  companyId: number
+): Promise<void> => {
+  const full = await Message.findByPk(messageId, {
+    include: [
+      "contact",
+      {
+        model: Ticket,
+        as: "ticket",
+        include: [
+          "contact",
+          "queue",
+          { model: Whatsapp, as: "whatsapp", attributes: ["name"] }
+        ]
+      },
+      { model: Message, as: "quotedMsg", include: ["contact"] }
+    ]
+  });
+  if (full) {
+    notifyCreatedMessage(full, companyId);
+  }
+};
 
 type IndexQuery = {
   pageNumber: string;
@@ -34,6 +73,7 @@ type MessageData = {
   number?: string;
   closeTicket?: true;
   clientMessageId?: string;
+  clientBatchId?: string;
 };
 
 export const index = async (req: Request, res: Response): Promise<Response> => {
@@ -65,7 +105,8 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
 
 export const store = async (req: Request, res: Response): Promise<Response> => {
   const { ticketId } = req.params;
-  const { body, quotedMsg, clientMessageId }: MessageData = req.body;
+  const { body, quotedMsg, clientMessageId, clientBatchId }: MessageData =
+    req.body;
   const medias = req.files as Express.Multer.File[];
   const { companyId } = req.user;
 
@@ -73,80 +114,140 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
 
   SetTicketMessagesAsRead(ticket);
 
-  if (medias) {
-    await Promise.all(
-      medias.map(async (media: Express.Multer.File, mediaIndex) => {
-        await SendWhatsAppMedia({
-          media,
-          ticket,
-          body: Array.isArray(body) ? body[mediaIndex] : body
+  if (medias && medias.length > 0) {
+    // Lote de midia: upload duravel ANTES de enfileirar e chaves
+    // deterministicas clientBatchId:{index} — um retry do lote inteiro
+    // nao duplica nenhum anexo.
+    const batchId =
+      typeof clientBatchId === "string" &&
+      clientBatchId.trim().length > 0 &&
+      clientBatchId.length <= 191
+        ? clientBatchId
+        : uuidv4();
+    const commands = await medias.reduce(
+      async (
+        accPromise: Promise<any[]>,
+        media: Express.Multer.File,
+        mediaIndex: number
+      ) => {
+        const acc = await accPromise;
+        const semanticPayload = {
+          caption: Array.isArray(body) ? body[mediaIndex] : body,
+          fileName: media.originalname,
+          mimeType: media.mimetype
+        };
+        // Replay ANTES do staging: um retry do lote nao move o arquivo de
+        // novo nem diverge o fingerprint (localPath novo seria aleatorio).
+        const replay = await outboundMessageService.findReplay({
+          companyId,
+          ticketId: ticket.id,
+          idempotencyScope: "screen-media",
+          idempotencyKey: `${batchId}:${mediaIndex}`,
+          kind: messageKindForMime(media.mimetype),
+          payload: semanticPayload,
+          quotedMessageId: quotedMsg?.id,
+          origin: "screen"
         });
-      })
+        if (replay) {
+          return [
+            ...acc,
+            {
+              commandId: replay.command.id,
+              messageId: replay.command.messageId,
+              status: replay.command.status,
+              replayed: true
+            }
+          ];
+        }
+        const localPath = await persistMessagingUpload(media);
+        const { command, replayed } = await outboundMessageService.create({
+          companyId,
+          ticketId: ticket.id,
+          idempotencyScope: "screen-media",
+          idempotencyKey: `${batchId}:${mediaIndex}`,
+          kind: messageKindForMime(media.mimetype),
+          payload: { localPath, ...semanticPayload },
+          quotedMessageId: quotedMsg?.id,
+          origin: "screen"
+        });
+        if (!replayed) {
+          await emitUpfrontMessage(command.messageId, companyId);
+        }
+        return [
+          ...acc,
+          {
+            commandId: command.id,
+            messageId: command.messageId,
+            status: command.status,
+            replayed
+          }
+        ];
+      },
+      Promise.resolve([] as any[])
     );
-    return res.send();
+    return res.status(202).json({ commands });
   }
 
-  // Idempotency: a retry after an ambiguous failure (proxy/browser cutting
-  // the request while the backend still waits for the wbot to reconnect)
-  // must never deliver the same message twice to the contact.
+  // Ponte de compatibilidade: chaves registradas pelo mecanismo anterior
+  // (envio sincrono) continuam respondendo sem reenviar.
   if (clientMessageId && typeof clientMessageId === "string") {
     if (clientMessageId.length > 191) {
       throw new AppError("clientMessageId inválido", 400);
     }
-
-    const existing = await V1MessageIdempotency.findOne({
+    const legacy = await V1MessageIdempotency.findOne({
       where: { companyId, ticketId: ticket.id, clientMessageId }
     });
-    if (existing) {
-      if (!existing.messageId) {
-        // Original request is still in flight; retrying now could duplicate.
-        throw new AppError("ERR_SEND_IN_PROGRESS", 409);
-      }
-      const message = await Message.findByPk(existing.messageId);
-      return res.status(200).json(message);
+    if (legacy && legacy.messageId) {
+      return res.status(202).json({
+        commandId: legacy.messageId,
+        messageId: legacy.messageId,
+        status: "sent",
+        replayed: true
+      });
     }
-
-    let record: V1MessageIdempotency;
-    try {
-      record = await V1MessageIdempotency.create({
-        companyId,
-        ticketId: ticket.id,
-        clientMessageId
-      } as any);
-    } catch (err) {
-      if (err instanceof UniqueConstraintError) {
-        const concurrent = await V1MessageIdempotency.findOne({
-          where: { companyId, ticketId: ticket.id, clientMessageId }
-        });
-        if (concurrent && concurrent.messageId) {
-          const message = await Message.findByPk(concurrent.messageId);
-          return res.status(200).json(message);
-        }
-        throw new AppError("ERR_SEND_IN_PROGRESS", 409);
-      }
-      throw err;
+    if (legacy && !legacy.messageId) {
+      // Envio original da era sincrona ainda em voo: retry duplicaria.
+      throw new AppError("ERR_SEND_IN_PROGRESS", 409);
     }
-
-    try {
-      const sent = await SendWhatsAppMessage({ body, ticket, quotedMsg });
-      const messageId = sent?.key?.id;
-      if (messageId) {
-        await record.update({ messageId });
-      } else {
-        await record.destroy().catch(() => undefined);
-      }
-    } catch (err) {
-      // Send failed for sure: free the key so a retry can go through.
-      await record.destroy().catch(() => undefined);
-      throw err;
-    }
-
-    return res.send();
   }
 
-  await SendWhatsAppMessage({ body, ticket, quotedMsg });
+  const idempotencyKey =
+    clientMessageId && typeof clientMessageId === "string"
+      ? clientMessageId
+      : uuidv4();
+  const { command, replayed } = await outboundMessageService.create({
+    companyId,
+    ticketId: ticket.id,
+    idempotencyScope: "screen",
+    idempotencyKey,
+    kind: "text",
+    text: body,
+    quotedMessageId: quotedMsg?.id,
+    origin: "screen"
+  });
 
-  return res.send();
+  if (clientMessageId && typeof clientMessageId === "string" && !replayed) {
+    // A tabela antiga permanece como ponte ate todos os clientes
+    // tratarem o 202; a autoridade de deduplicacao e o MessageCommand.
+    await V1MessageIdempotency.create({
+      companyId,
+      ticketId: ticket.id,
+      clientMessageId,
+      messageId: command.id
+    } as any).catch(err => {
+      if (!(err instanceof UniqueConstraintError)) throw err;
+    });
+  }
+  if (!replayed) {
+    await emitUpfrontMessage(command.messageId, companyId);
+  }
+
+  return res.status(202).json({
+    commandId: command.id,
+    messageId: command.messageId,
+    status: command.status,
+    replayed
+  });
 };
 
 export const remove = async (
@@ -210,29 +311,44 @@ export const send = async (req: Request, res: Response): Promise<Response> => {
       "api"
     );
 
-    if (medias) {
+    if (medias && medias.length > 0) {
+      // Midia do endpoint legado tambem vai pelo outbox (Task 4): upload
+      // duravel antes de enfileirar, sem desvio pela fila Bull.
       await Promise.all(
         medias.map(async (media: Express.Multer.File) => {
-          await req.app.get("queues").messageQueue.add(
-            "SendMessage",
-            {
-              whatsappId,
-              data: {
-                number,
-                body: body ? formatBody(body, contact) : media.originalname,
-                mediaPath: media.path,
-                fileName: media.originalname
-              }
+          const localPath = await persistMessagingUpload(media);
+          await outboundMessageService.create({
+            companyId,
+            ticketId: ticket.id,
+            idempotencyScope: "legacy-api-media",
+            idempotencyKey: uuidv4(),
+            kind: messageKindForMime(media.mimetype),
+            payload: {
+              localPath,
+              caption: body ? formatBody(body, contact) : media.originalname,
+              fileName: media.originalname,
+              mimeType: media.mimetype
             },
-            { removeOnComplete: true, attempts: 3 }
-          );
+            origin: "api"
+          });
         })
       );
     } else {
-      await SendWhatsAppMessage({ body: formatBody(body, contact), ticket });
-
-      await ticket.update({
-        lastMessage: body
+      // Gate de prontidao preservado (45s -> 503): o contrato legado falha
+      // quando a sessao esta fora; a entrega em si vai pelo outbox.
+      try {
+        await GetTicketWbot(ticket, { waitForReconnectMs: 45000 });
+      } catch {
+        throw new AppError("ERR_WAPP_NOT_AVAILABLE", 503);
+      }
+      await outboundMessageService.create({
+        companyId,
+        ticketId: ticket.id,
+        idempotencyScope: "legacy-api",
+        idempotencyKey: uuidv4(),
+        kind: "text",
+        text: formatBody(body, contact),
+        origin: "api"
       });
     }
 
@@ -288,36 +404,41 @@ export const sendMessageFlow = async (
     await CheckContactNumber(numberToTest, companyId);
     const number = numberToTest.replace(/\D/g, "");
 
-    if (medias) {
+    // Helper exportado de fluxos: aceita no nucleo do outbox (Task 4)
+    // em vez de desviar pela fila Bull (entrega direta no socket).
+    if (medias && medias.length > 0) {
       await Promise.all(
         medias.map(async (media: Express.Multer.File) => {
-          await req.app.get("queues").messageQueue.add(
-            "SendMessage",
-            {
-              whatsappId,
-              data: {
-                number,
-                body: media.originalname,
-                mediaPath: media.path
-              }
+          const localPath = await persistMessagingUpload(media);
+          await outboundMessageService.create({
+            companyId,
+            whatsappId,
+            recipient: number,
+            idempotencyScope: "flow-api-media",
+            idempotencyKey: uuidv4(),
+            kind: messageKindForMime(media.mimetype),
+            payload: {
+              localPath,
+              caption: media.originalname,
+              fileName: media.originalname,
+              mimeType: media.mimetype
             },
-            { removeOnComplete: true, attempts: 3 }
-          );
+            origin: "automation"
+          });
         })
       );
     } else {
-      req.app.get("queues").messageQueue.add(
-        "SendMessage",
-        {
-          whatsappId,
-          data: {
-            number,
-            body: messageBody
-          }
-        },
-
-        { removeOnComplete: false, attempts: 3 }
-      );
+      await outboundMessageService.create({
+        companyId,
+        whatsappId,
+        recipient: number,
+        idempotencyScope: "flow-api",
+        idempotencyKey: uuidv4(),
+        kind: "text",
+        // Paridade com o antigo consumidor da fila (helpers/SendMessage).
+        text: `‎ ${messageBody}`,
+        origin: "automation"
+      });
     }
 
     return "Mensagem enviada";

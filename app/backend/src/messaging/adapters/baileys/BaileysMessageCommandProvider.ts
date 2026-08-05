@@ -1,7 +1,9 @@
-import AppError from "../../../errors/AppError";
 import path from "path";
+import AppError from "../../../errors/AppError";
 import Contact from "../../../models/Contact";
+import Message from "../../../models/Message";
 import Ticket from "../../../models/Ticket";
+import { fetchRemoteMediaSecurely } from "../../application/fetchRemoteMediaSecurely";
 import {
   DispatchableMessageCommand,
   MessagingProvider
@@ -16,17 +18,29 @@ import { SEND_TIMEOUT_MS } from "../../domain/MessagingStates";
 
 interface BaileysMessageCommandProviderDependencies {
   findTicket(id: number, companyId: number, whatsappId: number): Promise<any>;
-  sendText(input: { ticket: any; text: string; messageId: string }): Promise<any>;
+  findQuotedMessage?(
+    id: string,
+    ticketId: number,
+    companyId: number
+  ): Promise<any>;
+  sendText(input: {
+    ticket: any;
+    text: string;
+    messageId: string;
+    quoted?: any;
+  }): Promise<any>;
   sendNativeButtons?(input: {
     ticket: any;
     text: string;
     buttons: Array<{ id: string; title: string }>;
     messageId: string;
+    quoted?: any;
   }): Promise<any>;
   sendContent?(input: {
     ticket: any;
     content: Record<string, unknown>;
     messageId: string;
+    quoted?: any;
   }): Promise<any>;
 }
 
@@ -36,47 +50,67 @@ const defaultDependencies: BaileysMessageCommandProviderDependencies = {
       where: { id, companyId, whatsappId },
       include: [Contact]
     }),
-  sendText: async ({ ticket, text, messageId }) => {
+  findQuotedMessage: (id, ticketId, companyId) =>
+    Message.findOne({ where: { id, ticketId, companyId } }),
+  sendText: async ({ ticket, text, messageId, quoted }) => {
     const { default: adapter } = await import(
       "./getBaileysTicketMessagingProvider"
     );
-    return adapter.sendText({ ticket, text, messageId });
+    return adapter.sendText({ ticket, text, messageId, quoted });
   },
-  sendNativeButtons: async ({ ticket, text, buttons, messageId }) => {
+  sendNativeButtons: async ({ ticket, text, buttons, messageId, quoted }) => {
     const { default: adapter } = await import(
       "./getBaileysTicketMessagingProvider"
     );
-    return adapter.sendNativeButtons({ ticket, text, buttons, messageId });
+    return adapter.sendNativeButtons({
+      ticket,
+      text,
+      buttons,
+      messageId,
+      quoted
+    });
   },
-  sendContent: async ({ ticket, content, messageId }) => {
+  sendContent: async ({ ticket, content, messageId, quoted }) => {
     const { default: adapter } = await import(
       "./getBaileysTicketMessagingProvider"
     );
-    return adapter.sendContent({ ticket, content, messageId });
+    return adapter.sendContent({ ticket, content, messageId, quoted });
   }
 };
 
-const mediaContent = (
+const mediaContent = async (
   kind: string,
   payload: Record<string, unknown>
-): Record<string, unknown> => {
+): Promise<Record<string, unknown>> => {
   const link = payload.link;
   const localPath = payload.localPath;
-  const mediaSource = typeof link === "string" && /^https:\/\//i.test(link)
-    ? link
-    : typeof localPath === "string" && /^messaging\/[A-Za-z0-9._-]+$/.test(localPath)
-      ? path.resolve(process.cwd(), "storage", localPath)
-      : null;
-  if (!mediaSource) {
+  let stagedLocalPath: string | null = null;
+  if (typeof link === "string" && /^https:\/\//i.test(link)) {
+    // Anti-SSRF: midia remota e baixada por um fetcher controlado (HTTPS,
+    // hostname/DNS publicos, redirects revalidados, limites de tamanho e
+    // tempo) e staged em disco — o Baileys NUNCA recebe a URL remota.
+    stagedLocalPath = await fetchRemoteMediaSecurely(
+      link,
+      typeof payload.fileName === "string" ? payload.fileName : undefined
+    );
+  } else if (
+    typeof localPath === "string" &&
+    /^messaging\/[A-Za-z0-9._-]+$/.test(localPath)
+  ) {
+    stagedLocalPath = localPath;
+  }
+  if (!stagedLocalPath) {
     throw new AppError("URL de midia invalida", 400);
   }
+  const mediaSource = path.resolve(process.cwd(), "storage", stagedLocalPath);
   return {
     [kind]: { url: mediaSource },
     ...(payload.caption ? { caption: payload.caption } : {}),
     ...(kind === "document" && payload.fileName
       ? { fileName: payload.fileName }
       : {}),
-    ...(payload.mimeType ? { mimetype: payload.mimeType } : {})
+    ...(payload.mimeType ? { mimetype: payload.mimeType } : {}),
+    ...(kind === "audio" && payload.ptt === true ? { ptt: true } : {})
   };
 };
 
@@ -113,6 +147,33 @@ const nativeButtons = (
   };
 };
 
+// A mensagem citada pode ser uma recebida (dataJson no formato proto) ou
+// uma criada upfront pelo outbox (dataJson de dominio): neste caso o
+// quoted e sintetizado como texto para o WhatsApp exibir o contexto.
+export const buildQuotedMessage = (
+  row: any,
+  fallbackJid: string
+): Record<string, unknown> | undefined => {
+  if (!row) return undefined;
+  try {
+    const parsed =
+      typeof row.dataJson === "string" ? JSON.parse(row.dataJson) : null;
+    if (parsed?.key && parsed?.message) {
+      return { key: parsed.key, message: parsed.message };
+    }
+  } catch {
+    // dataJson fora do formato proto: cai no resumo sintetizado abaixo.
+  }
+  return {
+    key: {
+      id: row.id,
+      remoteJid: row.remoteJid || fallbackJid,
+      fromMe: Boolean(row.fromMe)
+    },
+    message: { extendedTextMessage: { text: row.body || "" } }
+  };
+};
+
 const withSendTimeout = async <T>(operation: Promise<T>): Promise<T> => {
   let timer: NodeJS.Timeout | undefined;
   try {
@@ -139,8 +200,13 @@ class BaileysMessageCommandProvider implements MessagingProvider {
   readonly provider = "baileys";
 
   // Parameter property keeps the adapter replaceable in tests.
-  // eslint-disable-next-line no-useless-constructor
-  constructor(private readonly dependencies = defaultDependencies) {}
+  private readonly dependencies: BaileysMessageCommandProviderDependencies;
+
+  constructor(
+    dependencies: Partial<BaileysMessageCommandProviderDependencies> = {}
+  ) {
+    this.dependencies = { ...defaultDependencies, ...dependencies };
+  }
 
   async send(
     command: DispatchableMessageCommand
@@ -164,9 +230,17 @@ class BaileysMessageCommandProvider implements MessagingProvider {
       });
     }
     if (
-      !["text", "buttons", "image", "audio", "video", "document", "reaction", "edit", "delete"].includes(
-        command.messageKind
-      )
+      ![
+        "text",
+        "buttons",
+        "image",
+        "audio",
+        "video",
+        "document",
+        "reaction",
+        "edit",
+        "delete"
+      ].includes(command.messageKind)
     ) {
       throw new PermanentSendError({
         code: "BAILEYS_UNSUPPORTED_KIND",
@@ -223,27 +297,44 @@ class BaileysMessageCommandProvider implements MessagingProvider {
       try {
         if (command.messageKind === "buttons") {
           buttons = nativeButtons(command.requestPayload);
-        } else if (["reaction", "edit", "delete"].includes(command.messageKind)) {
+        } else if (
+          ["reaction", "edit", "delete"].includes(command.messageKind)
+        ) {
           const target = command.requestPayload.target;
-          if (!target || typeof target !== "object") throw new AppError("Mensagem alvo invalida", 400);
+          if (!target || typeof target !== "object")
+            throw new AppError("Mensagem alvo invalida", 400);
           const key = target as Record<string, unknown>;
-          if (typeof key.id !== "string" || !key.id) throw new AppError("Mensagem alvo invalida", 400);
+          if (typeof key.id !== "string" || !key.id)
+            throw new AppError("Mensagem alvo invalida", 400);
           const targetKey = {
             id: key.id,
-            remoteJid: typeof key.remoteJid === "string" ? key.remoteJid : `${command.recipient}@s.whatsapp.net`,
+            remoteJid:
+              typeof key.remoteJid === "string"
+                ? key.remoteJid
+                : `${command.recipient}@s.whatsapp.net`,
             fromMe: typeof key.fromMe === "boolean" ? key.fromMe : true
           };
           if (command.messageKind === "reaction") {
-            if (typeof command.requestPayload.emoji !== "string") throw new AppError("Reacao invalida", 400);
-            content = { react: { text: command.requestPayload.emoji, key: targetKey } };
+            if (typeof command.requestPayload.emoji !== "string")
+              throw new AppError("Reacao invalida", 400);
+            content = {
+              react: { text: command.requestPayload.emoji, key: targetKey }
+            };
           } else if (command.messageKind === "edit") {
-            if (typeof command.requestPayload.text !== "string" || !command.requestPayload.text.trim()) throw new AppError("Edicao invalida", 400);
+            if (
+              typeof command.requestPayload.text !== "string" ||
+              !command.requestPayload.text.trim()
+            )
+              throw new AppError("Edicao invalida", 400);
             content = { text: command.requestPayload.text, edit: targetKey };
           } else {
             content = { delete: targetKey };
           }
         } else {
-          content = mediaContent(command.messageKind, command.requestPayload);
+          content = await mediaContent(
+            command.messageKind,
+            command.requestPayload
+          );
         }
       } catch (error) {
         throw new PermanentSendError({
@@ -251,6 +342,35 @@ class BaileysMessageCommandProvider implements MessagingProvider {
           message: error instanceof AppError ? error.message : "Midia invalida"
         });
       }
+    }
+
+    let quoted: Record<string, unknown> | undefined;
+    const quotedMessageId = command.requestPayload.quotedMessageId;
+    if (
+      typeof quotedMessageId === "string" &&
+      quotedMessageId &&
+      this.dependencies.findQuotedMessage
+    ) {
+      let quotedRow: any;
+      try {
+        quotedRow = await this.dependencies.findQuotedMessage(
+          quotedMessageId,
+          ticketId as number,
+          command.companyId
+        );
+      } catch (error) {
+        throw new RetryableSendError({
+          code: "BAILEYS_DB_UNAVAILABLE",
+          message: "Falha ao carregar mensagem citada antes do envio",
+          details: {
+            cause: error instanceof Error ? error.message : String(error)
+          }
+        });
+      }
+      quoted = buildQuotedMessage(
+        quotedRow,
+        `${command.recipient}@s.whatsapp.net`
+      );
     }
 
     // A partir daqui o sendMessage pode ter partido: rejeicao/timeout = unknown
@@ -261,7 +381,8 @@ class BaileysMessageCommandProvider implements MessagingProvider {
           this.dependencies.sendText({
             ticket,
             text: command.requestPayload.text as string,
-            messageId: command.id
+            messageId: command.id,
+            quoted
           })
         );
       } else if (command.messageKind === "buttons") {
@@ -270,7 +391,8 @@ class BaileysMessageCommandProvider implements MessagingProvider {
             ticket,
             text: buttons!.text,
             buttons: buttons!.buttons,
-            messageId: command.id
+            messageId: command.id,
+            quoted
           })
         );
       } else {
@@ -278,7 +400,8 @@ class BaileysMessageCommandProvider implements MessagingProvider {
           this.dependencies.sendContent!({
             ticket,
             content: content as Record<string, unknown>,
-            messageId: command.id
+            messageId: command.id,
+            quoted
           })
         );
       }

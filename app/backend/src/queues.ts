@@ -1,4 +1,3 @@
-import { sendBaileysSocketMessage } from "./messaging/public/baileys";
 import * as Sentry from "@sentry/node";
 import BullQueue from "bull";
 import { MessageData, SendMessage } from "./helpers/SendMessage";
@@ -17,7 +16,11 @@ import CampaignSetting from "./models/CampaignSetting";
 import CampaignShipping from "./models/CampaignShipping";
 import GetWhatsappWbot from "./helpers/GetWhatsappWbot";
 import sequelize from "./database";
-import { getMessageOptions } from "./services/WbotServices/SendWhatsAppMedia";
+import {
+  OutboundMessageService,
+  stageMessagingMedia,
+  messageKindForFile
+} from "./messaging/public/outbound";
 import { getIO } from "./libs/socket";
 import path from "path";
 import User from "./models/User";
@@ -29,6 +32,8 @@ import formatBody from "./helpers/Mustache";
 import { ClosedAllOpenTickets } from "./services/WbotServices/wbotClosedTickets";
 
 const CronJob = require("cron").CronJob;
+
+const outboundMessageService = new OutboundMessageService();
 
 const connection = process.env.REDIS_URI || "";
 const limiterMax = process.env.REDIS_OPT_LIMITER_MAX || 1;
@@ -850,8 +855,6 @@ async function handleDispatchCampaign(job) {
       return;
     }
 
-    const chatId = `${campaignShipping.number}@s.whatsapp.net`;
-
     let body = campaignShipping.message;
 
     if (!isNil(campaign.fileListId)) {
@@ -867,12 +870,23 @@ async function handleDispatchCampaign(job) {
         );
         const folder = path.resolve(publicFolder, "fileList", String(files.id));
         for (const file of files.options) {
-          const options = await getMessageOptions(
-            file.path,
+          const localPath = await stageMessagingMedia(
             path.resolve(folder, file.path),
             file.name
           );
-          await sendBaileysSocketMessage(wbot, chatId, { ...options });
+          await outboundMessageService.create({
+            companyId: campaign.companyId,
+            whatsappId: campaign.whatsappId,
+            recipient: campaignShipping.number,
+            idempotencyScope: "campaign",
+            idempotencyKey: `campaign-${campaignId}-${campaignShippingId}-file-${file.id}`,
+            kind: messageKindForFile(file.name),
+            payload: {
+              localPath,
+              fileName: file.name
+            },
+            origin: "automation"
+          });
 
           logger.info(
             `[🚩] - Enviou arquivo: ${file.name} | CampaignShippingId: ${campaignShippingId} CampanhaID: ${campaignId}`
@@ -891,21 +905,38 @@ async function handleDispatchCampaign(job) {
       const publicFolder = path.resolve(__dirname, "..", "public");
       const filePath = path.join(publicFolder, campaign.mediaPath);
 
-      const options = await getMessageOptions(
-        campaign.mediaName,
+      const localPath = await stageMessagingMedia(
         filePath,
-        body
+        campaign.mediaName
       );
-      if (Object.keys(options).length) {
-        await sendBaileysSocketMessage(wbot, chatId, { ...options });
-      }
+      await outboundMessageService.create({
+        companyId: campaign.companyId,
+        whatsappId: campaign.whatsappId,
+        recipient: campaignShipping.number,
+        idempotencyScope: "campaign",
+        idempotencyKey: `campaign-${campaignId}-${campaignShippingId}-media`,
+        kind: messageKindForFile(campaign.mediaName),
+        payload: {
+          localPath,
+          fileName: campaign.mediaName,
+          caption: body
+        },
+        origin: "automation"
+      });
     } else {
       logger.info(
         `[🚩] - Enviando mensagem de texto da campanha | CampaignShippingId: ${campaignShippingId} CampanhaID: ${campaignId}`
       );
 
-      await sendBaileysSocketMessage(wbot, chatId, {
-        text: body
+      await outboundMessageService.create({
+        companyId: campaign.companyId,
+        whatsappId: campaign.whatsappId,
+        recipient: campaignShipping.number,
+        idempotencyScope: "campaign",
+        idempotencyKey: `campaign-${campaignId}-${campaignShippingId}`,
+        kind: "text",
+        text: body,
+        origin: "automation"
       });
     }
 

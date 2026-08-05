@@ -1,4 +1,5 @@
-import { resolveContactJid, sendBaileysSocketMessage } from "../../messaging/public/baileys";
+import { v4 as uuidv4 } from "uuid";
+import { OutboundMessageService } from "../../messaging/public/outbound";
 import moment from "moment";
 import * as Sentry from "@sentry/node";
 import CheckContactOpenTickets from "../../helpers/CheckContactOpenTickets";
@@ -11,14 +12,13 @@ import Setting from "../../models/Setting";
 import Queue from "../../models/Queue";
 import ShowTicketService from "./ShowTicketService";
 import ShowWhatsAppService from "../WhatsappService/ShowWhatsAppService";
-import SendWhatsAppMessage from "../WbotServices/SendWhatsAppMessage";
 import FindOrCreateATicketTrakingService from "./FindOrCreateATicketTrakingService";
-import GetTicketWbot from "../../helpers/GetTicketWbot";
-import { verifyMessage } from "../WbotServices/wbotMessageListener";
 import ListSettingsServiceOne from "../SettingServices/ListSettingsServiceOne"; //NOVO PLW DESIGN//
 import ShowUserService from "../UserServices/ShowUserService"; //NOVO PLW DESIGN//
 import { isNil } from "lodash";
 import Company from "../../models/Company";
+
+const outboundMessageService = new OutboundMessageService();
 
 interface TicketData {
   status?: string;
@@ -121,7 +121,15 @@ const UpdateTicketService = async ({
           let bodyRatingMessage = `\u200e${ratingTxt}\n\n`;
           bodyRatingMessage +=
             "Digite de 1 à 3 para qualificar nosso atendimento:\n*1* - _Insatisfeito_\n*2* - _Satisfeito_\n*3* - _Muito Satisfeito_\n\n";
-          await SendWhatsAppMessage({ body: bodyRatingMessage, ticket });
+          await outboundMessageService.create({
+            companyId,
+            ticketId: ticket.id,
+            idempotencyScope: "ticket-rating",
+            idempotencyKey: uuidv4(),
+            kind: "text",
+            text: bodyRatingMessage,
+            origin: "automation"
+          });
 
           await ticketTraking.update({
             ratingAt: moment().toDate(),
@@ -144,7 +152,15 @@ const UpdateTicketService = async ({
 
       if (!isNil(complationMessage) && complationMessage !== "") {
         const body = `\u200e${complationMessage}`;
-        await SendWhatsAppMessage({ body, ticket });
+        await outboundMessageService.create({
+          companyId,
+          ticketId: ticket.id,
+          idempotencyScope: "ticket-completion",
+          idempotencyKey: uuidv4(),
+          kind: "text",
+          text: body,
+          origin: "automation"
+        });
       }
       await ticket.update({
         promptId: null,
@@ -181,7 +197,6 @@ const UpdateTicketService = async ({
       ) {
         const { language } = await Company.findByPk(companyId);
         const queue = await Queue.findByPk(queueId);
-        const wbot = await GetTicketWbot(ticket);
 
         const translatedMessage = {
           pt:
@@ -198,14 +213,15 @@ const UpdateTicketService = async ({
             "*\npor favor espera, ¡te atenderemos pronto!"
         };
 
-        const queueChangedMessage = await sendBaileysSocketMessage(
-          wbot,
-          resolveContactJid({ ...ticket.contact, isGroup: ticket.isGroup }),
-          {
-            text: translatedMessage[language]
-          }
-        );
-        await verifyMessage(queueChangedMessage, ticket, ticket.contact);
+        await outboundMessageService.create({
+          companyId,
+          ticketId: ticket.id,
+          idempotencyScope: "ticket-queue-changed",
+          idempotencyKey: uuidv4(),
+          kind: "text",
+          text: translatedMessage[language],
+          origin: "automation"
+        });
       }
       // Mensagem de transferencia do ATENDENTE
       else if (
@@ -215,7 +231,6 @@ const UpdateTicketService = async ({
         !isNil(userId)
       ) {
         const { language } = await Company.findByPk(companyId);
-        const wbot = await GetTicketWbot(ticket);
         const nome = await ShowUserService(ticketData.userId);
 
         const translatedMessage = {
@@ -233,14 +248,15 @@ const UpdateTicketService = async ({
             "*\npor favor espera, ¡te atenderemos pronto!"
         };
 
-        const queueChangedMessage = await sendBaileysSocketMessage(
-          wbot,
-          resolveContactJid({ ...ticket.contact, isGroup: ticket.isGroup }),
-          {
-            text: translatedMessage[language]
-          }
-        );
-        await verifyMessage(queueChangedMessage, ticket, ticket.contact);
+        await outboundMessageService.create({
+          companyId,
+          ticketId: ticket.id,
+          idempotencyScope: "ticket-queue-changed",
+          idempotencyKey: uuidv4(),
+          kind: "text",
+          text: translatedMessage[language],
+          origin: "automation"
+        });
       }
       // Mensagem de transferencia do ATENDENTE e da FILA
       else if (
@@ -252,7 +268,6 @@ const UpdateTicketService = async ({
         !isNil(queueId)
       ) {
         const { language } = await Company.findByPk(companyId);
-        const wbot = await GetTicketWbot(ticket);
         const queue = await Queue.findByPk(queueId);
         const nome = await ShowUserService(ticketData.userId);
 
@@ -277,14 +292,15 @@ const UpdateTicketService = async ({
             "*\npor favor espera, ¡te atenderemos pronto!"
         };
 
-        const queueChangedMessage = await sendBaileysSocketMessage(
-          wbot,
-          resolveContactJid({ ...ticket.contact, isGroup: ticket.isGroup }),
-          {
-            text: translatedMessage[language]
-          }
-        );
-        await verifyMessage(queueChangedMessage, ticket, ticket.contact);
+        await outboundMessageService.create({
+          companyId,
+          ticketId: ticket.id,
+          idempotencyScope: "ticket-queue-changed",
+          idempotencyKey: uuidv4(),
+          kind: "text",
+          text: translatedMessage[language],
+          origin: "automation"
+        });
       } else if (
         oldUserId !== undefined &&
         isNil(userId) &&
@@ -293,7 +309,6 @@ const UpdateTicketService = async ({
       ) {
         const { language } = await Company.findByPk(companyId);
         const queue = await Queue.findByPk(queueId);
-        const wbot = await GetTicketWbot(ticket);
 
         const translatedMessage = {
           pt:
@@ -310,14 +325,15 @@ const UpdateTicketService = async ({
             "*\npor favor espera, ¡te atenderemos pronto!"
         };
 
-        const queueChangedMessage = await sendBaileysSocketMessage(
-          wbot,
-          resolveContactJid({ ...ticket.contact, isGroup: ticket.isGroup }),
-          {
-            text: translatedMessage[language]
-          }
-        );
-        await verifyMessage(queueChangedMessage, ticket, ticket.contact);
+        await outboundMessageService.create({
+          companyId,
+          ticketId: ticket.id,
+          idempotencyScope: "ticket-queue-changed",
+          idempotencyKey: uuidv4(),
+          kind: "text",
+          text: translatedMessage[language],
+          origin: "automation"
+        });
       }
     }
 

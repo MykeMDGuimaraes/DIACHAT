@@ -1,4 +1,4 @@
-import { sendBaileysSocketMessage } from "../../messaging/public/baileys";
+import { deleteBaileysMessage } from "../../messaging/public/baileys";
 import { WASocket } from "../../messaging/public/baileys";
 import AppError from "../../errors/AppError";
 import GetTicketWbot from "../../helpers/GetTicketWbot";
@@ -29,13 +29,11 @@ const DeleteWhatsAppMessage = async (messageId: string): Promise<Message> => {
     const wbot = await GetTicketWbot(ticket);
     const menssageDelete = messageToDelete as Message;
 
-    await sendBaileysSocketMessage(wbot as WASocket, menssageDelete.remoteJid, {
-      delete: {
-        id: menssageDelete.id,
-        remoteJid: menssageDelete.remoteJid,
-        participant: menssageDelete.participant,
-        fromMe: menssageDelete.fromMe
-      }
+    await deleteBaileysMessage(wbot as WASocket, menssageDelete.remoteJid, {
+      id: menssageDelete.id,
+      remoteJid: menssageDelete.remoteJid,
+      participant: menssageDelete.participant,
+      fromMe: menssageDelete.fromMe
     });
   } catch (err) {
     throw new AppError("ERR_DELETE_WAPP_MSG");

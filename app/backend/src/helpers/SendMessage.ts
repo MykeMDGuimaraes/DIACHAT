@@ -1,8 +1,13 @@
-import { sendBaileysSocketMessage } from "../messaging/public/baileys";
+import path from "path";
+import { v4 as uuidv4 } from "uuid";
 import Whatsapp from "../models/Whatsapp";
-import GetWhatsappWbot from "./GetWhatsappWbot";
+import {
+  OutboundMessageService,
+  stageMessagingMedia,
+  messageKindForFile
+} from "../messaging/public/outbound";
 
-import { getMessageOptions } from "../services/WbotServices/SendWhatsAppMedia";
+const outboundMessageService = new OutboundMessageService();
 
 export type MessageData = {
   number: number | string;
@@ -16,28 +21,40 @@ export const SendMessage = async (
   messageData: MessageData
 ): Promise<any> => {
   try {
-    const wbot = await GetWhatsappWbot(whatsapp);
-    const chatId = `${messageData.number}@s.whatsapp.net`;
-
-    let message;
-
     if (messageData.mediaPath) {
-      const options = await getMessageOptions(
-        messageData.fileName,
+      const fileName =
+        messageData.fileName || path.basename(messageData.mediaPath);
+      const localPath = await stageMessagingMedia(
         messageData.mediaPath,
-        messageData.body
+        fileName
       );
-      if (options) {
-        message = await sendBaileysSocketMessage(wbot, chatId, {
-          ...options
-        });
-      }
-    } else {
-      const body = `\u200e ${messageData.body}`;
-      message = await sendBaileysSocketMessage(wbot, chatId, { text: body });
+
+      return await outboundMessageService.create({
+        companyId: whatsapp.companyId,
+        whatsappId: whatsapp.id,
+        recipient: String(messageData.number),
+        idempotencyScope: "legacy-queue-send",
+        idempotencyKey: uuidv4(),
+        kind: messageKindForFile(fileName),
+        payload: {
+          localPath,
+          fileName: messageData.fileName,
+          caption: messageData.body
+        },
+        origin: "automation"
+      });
     }
 
-    return message;
+    return await outboundMessageService.create({
+      companyId: whatsapp.companyId,
+      whatsappId: whatsapp.id,
+      recipient: String(messageData.number),
+      idempotencyScope: "legacy-queue-send",
+      idempotencyKey: uuidv4(),
+      kind: "text",
+      text: `\u200e ${messageData.body}`,
+      origin: "automation"
+    });
   } catch (err: any) {
     throw new Error(err);
   }

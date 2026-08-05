@@ -6,8 +6,11 @@ import Contact from "../models/Contact";
 import Message from "../models/Message";
 import Ticket from "../models/Ticket";
 import V1MessageIdempotency from "../models/V1MessageIdempotency";
-import SendWhatsAppMessage from "../services/WbotServices/SendWhatsAppMessage";
-import SendWhatsAppMedia from "../services/WbotServices/SendWhatsAppMedia";
+import {
+  OutboundMessageService,
+  persistMessagingUpload,
+  messageKindForMime
+} from "../messaging/public/outbound";
 import { audit, requestIp } from "../libs/auditLog";
 import {
   toContactDTO,
@@ -19,6 +22,10 @@ import {
 
 const MAX_LIMIT = 100;
 const DEFAULT_LIMIT = 20;
+
+// Nucleo unico de aceitacao de envios (Task 4): a autoridade de
+// deduplicacao e o MessageCommand; V1MessageIdempotency resta como ponte.
+const outboundMessageService = new OutboundMessageService();
 
 class ApiV1Error extends Error {
   public statusCode: number;
@@ -333,53 +340,33 @@ export const sendConversationMessage = async (
     );
   }
 
-  let record: V1MessageIdempotency;
-  try {
-    record = await V1MessageIdempotency.create({
-      companyId,
-      ticketId: ticket.id,
-      clientMessageId
-    } as any);
-  } catch (err) {
-    if (err instanceof UniqueConstraintError) {
-      const concurrent = await V1MessageIdempotency.findOne({
-        where: { companyId, ticketId: ticket.id, clientMessageId }
-      });
-      if (concurrent && concurrent.messageId) {
-        const result = await buildSendResult(
-          concurrent.messageId,
-          clientMessageId,
-          ticket.id,
-          true,
-          companyId
-        );
-        return res.status(200).json({ data: result });
+  const semanticMediaPayload = media
+    ? {
+        caption: body.trim() ? body : undefined,
+        fileName: media.originalname,
+        mimeType: media.mimetype
       }
-      throw new ApiV1Error(
-        409,
-        "REQUEST_IN_PROGRESS",
-        "Envio com este clientMessageId ainda está em processamento"
-      );
-    }
-    throw err;
-  }
+    : undefined;
 
-  try {
-    const sent = media
-      ? await SendWhatsAppMedia({ media, ticket, body })
-      : await SendWhatsAppMessage({ body, ticket });
-
-    const messageId = sent?.key?.id;
-    if (!messageId) {
-      throw new AppError("ERR_SENDING_WAPP_MSG");
-    }
-    await record.update({ messageId });
-
+  // Replay ANTES do staging: retry com o mesmo clientMessageId responde
+  // com o comando original (e o localPath duravel correto) sem mover o
+  // arquivo de novo — o temp do primeiro upload ja nao existe mais.
+  const replay = await outboundMessageService.findReplay({
+    companyId,
+    ticketId: ticket.id,
+    idempotencyScope: "internal-v1",
+    idempotencyKey: clientMessageId,
+    kind: media ? messageKindForMime(media.mimetype) : "text",
+    text: media ? undefined : body,
+    payload: semanticMediaPayload,
+    origin: "api"
+  });
+  if (replay) {
     const result = await buildSendResult(
-      messageId,
+      replay.command.id,
       clientMessageId,
       ticket.id,
-      false,
+      true,
       companyId
     );
     audit({
@@ -390,18 +377,74 @@ export const sendConversationMessage = async (
       targetType: "ticket",
       targetId: ticket.id,
       ip: requestIp(req),
-      metadata: { clientMessageId, duplicate: false, hasMedia: !!media }
+      metadata: { clientMessageId, duplicate: true, hasMedia: !!media }
     });
-    return res.status(201).json({ data: result });
+    return res.status(200).json({ data: result });
+  }
+
+  let localPath: string | undefined;
+  if (media) {
+    // Upload duravel antes de enfileirar: o dispatcher pode enviar minutos
+    // depois, quando o arquivo temporario do multer ja nao existe mais.
+    localPath = await persistMessagingUpload(media);
+  }
+
+  let outcome: { command: any; replayed: boolean };
+  try {
+    outcome = await outboundMessageService.create({
+      companyId,
+      ticketId: ticket.id,
+      idempotencyScope: "internal-v1",
+      idempotencyKey: clientMessageId,
+      kind: media ? messageKindForMime(media.mimetype) : "text",
+      text: media ? undefined : body,
+      payload: media ? { localPath, ...semanticMediaPayload } : undefined,
+      origin: "api"
+    });
   } catch (err) {
-    await record.destroy().catch(() => undefined);
-    if (err instanceof AppError) {
+    if (err instanceof AppError && err.statusCode === 409) {
       throw new ApiV1Error(
-        502,
-        "SEND_FAILED",
-        `Falha ao enviar a mensagem pelo canal WhatsApp (${err.message}); a operação pode ser repetida com o mesmo clientMessageId`
+        409,
+        err.message,
+        "Envio com este clientMessageId em conflito ou em processamento"
       );
+    }
+    if (err instanceof AppError) {
+      throw new ApiV1Error(400, "VALIDATION_ERROR", err.message);
     }
     throw err;
   }
+
+  const { command, replayed } = outcome;
+  if (!replayed) {
+    // Ponte de compatibilidade: a tabela antiga continua refletindo as
+    // chaves; a autoridade de deduplicacao e o MessageCommand.
+    await V1MessageIdempotency.create({
+      companyId,
+      ticketId: ticket.id,
+      clientMessageId,
+      messageId: command.id
+    } as any).catch(err => {
+      if (!(err instanceof UniqueConstraintError)) throw err;
+    });
+  }
+
+  const result = await buildSendResult(
+    command.id,
+    clientMessageId,
+    ticket.id,
+    replayed,
+    companyId
+  );
+  audit({
+    companyId,
+    actorType: "service",
+    actorId: req.user.id,
+    action: "v1.message.send",
+    targetType: "ticket",
+    targetId: ticket.id,
+    ip: requestIp(req),
+    metadata: { clientMessageId, duplicate: replayed, hasMedia: !!media }
+  });
+  return res.status(replayed ? 200 : 201).json({ data: result });
 };

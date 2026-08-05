@@ -1,4 +1,3 @@
-import { sendBaileysSocketMessage } from "../../messaging/public/baileys";
 import axios, { AxiosRequestConfig } from "axios";
 import Ticket from "../../models/Ticket";
 import QueueIntegrations from "../../models/QueueIntegrations";
@@ -7,6 +6,10 @@ import { getBodyMessage } from "../WbotServices/wbotMessageListener";
 import { logger } from "../../utils/logger";
 import { isNil } from "lodash";
 import UpdateTicketService from "../TicketServices/UpdateTicketService";
+import { v4 as uuidv4 } from "uuid";
+import { OutboundMessageService } from "../../messaging/public/outbound";
+
+const outboundMessageService = new OutboundMessageService();
 
 type Session = WASocket & {
   id?: number;
@@ -138,8 +141,14 @@ const typebotListener = async ({
       }
 
       if (messages?.length === 0) {
-        await sendBaileysSocketMessage(wbot, `${number}@c.us`, {
-          text: typebotUnknownMessage
+        await outboundMessageService.create({
+          companyId: ticket.companyId,
+          ticketId: ticket.id,
+          idempotencyScope: "typebot-unknown",
+          idempotencyKey: uuidv4(),
+          kind: "text",
+          text: typebotUnknownMessage,
+          origin: "automation"
         });
       } else {
         for (const message of messages) {
@@ -294,8 +303,14 @@ const typebotListener = async ({
             await delay(typebotDelayMessage);
             await wbot.sendPresenceUpdate("paused", msg.key.remoteJid);
 
-            await sendBaileysSocketMessage(wbot, msg.key.remoteJid, {
-              text: formattedText
+            await outboundMessageService.create({
+              companyId: ticket.companyId,
+              ticketId: ticket.id,
+              idempotencyScope: "typebot-message",
+              idempotencyKey: uuidv4(),
+              kind: "text",
+              text: formattedText,
+              origin: "automation"
             });
           }
 
@@ -305,14 +320,19 @@ const typebotListener = async ({
             await wbot.sendPresenceUpdate("composing", msg.key.remoteJid);
             await delay(typebotDelayMessage);
             await wbot.sendPresenceUpdate("paused", msg.key.remoteJid);
-            const media = {
-              audio: {
-                url: message.content.url,
-                mimetype: "audio/mp4",
+            await outboundMessageService.create({
+              companyId: ticket.companyId,
+              ticketId: ticket.id,
+              idempotencyScope: "typebot-media",
+              idempotencyKey: uuidv4(),
+              kind: "audio",
+              payload: {
+                link: message.content.url,
+                mimeType: "audio/mp4",
                 ptt: true
-              }
-            };
-            await sendBaileysSocketMessage(wbot, msg.key.remoteJid, media);
+              },
+              origin: "automation"
+            });
           }
 
           // if (message.type === 'embed') {
@@ -337,12 +357,18 @@ const typebotListener = async ({
             await wbot.sendPresenceUpdate("composing", msg.key.remoteJid);
             await delay(typebotDelayMessage);
             await wbot.sendPresenceUpdate("paused", msg.key.remoteJid);
-            const media = {
-              image: {
-                url: message.content.url
-              }
-            };
-            await sendBaileysSocketMessage(wbot, msg.key.remoteJid, media);
+            await outboundMessageService.create({
+              companyId: ticket.companyId,
+              ticketId: ticket.id,
+              idempotencyScope: "typebot-media",
+              idempotencyKey: uuidv4(),
+              kind: "image",
+              payload: {
+                link: message.content.url,
+                mimeType: "image/jpeg"
+              },
+              origin: "automation"
+            });
           }
 
           // if (message.type === 'video' ) {
@@ -373,8 +399,14 @@ const typebotListener = async ({
             await wbot.sendPresenceUpdate("composing", msg.key.remoteJid);
             await delay(typebotDelayMessage);
             await wbot.sendPresenceUpdate("paused", msg.key.remoteJid);
-            await sendBaileysSocketMessage(wbot, msg.key.remoteJid, {
-              text: formattedText
+            await outboundMessageService.create({
+              companyId: ticket.companyId,
+              ticketId: ticket.id,
+              idempotencyScope: "typebot-message",
+              idempotencyKey: uuidv4(),
+              kind: "text",
+              text: formattedText,
+              origin: "automation"
             });
           }
         }
@@ -388,8 +420,14 @@ const typebotListener = async ({
 
       await ticket.reload();
 
-      await sendBaileysSocketMessage(wbot, `${number}@c.us`, {
-        text: typebotRestartMessage
+      await outboundMessageService.create({
+        companyId: ticket.companyId,
+        ticketId: ticket.id,
+        idempotencyScope: "typebot-restart",
+        idempotencyKey: uuidv4(),
+        kind: "text",
+        text: typebotRestartMessage,
+        origin: "automation"
       });
     }
     if (body === typebotKeywordFinish) {

@@ -1,17 +1,24 @@
+import { v4 as uuidv4 } from "uuid";
+import { lookup as lookupMimeType } from "mime-types";
 import { IConnections, INodes } from "./DispatchWebHookService";
 import Contact from "../../models/Contact";
 //import CreateTicketService from "../TicketServices/CreateTicketService";
 //import CreateTicketServiceWebhook from "../TicketServices/CreateTicketServiceWebhook";
-import { SendMessage } from "../../helpers/SendMessage";
 import GetDefaultWhatsApp from "../../helpers/GetDefaultWhatsApp";
 import Ticket from "../../models/Ticket";
-import SendWhatsAppMediaFlow, {
+import {
+  processAudio,
+  processAudioFile,
   typeSimulation
 } from "../WbotServices/SendWhatsAppMediaFlow";
 import { randomizarCaminho } from "../../utils/randomizador";
 import formatBody from "../../helpers/Mustache";
 import SetTicketMessagesAsRead from "../../helpers/SetTicketMessagesAsRead";
-import SendWhatsAppMessage from "../WbotServices/SendWhatsAppMessage";
+import {
+  OutboundMessageService,
+  stageMessagingMedia,
+  messageKindForFile
+} from "../../messaging/public/outbound";
 import ShowTicketService from "../TicketServices/ShowTicketService";
 import { getIO } from "../../libs/socket";
 import FindOrCreateATicketTrakingService from "../TicketServices/FindOrCreateATicketTrakingService";
@@ -25,6 +32,11 @@ import { getWbot } from "../../libs/wbot";
 import { proto } from "../../messaging/public/baileys";
 import { handleOpenAi } from "../IntegrationsServices/OpenAiService";
 import { IOpenAi } from "../../@types/openai";
+
+// Automacoes de webhook tambem aceitam envios pelo nucleo do outbox
+// (Task 4): cada mensagem de fluxo vira Message + comando + evento na
+// mesma transacao, com entrega assincrona pelo dispatcher.
+const outboundMessageService = new OutboundMessageService();
 
 export const ActionsWebhookService = async (
   whatsappId: number,
@@ -201,9 +213,17 @@ export const ActionsWebhookService = async (
           };
         }
 
-        await SendMessage(whatsapp, {
-          number: numberClient,
-          body: messageNode.body
+        await outboundMessageService.create({
+          companyId,
+          whatsappId: whatsapp.id,
+          recipient: numberClient,
+          idempotencyScope: "automation-flow",
+          idempotencyKey: uuidv4(),
+          kind: "text",
+          // O caractere invisivel do antigo SendMessage e preservado para
+          // manter a paridade de exibicao das mensagens de fluxo.
+          text: `‎ ${messageNode.body}`,
+          origin: "automation"
         });
 
         //TESTE BOTÃO
@@ -288,10 +308,14 @@ export const ActionsWebhookService = async (
           await delay(3000);
           await typeSimulation(ticket, "composing");
 
-          await SendWhatsAppMessage({
-            body: bodyFila,
-            ticket: ticketDetails,
-            quotedMsg: null
+          await outboundMessageService.create({
+            companyId,
+            ticketId: ticketDetails.id,
+            idempotencyScope: "automation-flow",
+            idempotencyKey: uuidv4(),
+            kind: "text",
+            text: bodyFila,
+            origin: "automation"
           });
 
           SetTicketMessagesAsRead(ticketDetails);
@@ -311,88 +335,6 @@ export const ActionsWebhookService = async (
         break;
       }
 
-      if (nodeSelected.type === "ticket") {
-        /*const queueId = nodeSelected.data?.data?.id || nodeSelected.data?.id;
-        const queue = await ShowQueueService(queueId, companyId);
-
-        await ticket.update({
-          status: "pending",
-          queueId: queue.id,
-          userId: ticket.userId,
-          companyId: companyId,
-          flowWebhook: true,
-          lastFlowId: nodeSelected.id,
-          hashFlowId: hashWebhookId,
-          flowStopped: idFlowDb.toString()
-        });
-
-        await FindOrCreateATicketTrakingService({
-          ticketId: ticket.id,
-          companyId,
-          whatsappId: ticket.whatsappId,
-          userId: ticket.userId
-        });
-
-        await UpdateTicketService({
-          ticketData: {
-            status: "pending",
-            queueId: queue.id
-          },
-          ticketId: ticket.id,
-          companyId
-        });
-
-        await CreateLogTicketService({
-          ticketId: ticket.id,
-          type: "queue",
-          queueId: queue.id
-        });
-
-        let settings = await CompaniesSettings.findOne({
-          where: {
-            companyId: companyId
-          }
-        });
-
-        const enableQueuePosition = settings.sendQueuePosition === "enabled";
-
-        if (enableQueuePosition) {
-          const count = await Ticket.findAndCountAll({
-            where: {
-              userId: null,
-              status: "pending",
-              companyId,
-              queueId: queue.id,
-              whatsappId: whatsapp.id,
-              isGroup: false
-            }
-          });
-
-          // Lógica para enviar posição da fila de atendimento
-          const qtd = count.count === 0 ? 1 : count.count;
-
-          const msgFila = `${settings.sendQueuePositionMessage} *${qtd}*`;
-
-          const ticketDetails = await ShowTicketService(ticket.id, companyId);
-
-          const bodyFila = formatBody(`${msgFila}`, ticket.contact);
-
-          await delay(3000);
-          await typeSimulation(ticket, "composing");
-
-          await SendWhatsAppMessage({
-            body: bodyFila,
-            ticket: ticketDetails,
-            quotedMsg: null
-          });
-
-          SetTicketMessagesAsRead(ticketDetails);
-
-          await ticketDetails.update({
-            lastMessage: bodyFila
-          });
-        }*/
-      }
 
       if (nodeSelected.type === "singleBlock") {
         for (var iLoc = 0; iLoc < nodeSelected.data.seq.length; iLoc++) {
@@ -422,10 +364,14 @@ export const ActionsWebhookService = async (
             await delay(3000);
             await typeSimulation(ticket, "composing");
 
-            await SendWhatsAppMessage({
-              body: messageBody,
-              ticket: ticketDetails,
-              quotedMsg: null
+            await outboundMessageService.create({
+              companyId,
+              ticketId: ticketDetails.id,
+              idempotencyScope: "automation-flow",
+              idempotencyKey: uuidv4(),
+              kind: "text",
+              text: formatBody(messageBody, ticketDetails.contact),
+              origin: "automation"
             });
 
             SetTicketMessagesAsRead(ticketDetails);
@@ -447,79 +393,106 @@ export const ActionsWebhookService = async (
           if (elementNowSelected.includes("img")) {
             await typeSimulation(ticket, "composing");
 
-            logger.info(__dirname.split("src")[0].split("\\").join("/"));
+            const flowImagePath = process.env.BACKEND_URL.includes(
+              "http://localhost"
+            )
+              ? `${__dirname.split("src")[0].split("\\").join("/")}public/${
+                  nodeSelected.data.elements.filter(
+                    item => item.number === elementNowSelected
+                  )[0].value
+                }`
+              : `${__dirname.split("dist")[0].split("\\").join("/")}public/${
+                  nodeSelected.data.elements.filter(
+                    item => item.number === elementNowSelected
+                  )[0].value
+                }`;
+            // O asset do fluxo permanece na pasta public: copia duravel
+            // para storage/messaging antes de enfileirar.
+            const stagedImage = await stageMessagingMedia(flowImagePath);
 
-            await SendMessage(whatsapp, {
-              number: numberClient,
-              body: "",
-              mediaPath: process.env.BACKEND_URL.includes("http://localhost")
-                ? `${__dirname.split("src")[0].split("\\").join("/")}public/${
-                    nodeSelected.data.elements.filter(
-                      item => item.number === elementNowSelected
-                    )[0].value
-                  }`
-                : `${__dirname.split("dist")[0].split("\\").join("/")}public/${
-                    nodeSelected.data.elements.filter(
-                      item => item.number === elementNowSelected
-                    )[0].value
-                  }`
+            await outboundMessageService.create({
+              companyId,
+              whatsappId: whatsapp.id,
+              recipient: numberClient,
+              idempotencyScope: "automation-flow",
+              idempotencyKey: uuidv4(),
+              kind: messageKindForFile(flowImagePath),
+              payload: { localPath: stagedImage },
+              origin: "automation"
             });
             await intervalWhats("1");
           }
 
           if (elementNowSelected.includes("audio")) {
+            const flowAudioElement = nodeSelected.data.elements.filter(
+              item => item.number === elementNowSelected
+            )[0];
             const mediaDirectory =
               process.env.BACKEND_URL === "http://localhost:8090"
                 ? `${__dirname.split("src")[0].split("\\").join("/")}public/${
-                    nodeSelected.data.elements.filter(
-                      item => item.number === elementNowSelected
-                    )[0].value
+                    flowAudioElement.value
                   }`
                 : `${__dirname.split("dist")[0].split("\\").join("/")}public/${
-                    nodeSelected.data.elements.filter(
-                      item => item.number === elementNowSelected
-                    )[0].value
+                    flowAudioElement.value
                   }`;
-            const ticketInt = await Ticket.findOne({
-              where: { id: ticket.id }
-            });
 
             await typeSimulation(ticket, "recording");
 
-            await SendWhatsAppMediaFlow({
-              media: mediaDirectory,
-              ticket: ticketInt,
-              isRecord: nodeSelected.data.elements.filter(
-                item => item.number === elementNowSelected
-              )[0].record
+            // Preserva a normalizacao ffmpeg do fluxo (voice note ptt vs
+            // arquivo de audio) antes da copia duravel para o outbox.
+            const convertedAudio = flowAudioElement.record
+              ? await processAudio(mediaDirectory)
+              : await processAudioFile(mediaDirectory);
+            const stagedAudio = await stageMessagingMedia(convertedAudio);
+
+            await outboundMessageService.create({
+              companyId,
+              whatsappId: whatsapp.id,
+              recipient: numberClient,
+              idempotencyScope: "automation-flow",
+              idempotencyKey: uuidv4(),
+              kind: "audio",
+              payload: {
+                localPath: stagedAudio,
+                mimeType: "audio/mp4",
+                ptt: Boolean(flowAudioElement.record)
+              },
+              origin: "automation"
             });
-            //fs.unlinkSync(mediaDirectory.split('.')[0] + 'A.mp3');
             await intervalWhats("1");
           }
           if (elementNowSelected.includes("video")) {
+            const flowVideoElement = nodeSelected.data.elements.filter(
+              item => item.number === elementNowSelected
+            )[0];
             const mediaDirectory =
               process.env.BACKEND_URL === "http://localhost:8090"
                 ? `${__dirname.split("src")[0].split("\\").join("/")}public/${
-                    nodeSelected.data.elements.filter(
-                      item => item.number === elementNowSelected
-                    )[0].value
+                    flowVideoElement.value
                   }`
                 : `${__dirname.split("dist")[0].split("\\").join("/")}public/${
-                    nodeSelected.data.elements.filter(
-                      item => item.number === elementNowSelected
-                    )[0].value
+                    flowVideoElement.value
                   }`;
-            const ticketInt = await Ticket.findOne({
-              where: { id: ticket.id }
-            });
 
             await typeSimulation(ticket, "recording");
 
-            await SendWhatsAppMediaFlow({
-              media: mediaDirectory,
-              ticket: ticketInt
+            // Copia duravel para o outbox: o dispatcher pode enviar minutos
+            // depois, quando o asset precisa continuar acessivel.
+            const stagedVideo = await stageMessagingMedia(mediaDirectory);
+
+            await outboundMessageService.create({
+              companyId,
+              whatsappId: whatsapp.id,
+              recipient: numberClient,
+              idempotencyScope: "automation-flow",
+              idempotencyKey: uuidv4(),
+              kind: "video",
+              payload: {
+                localPath: stagedVideo,
+                mimeType: lookupMimeType(mediaDirectory) || "video/mp4"
+              },
+              origin: "automation"
             });
-            //fs.unlinkSync(mediaDirectory.split('.')[0] + 'A.mp3');
             await intervalWhats("1");
           }
         }
@@ -607,29 +580,16 @@ export const ActionsWebhookService = async (
 
           const ticketDetails = await ShowTicketService(ticket.id, companyId);
 
-          //const messageData: MessageData = {
-          //  wid: randomString(50),
-          //  ticketId: ticket.id,
-          //  body: msg.body,
-          //  fromMe: true,
-          //  read: true
-          //};
-
-          //await CreateMessageService({ messageData: messageData, companyId });
-
-          //await SendWhatsAppMessage({ body: bodyFor, ticket: ticketDetails, quotedMsg: null })
-
-          // await SendMessage(whatsapp, {
-          //   number: numberClient,
-          //   body: msg.body
-          // });
-
           await typeSimulation(ticket, "composing");
 
-          await SendWhatsAppMessage({
-            body: menuMessage.body,
-            ticket: ticketDetails,
-            quotedMsg: null
+          await outboundMessageService.create({
+            companyId,
+            ticketId: ticketDetails.id,
+            idempotencyScope: "automation-flow",
+            idempotencyKey: uuidv4(),
+            kind: "text",
+            text: formatBody(menuMessage.body, ticketDetails.contact),
+            origin: "automation"
           });
 
           SetTicketMessagesAsRead(ticketDetails);

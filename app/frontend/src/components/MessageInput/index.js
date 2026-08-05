@@ -200,6 +200,30 @@ const MessageInput = ({ ticketStatus }) => {
 		return id;
 	};
 
+	// Idempotency key for the current media batch. It is kept across
+	// retries of the same selection (so a resend after an ambiguous
+	// error never delivers an attachment twice) and reset on success
+	// or when the selection changes.
+	const mediaBatchAttemptRef = useRef(null);
+
+	const getClientBatchId = files => {
+		const signature = files
+			.map(file => `${file.name || "midia"}:${file.size}`)
+			.join("|");
+		if (
+			mediaBatchAttemptRef.current &&
+			mediaBatchAttemptRef.current.signature === signature
+		) {
+			return mediaBatchAttemptRef.current.id;
+		}
+		const id =
+			window.crypto && window.crypto.randomUUID
+				? window.crypto.randomUUID()
+				: `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+		mediaBatchAttemptRef.current = { id, signature };
+		return id;
+	};
+
 	useEffect(() => {
 		inputRef.current.focus();
 	}, [replyingMessage]);
@@ -244,6 +268,7 @@ const MessageInput = ({ ticketStatus }) => {
 
 		const formData = new FormData();
 		formData.append("fromMe", true);
+		formData.append("clientBatchId", getClientBatchId(medias));
 		medias.forEach(media => {
 			formData.append("medias", media);
 			formData.append("body", media.name);
@@ -251,6 +276,7 @@ const MessageInput = ({ ticketStatus }) => {
 
 		try {
 			await api.post(`/messages/${ticketId}`, formData);
+			mediaBatchAttemptRef.current = null;
 		} catch (err) {
 			toastError(err);
 		}
@@ -317,8 +343,10 @@ const MessageInput = ({ ticketStatus }) => {
 			formData.append("medias", blob, filename);
 			formData.append("body", filename);
 			formData.append("fromMe", true);
+			formData.append("clientBatchId", getClientBatchId([blob]));
 
 			await api.post(`/messages/${ticketId}`, formData);
+			mediaBatchAttemptRef.current = null;
 		} catch (err) {
 			toastError(err);
 		}

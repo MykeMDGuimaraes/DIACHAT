@@ -47,10 +47,14 @@ class Message extends Model<Message> {
 
   @Column(DataType.STRING)
   get mediaUrl(): string | null {
-    if (this.getDataValue("mediaUrl")) {
-      return `${process.env.BACKEND_URL}/public/${this.getDataValue(
-        "mediaUrl"
-      )}`;
+    const stored = this.getDataValue("mediaUrl");
+    if (stored) {
+      // Midia staged do outbox fica em storage/ privado e e servida pelo
+      // mount autenticado /media (Task 4); o restante segue em /public.
+      if (stored.startsWith("messaging/")) {
+        return `${process.env.BACKEND_URL}/media/${stored}`;
+      }
+      return `${process.env.BACKEND_URL}/public/${stored}`;
     }
     return null;
   }

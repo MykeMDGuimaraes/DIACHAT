@@ -4,7 +4,7 @@
 - [Atendechat frontend patches](atendechat-frontend-patches.md) — `npm install` in app/frontend wipes uuid/eslint-scope/schema-utils patches; replit-start.sh only re-applies them when node_modules is missing.
 - [Isolamento multi-tenant](multi-tenant-isolation.md) — todo Show*/mutação por id precisa de companyId do JWT com 404 em cross-tenant; socket CORS vem de FRONTEND_URL.
 - [Push de branch em worktree](worktree-branch-push.md) — shell push falha sem token; use gitPush após liberar a branch do worktree e fazer switch temporário no workspace.
-- [Banco de teste do backend](backend-test-db.md) — neste repl o jest grava no banco de DEV mesmo com NODE_ENV=test; limpar fixtures após rodar suítes; isolamento pendente.
+- [Banco de teste do backend](backend-test-db.md) — suíte roda isolada em diachat_test via DB_NAME nos scripts npm; nunca rodar jest/CLI de teste sem DB_NAME (opera no banco de dev).
 - [Sessão Baileys degradada](baileys-session-degradada.md) — timeout de init queries ~60s pós-open em todo boot + envios aceitos sem ack do servidor = sessão degradada no WhatsApp; remédio é re-parear o canal.
 - [Backend ESLint vs ajv override](backend-eslint-ajv.md) — override global de ajv deve ficar em ^6 no backend; ajv 8 quebra o eslintrc do ESLint 8.
 - [Envio aguarda reconexão do wbot](wbot-send-reconnect-wait.md) — sends esperam sessão Baileys voltar (45s→503); jest exige mock de baileys (crypto.subtle).

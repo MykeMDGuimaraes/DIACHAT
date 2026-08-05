@@ -84,9 +84,9 @@ export const toConversationMessageDTO = (
   direction: message.fromMe ? "out" : "in",
   body: message.body,
   mediaType: message.mediaType || null,
-  mediaUrl: message.getDataValue("mediaUrl")
-    ? `/public/${message.getDataValue("mediaUrl")}`
-    : null,
+  // Mesmo contrato do getter Message.mediaUrl (Task 4): midia staged do
+  // outbox ("messaging/...") sai pelo mount autenticado /media; legado /public.
+  mediaUrl: message.mediaUrl || null,
   ack: message.ack,
   read: !!message.read,
   isDeleted: !!message.isDeleted,

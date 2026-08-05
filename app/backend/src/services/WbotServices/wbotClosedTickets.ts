@@ -1,13 +1,15 @@
 import { Op } from "sequelize";
+import { v4 as uuidv4 } from "uuid";
 import moment from "moment";
 import Ticket from "../../models/Ticket";
 import Whatsapp from "../../models/Whatsapp";
 import { getIO } from "../../libs/socket";
 import formatBody from "../../helpers/Mustache";
-import SendWhatsAppMessage from "./SendWhatsAppMessage";
+import { OutboundMessageService } from "../../messaging/public/outbound";
 import ShowTicketService from "../TicketServices/ShowTicketService";
-import { verifyMessage } from "./wbotMessageListener";
 import TicketTraking from "../../models/TicketTraking";
+
+const outboundMessageService = new OutboundMessageService();
 
 export const ClosedAllOpenTickets = async (
   companyId: number
@@ -95,12 +97,15 @@ export const ClosedAllOpenTickets = async (
               expiresInactiveMessage !== "" &&
               expiresInactiveMessage !== undefined
             ) {
-              const sentMessage = await SendWhatsAppMessage({
-                body: bodyExpiresMessageInactive,
-                ticket: showTicket
+              await outboundMessageService.create({
+                companyId,
+                ticketId: showTicket.id,
+                idempotencyScope: "ticket-inactivity-closure",
+                idempotencyKey: uuidv4(),
+                kind: "text",
+                text: bodyExpiresMessageInactive,
+                origin: "automation"
               });
-
-              await verifyMessage(sentMessage, showTicket, showTicket.contact);
             }
 
             await ticketTraking.update({

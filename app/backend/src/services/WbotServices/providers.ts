@@ -1,5 +1,9 @@
-import { resolveContactJid, sendBaileysSocketMessage } from "../../messaging/public/baileys";
+import { v4 as uuidv4 } from "uuid";
+import puppeteer from "puppeteer";
+import axios from "axios";
+import fs from "fs";
 import { proto, WASocket } from "../../messaging/public/baileys";
+import { OutboundMessageService } from "../../messaging/public/outbound";
 import Contact from "../../models/Contact";
 import Setting from "../../models/Setting";
 import Ticket from "../../models/Ticket";
@@ -13,11 +17,9 @@ import {
 } from "./wbotMessageListener";
 import formatBody from "../../helpers/Mustache";
 
-import puppeteer from "puppeteer";
-
-import axios from "axios";
 import UpdateTicketService from "../TicketServices/UpdateTicketService";
-import fs from "fs";
+
+const outboundMessageService = new OutboundMessageService();
 
 export const provider = async (
   ticket: Ticket,
@@ -26,15 +28,6 @@ export const provider = async (
   contact: Contact,
   wbot: WASocket
 ) => {
-  // O contato fresco de verifyContact carrega number/lid/jidServer completos;
-  // ticket.contact pode vir de includes com atributos limitados (sem lid),
-  // o que derrubava resolveContactJid para contatos @lid.
-  const ticketJid = resolveContactJid({
-    number: contact?.number ?? ticket.contact.number,
-    lid: contact?.lid ?? ticket.contact.lid,
-    jidServer: contact?.jidServer ?? ticket.contact.jidServer,
-    isGroup: ticket.isGroup
-  });
   const filaescolhida = ticket.queue?.name;
   if (
     filaescolhida === "2ª Via de Boleto" ||
@@ -90,8 +83,8 @@ export const provider = async (
       urlmkauth = urlmkauth.slice(0, -1);
     }
 
-    //VARS
-    let url = `${urlmkauth}/api/`;
+    // VARS
+    const url = `${urlmkauth}/api/`;
     const Client_Id = clientidmkauth.value;
     const Client_Secret = clientesecretmkauth.value;
     const ixckeybase64 = btoa(ixcapikey.value);
@@ -107,17 +100,21 @@ export const provider = async (
           if (isCPFCNPJ) {
             const textMessage = {
               text: formatBody(
-                `Aguarde! Estamos consultando na base de dados!`,
+                "Aguarde! Estamos consultando na base de dados!",
                 contact
               )
             };
             try {
               await sleep(2000);
-              await sendBaileysSocketMessage(
-                wbot,
-                ticketJid,
-                textMessage
-              );
+              await outboundMessageService.create({
+                companyId: ticket.companyId,
+                ticketId: ticket.id,
+                idempotencyScope: "providers-flow",
+                idempotencyKey: uuidv4(),
+                kind: "text",
+                text: textMessage.text,
+                origin: "automation"
+              });
             } catch (error) {}
 
             axios({
@@ -131,7 +128,7 @@ export const provider = async (
             } as any)
               .then(function (response) {
                 const jtw = response.data;
-                var config = {
+                const config = {
                   method: "GET",
                   url: `${urlmkauth}/api/cliente/show/${numberCPFCNPJ}`,
                   headers: {
@@ -144,17 +141,21 @@ export const provider = async (
                     if (responseInner1.data === "NULL") {
                       const textMessageInner2 = {
                         text: formatBody(
-                          `Cadastro não localizado! *CPF/CNPJ* incorreto ou inválido. Tenta novamente!`,
+                          "Cadastro não localizado! *CPF/CNPJ* incorreto ou inválido. Tenta novamente!",
                           contact
                         )
                       };
                       try {
                         await sleep(2000);
-                        await sendBaileysSocketMessage(
-                          wbot,
-                          ticketJid,
-                          textMessageInner2
-                        );
+                        await outboundMessageService.create({
+                          companyId: ticket.companyId,
+                          ticketId: ticket.id,
+                          idempotencyScope: "providers-flow",
+                          idempotencyKey: uuidv4(),
+                          kind: "text",
+                          text: textMessageInner2.text,
+                          origin: "automation"
+                        });
                       } catch (error) {
                         console.log("Não consegui enviar a mensagem!");
                       }
@@ -183,11 +184,11 @@ export const provider = async (
                       titulo = responseInner1.data.dados_cliente.titulos.titulo;
                       valorCorrigido = valor.replace(".", ",");
 
-                      var curdate = new Date(datavenc);
+                      const curdate = new Date(datavenc);
                       const mesCorreto = curdate.getMonth() + 1;
-                      const ano = ("0" + curdate.getFullYear()).slice(-4);
-                      const mes = ("0" + mesCorreto).slice(-2);
-                      const dia = ("0" + curdate.getDate()).slice(-2);
+                      const ano = `0${curdate.getFullYear()}`.slice(-4);
+                      const mes = `0${mesCorreto}`.slice(-2);
+                      const dia = `0${curdate.getDate()}`.slice(-2);
                       const anoMesDia = `${dia}/${mes}/${ano}`;
 
                       try {
@@ -197,11 +198,15 @@ export const provider = async (
                             contact
                           )
                         };
-                        await sendBaileysSocketMessage(
-                          wbot,
-                          ticketJid,
-                          textMessageInner3
-                        );
+                        await outboundMessageService.create({
+                          companyId: ticket.companyId,
+                          ticketId: ticket.id,
+                          idempotencyScope: "providers-flow",
+                          idempotencyKey: uuidv4(),
+                          kind: "text",
+                          text: textMessageInner3.text,
+                          origin: "automation"
+                        });
                         const bodyBoleto = {
                           text: formatBody(
                             `Segue a segunda-via da sua Fatura!\n\n*Nome:* ${nome}\n*Valor:* R$ ${valorCorrigido}\n*Data Vencimento:* ${anoMesDia}\n*Link:* ${urlmkauth}/boleto/21boleto.php?titulo=${titulo}\n\nVou mandar o *código de barras* na próxima mensagem para ficar mais fácil para você copiar!`,
@@ -209,43 +214,59 @@ export const provider = async (
                           )
                         };
                         await sleep(2000);
-                        await sendBaileysSocketMessage(
-                          wbot,
-                          ticketJid,
-                          bodyBoleto
-                        );
+                        await outboundMessageService.create({
+                          companyId: ticket.companyId,
+                          ticketId: ticket.id,
+                          idempotencyScope: "providers-flow",
+                          idempotencyKey: uuidv4(),
+                          kind: "text",
+                          text: bodyBoleto.text,
+                          origin: "automation"
+                        });
                         const bodyLinha = {
                           text: formatBody(`${linhadig}`, contact)
                         };
                         await sleep(2000);
-                        await sendBaileysSocketMessage(
-                          wbot,
-                          ticketJid,
-                          bodyLinha
-                        );
+                        await outboundMessageService.create({
+                          companyId: ticket.companyId,
+                          ticketId: ticket.id,
+                          idempotencyScope: "providers-flow",
+                          idempotencyKey: uuidv4(),
+                          kind: "text",
+                          text: bodyLinha.text,
+                          origin: "automation"
+                        });
                         if (qrcode !== null) {
                           const bodyPdf = {
                             text: formatBody(
-                              `Este é o *PIX COPIA E COLA*`,
+                              "Este é o *PIX COPIA E COLA*",
                               contact
                             )
                           };
                           await sleep(2000);
-                          await sendBaileysSocketMessage(
-                            wbot,
-                            ticketJid,
-                            bodyPdf
-                          );
+                          await outboundMessageService.create({
+                            companyId: ticket.companyId,
+                            ticketId: ticket.id,
+                            idempotencyScope: "providers-flow",
+                            idempotencyKey: uuidv4(),
+                            kind: "text",
+                            text: bodyPdf.text,
+                            origin: "automation"
+                          });
                           const bodyqrcode = {
                             text: formatBody(`${qrcode}`, contact)
                           };
                           await sleep(2000);
-                          await sendBaileysSocketMessage(
-                            wbot,
-                            ticketJid,
-                            bodyqrcode
-                          );
-                          let linkBoleto = `https://chart.googleapis.com/chart?cht=qr&chs=500x500&chld=L|0&chl=${qrcode}`;
+                          await outboundMessageService.create({
+                            companyId: ticket.companyId,
+                            ticketId: ticket.id,
+                            idempotencyScope: "providers-flow",
+                            idempotencyKey: uuidv4(),
+                            kind: "text",
+                            text: bodyqrcode.text,
+                            origin: "automation"
+                          });
+                          const linkBoleto = `https://chart.googleapis.com/chart?cht=qr&chs=500x500&chld=L|0&chl=${qrcode}`;
                           await sleep(2000);
                           await sendMessageImage(
                             wbot,
@@ -257,7 +278,7 @@ export const provider = async (
                         }
                         const bodyPdf = {
                           text: formatBody(
-                            `Agora vou te enviar o boleto em *PDF* caso você precise.`,
+                            "Agora vou te enviar o boleto em *PDF* caso você precise.",
                             contact
                           )
                         };
@@ -265,14 +286,18 @@ export const provider = async (
                         const bodyPdfQr = {
                           text: formatBody(`${bodyPdf}`, contact)
                         };
-                        await sendBaileysSocketMessage(
-                          wbot,
-                          ticketJid,
-                          bodyPdfQr
-                        );
+                        await outboundMessageService.create({
+                          companyId: ticket.companyId,
+                          ticketId: ticket.id,
+                          idempotencyScope: "providers-flow",
+                          idempotencyKey: uuidv4(),
+                          kind: "text",
+                          text: bodyPdfQr.text,
+                          origin: "automation"
+                        });
                         await sleep(2000);
 
-                        //GERA O PDF
+                        // GERA O PDF
                         const nomePDF = `Boleto-${nome}-${dia}-${mes}-${ano}.pdf`;
                         async () => {
                           const browser = await puppeteer.launch({
@@ -309,24 +334,32 @@ export const provider = async (
                             )
                           };
                           await sleep(2000);
-                          await sendBaileysSocketMessage(
-                            wbot,
-                            ticketJid,
-                            bodyBloqueio
-                          );
+                          await outboundMessageService.create({
+                            companyId: ticket.companyId,
+                            ticketId: ticket.id,
+                            idempotencyScope: "providers-flow",
+                            idempotencyKey: uuidv4(),
+                            kind: "text",
+                            text: bodyBloqueio.text,
+                            origin: "automation"
+                          });
                           const bodyqrcode = {
                             text: formatBody(
-                              `Estou liberando seu acesso. Por favor aguarde!`,
+                              "Estou liberando seu acesso. Por favor aguarde!",
                               contact
                             )
                           };
                           await sleep(2000);
-                          await sendBaileysSocketMessage(
-                            wbot,
-                            ticketJid,
-                            bodyqrcode
-                          );
-                          var optionsdesbloq = {
+                          await outboundMessageService.create({
+                            companyId: ticket.companyId,
+                            ticketId: ticket.id,
+                            idempotencyScope: "providers-flow",
+                            idempotencyKey: uuidv4(),
+                            kind: "text",
+                            text: bodyqrcode.text,
+                            origin: "automation"
+                          });
+                          const optionsdesbloq = {
                             method: "GET",
                             url: `${urlmkauth}/api/cliente/desbloqueio/${uuid_cliente}`,
                             headers: {
@@ -338,56 +371,72 @@ export const provider = async (
                             .then(async function (_responseUnused4) {
                               const bodyLiberado = {
                                 text: formatBody(
-                                  `Pronto liberei! Vou precisar que você *retire* seu equipamento da tomada.\n\n*OBS: Somente retire da tomada.* \nAguarde 1 minuto e ligue novamente!`,
+                                  "Pronto liberei! Vou precisar que você *retire* seu equipamento da tomada.\n\n*OBS: Somente retire da tomada.* \nAguarde 1 minuto e ligue novamente!",
                                   contact
                                 )
                               };
                               await sleep(2000);
-                              await sendBaileysSocketMessage(
-                                wbot,
-                                ticketJid,
-                                bodyLiberado
-                              );
+                              await outboundMessageService.create({
+                                companyId: ticket.companyId,
+                                ticketId: ticket.id,
+                                idempotencyScope: "providers-flow",
+                                idempotencyKey: uuidv4(),
+                                kind: "text",
+                                text: bodyLiberado.text,
+                                origin: "automation"
+                              });
                               const bodyqrcodeInner5 = {
                                 text: formatBody(
-                                  `Veja se seu acesso voltou! Caso nao tenha voltado retorne o contato e fale com um atendente!`,
+                                  "Veja se seu acesso voltou! Caso nao tenha voltado retorne o contato e fale com um atendente!",
                                   contact
                                 )
                               };
                               await sleep(2000);
-                              await sendBaileysSocketMessage(
-                                wbot,
-                                ticketJid,
-                                bodyqrcodeInner5
-                              );
+                              await outboundMessageService.create({
+                                companyId: ticket.companyId,
+                                ticketId: ticket.id,
+                                idempotencyScope: "providers-flow",
+                                idempotencyKey: uuidv4(),
+                                kind: "text",
+                                text: bodyqrcodeInner5.text,
+                                origin: "automation"
+                              });
                             })
                             .catch(async function (_errorUnused6) {
                               const bodyfinaliza = {
                                 text: formatBody(
-                                  `Opss! Algo de errado aconteceu! Digite *#* para voltar ao menu anterior e fale com um atendente!`,
+                                  "Opss! Algo de errado aconteceu! Digite *#* para voltar ao menu anterior e fale com um atendente!",
                                   contact
                                 )
                               };
-                              await sendBaileysSocketMessage(
-                                wbot,
-                                ticketJid,
-                                bodyfinaliza
-                              );
+                              await outboundMessageService.create({
+                                companyId: ticket.companyId,
+                                ticketId: ticket.id,
+                                idempotencyScope: "providers-flow",
+                                idempotencyKey: uuidv4(),
+                                kind: "text",
+                                text: bodyfinaliza.text,
+                                origin: "automation"
+                              });
                             });
                         }
 
                         const bodyfinaliza = {
                           text: formatBody(
-                            `Estamos finalizando esta conversa! Caso precise entre em contato conosco!`,
+                            "Estamos finalizando esta conversa! Caso precise entre em contato conosco!",
                             contact
                           )
                         };
                         await sleep(12000);
-                        await sendBaileysSocketMessage(
-                          wbot,
-                          ticketJid,
-                          bodyfinaliza
-                        );
+                        await outboundMessageService.create({
+                          companyId: ticket.companyId,
+                          ticketId: ticket.id,
+                          idempotencyScope: "providers-flow",
+                          idempotencyKey: uuidv4(),
+                          kind: "text",
+                          text: bodyfinaliza.text,
+                          origin: "automation"
+                        });
 
                         await sleep(2000);
                         fs.unlink(nomePDF, function (err) {
@@ -409,16 +458,20 @@ export const provider = async (
                     try {
                       const bodyBoleto = {
                         text: formatBody(
-                          `Não consegui encontrar seu cadastro.\n\nPor favor tente novamente!\nOu digite *#* para voltar ao *Menu Anterior*`,
+                          "Não consegui encontrar seu cadastro.\n\nPor favor tente novamente!\nOu digite *#* para voltar ao *Menu Anterior*",
                           contact
                         )
                       };
                       await sleep(2000);
-                      await sendBaileysSocketMessage(
-                        wbot,
-                        ticketJid,
-                        bodyBoleto
-                      );
+                      await outboundMessageService.create({
+                        companyId: ticket.companyId,
+                        ticketId: ticket.id,
+                        idempotencyScope: "providers-flow",
+                        idempotencyKey: uuidv4(),
+                        kind: "text",
+                        text: bodyBoleto.text,
+                        origin: "automation"
+                      });
                     } catch (error) {
                       console.log("111 Não consegui enviar a mensagem!");
                     }
@@ -427,29 +480,37 @@ export const provider = async (
               .catch(async function (_errorUnused8) {
                 const bodyfinaliza = {
                   text: formatBody(
-                    `Opss! Algo de errado aconteceu! Digite *#* para voltar ao menu anterior e fale com um atendente!`,
+                    "Opss! Algo de errado aconteceu! Digite *#* para voltar ao menu anterior e fale com um atendente!",
                     contact
                   )
                 };
-                await sendBaileysSocketMessage(
-                  wbot,
-                  ticketJid,
-                  bodyfinaliza
-                );
+                await outboundMessageService.create({
+                  companyId: ticket.companyId,
+                  ticketId: ticket.id,
+                  idempotencyScope: "providers-flow",
+                  idempotencyKey: uuidv4(),
+                  kind: "text",
+                  text: bodyfinaliza.text,
+                  origin: "automation"
+                });
               });
           } else {
             const body = {
               text: formatBody(
-                `Este CPF/CNPJ não é válido!\n\nPor favor tente novamente!\nOu digite *#* para voltar ao *Menu Anterior*`,
+                "Este CPF/CNPJ não é válido!\n\nPor favor tente novamente!\nOu digite *#* para voltar ao *Menu Anterior*",
                 contact
               )
             };
             await sleep(2000);
-            await sendBaileysSocketMessage(
-              wbot,
-              ticketJid,
-              body
-            );
+            await outboundMessageService.create({
+              companyId: ticket.companyId,
+              ticketId: ticket.id,
+              idempotencyScope: "providers-flow",
+              idempotencyKey: uuidv4(),
+              kind: "text",
+              text: body.text,
+              origin: "automation"
+            });
           }
         }
       }
@@ -462,19 +523,23 @@ export const provider = async (
           if (isCPFCNPJ) {
             const body = {
               text: formatBody(
-                `Aguarde! Estamos consultando na base de dados!`,
+                "Aguarde! Estamos consultando na base de dados!",
                 contact
               )
             };
             try {
               await sleep(2000);
-              await sendBaileysSocketMessage(
-                wbot,
-                ticketJid,
-                body
-              );
+              await outboundMessageService.create({
+                companyId: ticket.companyId,
+                ticketId: ticket.id,
+                idempotencyScope: "providers-flow",
+                idempotencyKey: uuidv4(),
+                kind: "text",
+                text: body.text,
+                origin: "automation"
+              });
             } catch (error) {}
-            var optionsc = {
+            const optionsc = {
               method: "GET",
               url: "https://www.asaas.com/api/v3/customers",
               params: { cpfCnpj: numberCPFCNPJ },
@@ -498,16 +563,20 @@ export const provider = async (
                 if (totalCount === 0) {
                   const bodyInner9 = {
                     text: formatBody(
-                      `Cadastro não localizado! *CPF/CNPJ* incorreto ou inválido. Tenta novamente!`,
+                      "Cadastro não localizado! *CPF/CNPJ* incorreto ou inválido. Tenta novamente!",
                       contact
                     )
                   };
                   await sleep(2000);
-                  await sendBaileysSocketMessage(
-                    wbot,
-                    ticketJid,
-                    bodyInner9
-                  );
+                  await outboundMessageService.create({
+                    companyId: ticket.companyId,
+                    ticketId: ticket.id,
+                    idempotencyScope: "providers-flow",
+                    idempotencyKey: uuidv4(),
+                    kind: "text",
+                    text: bodyInner9.text,
+                    origin: "automation"
+                  });
                 } else {
                   const bodyInner10 = {
                     text: formatBody(
@@ -516,12 +585,16 @@ export const provider = async (
                     )
                   };
                   await sleep(2000);
-                  await sendBaileysSocketMessage(
-                    wbot,
-                    ticketJid,
-                    bodyInner10
-                  );
-                  var optionsListpaymentOVERDUE = {
+                  await outboundMessageService.create({
+                    companyId: ticket.companyId,
+                    ticketId: ticket.id,
+                    idempotencyScope: "providers-flow",
+                    idempotencyKey: uuidv4(),
+                    kind: "text",
+                    text: bodyInner10.text,
+                    origin: "automation"
+                  });
+                  const optionsListpaymentOVERDUE = {
                     method: "GET",
                     url: "https://www.asaas.com/api/v3/payments",
                     params: { customer: id_cliente, status: "OVERDUE" },
@@ -540,17 +613,21 @@ export const provider = async (
                       if (totalCount_overdue === 0) {
                         const bodyInner12 = {
                           text: formatBody(
-                            `Você não tem nenhuma fatura vencidada! \nVou te enviar a proxima fatura. Por favor aguarde!`,
+                            "Você não tem nenhuma fatura vencidada! \nVou te enviar a proxima fatura. Por favor aguarde!",
                             contact
                           )
                         };
                         await sleep(2000);
-                        await sendBaileysSocketMessage(
-                          wbot,
-                          ticketJid,
-                          bodyInner12
-                        );
-                        var optionsPENDING = {
+                        await outboundMessageService.create({
+                          companyId: ticket.companyId,
+                          ticketId: ticket.id,
+                          idempotencyScope: "providers-flow",
+                          idempotencyKey: uuidv4(),
+                          kind: "text",
+                          text: bodyInner12.text,
+                          origin: "automation"
+                        });
+                        const optionsPENDING = {
                           method: "GET",
                           url: "https://www.asaas.com/api/v3/payments",
                           params: { customer: id_cliente, status: "PENDING" },
@@ -601,13 +678,17 @@ export const provider = async (
                               )
                             };
                             await sleep(2000);
-                            await sendBaileysSocketMessage(
-                              wbot,
-                              ticketJid,
-                              bodyBoleto
-                            );
-                            //GET DADOS PIX
-                            var optionsGetPIX = {
+                            await outboundMessageService.create({
+                              companyId: ticket.companyId,
+                              ticketId: ticket.id,
+                              idempotencyScope: "providers-flow",
+                              idempotencyKey: uuidv4(),
+                              kind: "text",
+                              text: bodyBoleto.text,
+                              origin: "automation"
+                            });
+                            // GET DADOS PIX
+                            const optionsGetPIX = {
                               method: "GET",
                               url: `https://www.asaas.com/api/v3/payments/${id_payment_pending}/pixQrCode`,
                               headers: {
@@ -628,26 +709,34 @@ export const provider = async (
                                 if (success === true) {
                                   const bodyPixCP = {
                                     text: formatBody(
-                                      `Este é o *PIX Copia e Cola*`,
+                                      "Este é o *PIX Copia e Cola*",
                                       contact
                                     )
                                   };
                                   await sleep(2000);
-                                  await sendBaileysSocketMessage(
-                                    wbot,
-                                    ticketJid,
-                                    bodyPixCP
-                                  );
+                                  await outboundMessageService.create({
+                                    companyId: ticket.companyId,
+                                    ticketId: ticket.id,
+                                    idempotencyScope: "providers-flow",
+                                    idempotencyKey: uuidv4(),
+                                    kind: "text",
+                                    text: bodyPixCP.text,
+                                    origin: "automation"
+                                  });
                                   const bodyPix = {
                                     text: formatBody(`${payload}`, contact)
                                   };
                                   await sleep(2000);
-                                  await sendBaileysSocketMessage(
-                                    wbot,
-                                    ticketJid,
-                                    bodyPix
-                                  );
-                                  let linkBoleto = `https://chart.googleapis.com/chart?cht=qr&chs=500x500&chld=L|0&chl=${payload}`;
+                                  await outboundMessageService.create({
+                                    companyId: ticket.companyId,
+                                    ticketId: ticket.id,
+                                    idempotencyScope: "providers-flow",
+                                    idempotencyKey: uuidv4(),
+                                    kind: "text",
+                                    text: bodyPix.text,
+                                    origin: "automation"
+                                  });
+                                  const linkBoleto = `https://chart.googleapis.com/chart?cht=qr&chs=500x500&chld=L|0&chl=${payload}`;
                                   await sleep(2000);
                                   await sendMessageImage(
                                     wbot,
@@ -656,7 +745,7 @@ export const provider = async (
                                     linkBoleto,
                                     ""
                                   );
-                                  var optionsBoletopend = {
+                                  const optionsBoletopend = {
                                     method: "GET",
                                     url: `https://www.asaas.com/api/v3/payments/${id_payment_pending}/identificationField`,
                                     headers: {
@@ -684,34 +773,46 @@ export const provider = async (
                                       ) {
                                         const bodycodigo = {
                                           text: formatBody(
-                                            `Este é o *Código de Barras*!`,
+                                            "Este é o *Código de Barras*!",
                                             contact
                                           )
                                         };
                                         await sleep(2000);
-                                        await sendBaileysSocketMessage(
-                                          wbot,
-                                          ticketJid,
-                                          bodycodigo
-                                        );
+                                        await outboundMessageService.create({
+                                          companyId: ticket.companyId,
+                                          ticketId: ticket.id,
+                                          idempotencyScope: "providers-flow",
+                                          idempotencyKey: uuidv4(),
+                                          kind: "text",
+                                          text: bodycodigo.text,
+                                          origin: "automation"
+                                        });
                                         await sleep(2000);
-                                        await sendBaileysSocketMessage(
-                                          wbot,
-                                          ticketJid,
-                                          bodycodigoBarras
-                                        );
+                                        await outboundMessageService.create({
+                                          companyId: ticket.companyId,
+                                          ticketId: ticket.id,
+                                          idempotencyScope: "providers-flow",
+                                          idempotencyKey: uuidv4(),
+                                          kind: "text",
+                                          text: bodycodigoBarras.text,
+                                          origin: "automation"
+                                        });
                                         const bodyfinaliza = {
                                           text: formatBody(
-                                            `Estamos finalizando esta conversa! Caso precise entre em contato conosco!`,
+                                            "Estamos finalizando esta conversa! Caso precise entre em contato conosco!",
                                             contact
                                           )
                                         };
                                         await sleep(2000);
-                                        await sendBaileysSocketMessage(
-                                          wbot,
-                                          ticketJid,
-                                          bodyfinaliza
-                                        );
+                                        await outboundMessageService.create({
+                                          companyId: ticket.companyId,
+                                          ticketId: ticket.id,
+                                          idempotencyScope: "providers-flow",
+                                          idempotencyKey: uuidv4(),
+                                          kind: "text",
+                                          text: bodyfinaliza.text,
+                                          origin: "automation"
+                                        });
                                         await sleep(2000);
                                         await UpdateTicketService({
                                           ticketData: { status: "closed" },
@@ -721,16 +822,20 @@ export const provider = async (
                                       } else {
                                         const bodyfinaliza = {
                                           text: formatBody(
-                                            `Estamos finalizando esta conversa! Caso precise entre em contato conosco!`,
+                                            "Estamos finalizando esta conversa! Caso precise entre em contato conosco!",
                                             contact
                                           )
                                         };
                                         await sleep(2000);
-                                        await sendBaileysSocketMessage(
-                                          wbot,
-                                          ticketJid,
-                                          bodyfinaliza
-                                        );
+                                        await outboundMessageService.create({
+                                          companyId: ticket.companyId,
+                                          ticketId: ticket.id,
+                                          idempotencyScope: "providers-flow",
+                                          idempotencyKey: uuidv4(),
+                                          kind: "text",
+                                          text: bodyfinaliza.text,
+                                          origin: "automation"
+                                        });
                                         await UpdateTicketService({
                                           ticketData: { status: "closed" },
                                           ticketId: ticket.id,
@@ -741,16 +846,20 @@ export const provider = async (
                                     .catch(async function (_errorUnused16) {
                                       const bodyfinaliza = {
                                         text: formatBody(
-                                          `Estamos finalizando esta conversa! Caso precise entre em contato conosco!`,
+                                          "Estamos finalizando esta conversa! Caso precise entre em contato conosco!",
                                           contact
                                         )
                                       };
                                       await sleep(2000);
-                                      await sendBaileysSocketMessage(
-                                        wbot,
-                                        ticketJid,
-                                        bodyfinaliza
-                                      );
+                                      await outboundMessageService.create({
+                                        companyId: ticket.companyId,
+                                        ticketId: ticket.id,
+                                        idempotencyScope: "providers-flow",
+                                        idempotencyKey: uuidv4(),
+                                        kind: "text",
+                                        text: bodyfinaliza.text,
+                                        origin: "automation"
+                                      });
                                       await UpdateTicketService({
                                         ticketData: { status: "closed" },
                                         ticketId: ticket.id,
@@ -762,31 +871,39 @@ export const provider = async (
                               .catch(async function (_errorUnused17) {
                                 const bodyInner18 = {
                                   text: formatBody(
-                                    `*Opss!!!!*\nOcorreu um erro! Digite *#* e fale com um *Atendente*!`,
+                                    "*Opss!!!!*\nOcorreu um erro! Digite *#* e fale com um *Atendente*!",
                                     contact
                                   )
                                 };
                                 await sleep(2000);
-                                await sendBaileysSocketMessage(
-                                  wbot,
-                                  ticketJid,
-                                  bodyInner18
-                                );
+                                await outboundMessageService.create({
+                                  companyId: ticket.companyId,
+                                  ticketId: ticket.id,
+                                  idempotencyScope: "providers-flow",
+                                  idempotencyKey: uuidv4(),
+                                  kind: "text",
+                                  text: bodyInner18.text,
+                                  origin: "automation"
+                                });
                               });
                           })
                           .catch(async function (_errorUnused19) {
                             const bodyInner20 = {
                               text: formatBody(
-                                `*Opss!!!!*\nOcorreu um erro! Digite *#* e fale com um *Atendente*!`,
+                                "*Opss!!!!*\nOcorreu um erro! Digite *#* e fale com um *Atendente*!",
                                 contact
                               )
                             };
                             await sleep(2000);
-                            await sendBaileysSocketMessage(
-                              wbot,
-                              ticketJid,
-                              bodyInner20
-                            );
+                            await outboundMessageService.create({
+                              companyId: ticket.companyId,
+                              ticketId: ticket.id,
+                              idempotencyScope: "providers-flow",
+                              idempotencyKey: uuidv4(),
+                              kind: "text",
+                              text: bodyInner20.text,
+                              origin: "automation"
+                            });
                           });
                       } else {
                         let id_payment_overdue;
@@ -825,11 +942,15 @@ export const provider = async (
                           )
                         };
                         await sleep(2000);
-                        await sendBaileysSocketMessage(
-                          wbot,
-                          ticketJid,
-                          bodyInner21
-                        );
+                        await outboundMessageService.create({
+                          companyId: ticket.companyId,
+                          ticketId: ticket.id,
+                          idempotencyScope: "providers-flow",
+                          idempotencyKey: uuidv4(),
+                          kind: "text",
+                          text: bodyInner21.text,
+                          origin: "automation"
+                        });
                         const bodyBoleto = {
                           text: formatBody(
                             `Segue a segunda-via da sua Fatura!\n\n*Fatura:* ${invoiceNumber_overdue}\n*Nome:* ${nome}\n*Valor:* R$ ${value_overdue_corrigida}\n*Data Vencimento:* ${dueDate_overdue_corrigida}\n*Descrição:*\n${description_overdue}\n*Link:* ${invoiceUrl_overdue}`,
@@ -837,13 +958,17 @@ export const provider = async (
                           )
                         };
                         await sleep(2000);
-                        await sendBaileysSocketMessage(
-                          wbot,
-                          ticketJid,
-                          bodyBoleto
-                        );
-                        //GET DADOS PIX
-                        var optionsGetPIX = {
+                        await outboundMessageService.create({
+                          companyId: ticket.companyId,
+                          ticketId: ticket.id,
+                          idempotencyScope: "providers-flow",
+                          idempotencyKey: uuidv4(),
+                          kind: "text",
+                          text: bodyBoleto.text,
+                          origin: "automation"
+                        });
+                        // GET DADOS PIX
+                        const optionsGetPIX = {
                           method: "GET",
                           url: `https://www.asaas.com/api/v3/payments/${id_payment_overdue}/pixQrCode`,
                           headers: {
@@ -863,26 +988,34 @@ export const provider = async (
                             if (success === true) {
                               const bodyPixCP = {
                                 text: formatBody(
-                                  `Este é o *PIX Copia e Cola*`,
+                                  "Este é o *PIX Copia e Cola*",
                                   contact
                                 )
                               };
                               await sleep(2000);
-                              await sendBaileysSocketMessage(
-                                wbot,
-                                ticketJid,
-                                bodyPixCP
-                              );
+                              await outboundMessageService.create({
+                                companyId: ticket.companyId,
+                                ticketId: ticket.id,
+                                idempotencyScope: "providers-flow",
+                                idempotencyKey: uuidv4(),
+                                kind: "text",
+                                text: bodyPixCP.text,
+                                origin: "automation"
+                              });
                               const bodyPix = {
                                 text: formatBody(`${payload}`, contact)
                               };
                               await sleep(2000);
-                              await sendBaileysSocketMessage(
-                                wbot,
-                                ticketJid,
-                                bodyPix
-                              );
-                              let linkBoleto = `https://chart.googleapis.com/chart?cht=qr&chs=500x500&chld=L|0&chl=${payload}`;
+                              await outboundMessageService.create({
+                                companyId: ticket.companyId,
+                                ticketId: ticket.id,
+                                idempotencyScope: "providers-flow",
+                                idempotencyKey: uuidv4(),
+                                kind: "text",
+                                text: bodyPix.text,
+                                origin: "automation"
+                              });
+                              const linkBoleto = `https://chart.googleapis.com/chart?cht=qr&chs=500x500&chld=L|0&chl=${payload}`;
                               await sleep(2000);
                               await sendMessageImage(
                                 wbot,
@@ -891,7 +1024,7 @@ export const provider = async (
                                 linkBoleto,
                                 ""
                               );
-                              var optionsBoleto = {
+                              const optionsBoleto = {
                                 method: "GET",
                                 url: `https://www.asaas.com/api/v3/payments/${id_payment_overdue}/identificationField`,
                                 headers: {
@@ -918,34 +1051,46 @@ export const provider = async (
                                   ) {
                                     const bodycodigo = {
                                       text: formatBody(
-                                        `Este é o *Código de Barras*!`,
+                                        "Este é o *Código de Barras*!",
                                         contact
                                       )
                                     };
                                     await sleep(2000);
-                                    await sendBaileysSocketMessage(
-                                      wbot,
-                                      ticketJid,
-                                      bodycodigo
-                                    );
+                                    await outboundMessageService.create({
+                                      companyId: ticket.companyId,
+                                      ticketId: ticket.id,
+                                      idempotencyScope: "providers-flow",
+                                      idempotencyKey: uuidv4(),
+                                      kind: "text",
+                                      text: bodycodigo.text,
+                                      origin: "automation"
+                                    });
                                     await sleep(2000);
-                                    await sendBaileysSocketMessage(
-                                      wbot,
-                                      ticketJid,
-                                      bodycodigoBarras
-                                    );
+                                    await outboundMessageService.create({
+                                      companyId: ticket.companyId,
+                                      ticketId: ticket.id,
+                                      idempotencyScope: "providers-flow",
+                                      idempotencyKey: uuidv4(),
+                                      kind: "text",
+                                      text: bodycodigoBarras.text,
+                                      origin: "automation"
+                                    });
                                     const bodyfinaliza = {
                                       text: formatBody(
-                                        `Estamos finalizando esta conversa! Caso precise entre em contato conosco!`,
+                                        "Estamos finalizando esta conversa! Caso precise entre em contato conosco!",
                                         contact
                                       )
                                     };
                                     await sleep(2000);
-                                    await sendBaileysSocketMessage(
-                                      wbot,
-                                      ticketJid,
-                                      bodyfinaliza
-                                    );
+                                    await outboundMessageService.create({
+                                      companyId: ticket.companyId,
+                                      ticketId: ticket.id,
+                                      idempotencyScope: "providers-flow",
+                                      idempotencyKey: uuidv4(),
+                                      kind: "text",
+                                      text: bodyfinaliza.text,
+                                      origin: "automation"
+                                    });
                                     await UpdateTicketService({
                                       ticketData: { status: "closed" },
                                       ticketId: ticket.id,
@@ -954,16 +1099,20 @@ export const provider = async (
                                   } else {
                                     const bodyfinaliza = {
                                       text: formatBody(
-                                        `Estamos finalizando esta conversa! Caso precise entre em contato conosco!`,
+                                        "Estamos finalizando esta conversa! Caso precise entre em contato conosco!",
                                         contact
                                       )
                                     };
                                     await sleep(2000);
-                                    await sendBaileysSocketMessage(
-                                      wbot,
-                                      ticketJid,
-                                      bodyfinaliza
-                                    );
+                                    await outboundMessageService.create({
+                                      companyId: ticket.companyId,
+                                      ticketId: ticket.id,
+                                      idempotencyScope: "providers-flow",
+                                      idempotencyKey: uuidv4(),
+                                      kind: "text",
+                                      text: bodyfinaliza.text,
+                                      origin: "automation"
+                                    });
                                     await UpdateTicketService({
                                       ticketData: { status: "closed" },
                                       ticketId: ticket.id,
@@ -972,7 +1121,7 @@ export const provider = async (
                                   }
                                 })
                                 .catch(function (_errorUnused24) {
-                                  //console.error(error);
+                                  // console.error(error);
                                 });
                             }
                           })
@@ -982,32 +1131,40 @@ export const provider = async (
                     .catch(async function (_errorUnused26) {
                       const bodyInner27 = {
                         text: formatBody(
-                          `*Opss!!!!*\nOcorreu um erro! Digite *#* e fale com um *Atendente*!`,
+                          "*Opss!!!!*\nOcorreu um erro! Digite *#* e fale com um *Atendente*!",
                           contact
                         )
                       };
                       await sleep(2000);
-                      await sendBaileysSocketMessage(
-                        wbot,
-                        ticketJid,
-                        bodyInner27
-                      );
+                      await outboundMessageService.create({
+                        companyId: ticket.companyId,
+                        ticketId: ticket.id,
+                        idempotencyScope: "providers-flow",
+                        idempotencyKey: uuidv4(),
+                        kind: "text",
+                        text: bodyInner27.text,
+                        origin: "automation"
+                      });
                     });
                 }
               })
               .catch(async function (_errorUnused28) {
                 const bodyInner29 = {
                   text: formatBody(
-                    `*Opss!!!!*\nOcorreu um erro! Digite *#* e fale com um *Atendente*!`,
+                    "*Opss!!!!*\nOcorreu um erro! Digite *#* e fale com um *Atendente*!",
                     contact
                   )
                 };
                 await sleep(2000);
-                await sendBaileysSocketMessage(
-                  wbot,
-                  ticketJid,
-                  bodyInner29
-                );
+                await outboundMessageService.create({
+                  companyId: ticket.companyId,
+                  ticketId: ticket.id,
+                  idempotencyScope: "providers-flow",
+                  idempotencyKey: uuidv4(),
+                  kind: "text",
+                  text: bodyInner29.text,
+                  origin: "automation"
+                });
               });
           }
         }
@@ -1035,20 +1192,24 @@ export const provider = async (
               numberCPFCNPJ = numberCPFCNPJ.replace(/\.(\d{3})(\d)/, ".$1/$2");
               numberCPFCNPJ = numberCPFCNPJ.replace(/(\d{4})(\d)/, "$1-$2");
             }
-            //const token = await CheckSettingsHelper("OBTEM O TOKEN DO BANCO (dei insert na tabela settings)")
+            // const token = await CheckSettingsHelper("OBTEM O TOKEN DO BANCO (dei insert na tabela settings)")
             const body = {
               text: formatBody(
-                `Aguarde! Estamos consultando na base de dados!`,
+                "Aguarde! Estamos consultando na base de dados!",
                 contact
               )
             };
             try {
               await sleep(2000);
-              await sendBaileysSocketMessage(
-                wbot,
-                ticketJid,
-                body
-              );
+              await outboundMessageService.create({
+                companyId: ticket.companyId,
+                ticketId: ticket.id,
+                idempotencyScope: "providers-flow",
+                idempotencyKey: uuidv4(),
+                kind: "text",
+                text: body.text,
+                origin: "automation"
+              });
             } catch (error) {}
             var options = {
               method: "GET",
@@ -1075,31 +1236,39 @@ export const provider = async (
                   console.log("Error response", response.data.message);
                   const bodyInner30 = {
                     text: formatBody(
-                      `*Opss!!!!*\nOcorreu um erro! Digite *#* e fale com um *Atendente*!`,
+                      "*Opss!!!!*\nOcorreu um erro! Digite *#* e fale com um *Atendente*!",
                       contact
                     )
                   };
                   await sleep(2000);
-                  await sendBaileysSocketMessage(
-                    wbot,
-                    ticketJid,
-                    bodyInner30
-                  );
+                  await outboundMessageService.create({
+                    companyId: ticket.companyId,
+                    ticketId: ticket.id,
+                    idempotencyScope: "providers-flow",
+                    idempotencyKey: uuidv4(),
+                    kind: "text",
+                    text: bodyInner30.text,
+                    origin: "automation"
+                  });
                 }
                 if (response.data.total === 0) {
                   const bodyInner31 = {
                     text: formatBody(
-                      `Cadastro não localizado! *CPF/CNPJ* incorreto ou inválido. Tenta novamente!`,
+                      "Cadastro não localizado! *CPF/CNPJ* incorreto ou inválido. Tenta novamente!",
                       contact
                     )
                   };
                   try {
                     await sleep(2000);
-                    await sendBaileysSocketMessage(
-                      wbot,
-                      ticketJid,
-                      bodyInner31
-                    );
+                    await outboundMessageService.create({
+                      companyId: ticket.companyId,
+                      ticketId: ticket.id,
+                      idempotencyScope: "providers-flow",
+                      idempotencyKey: uuidv4(),
+                      kind: "text",
+                      text: bodyInner31.text,
+                      origin: "automation"
+                    });
                   } catch (error) {}
                 } else {
                   let nome;
@@ -1115,12 +1284,16 @@ export const provider = async (
                     )
                   };
                   await sleep(2000);
-                  await sendBaileysSocketMessage(
-                    wbot,
-                    ticketJid,
-                    bodyInner32
-                  );
-                  var boleto = {
+                  await outboundMessageService.create({
+                    companyId: ticket.companyId,
+                    ticketId: ticket.id,
+                    idempotencyScope: "providers-flow",
+                    idempotencyKey: uuidv4(),
+                    kind: "text",
+                    text: bodyInner32.text,
+                    origin: "automation"
+                  });
+                  const boleto = {
                     method: "GET",
                     url: `${urlixc}/webservice/v1/fn_areceber`,
                     headers: {
@@ -1163,13 +1336,13 @@ export const provider = async (
                         .reverse()
                         .join("/");
 
-                      //INFORMAÇÕES BOLETO
-                      //await sleep(2000)
-                      //await sendBaileysSocketMessage(wbot, ticketJid, bodyBoleto);
-                      //LINHA DIGITAVEL
+                      // INFORMAÇÕES BOLETO
+                      // await sleep(2000)
+                      // await sendBaileysSocketMessage(wbot, ticketJid, bodyBoleto);
+                      // LINHA DIGITAVEL
                       if (impresso !== "S") {
-                        //IMPRIME BOLETO PARA GERAR CODIGO BARRAS
-                        var boletopdf = {
+                        // IMPRIME BOLETO PARA GERAR CODIGO BARRAS
+                        const boletopdf = {
                           method: "GET",
                           url: `${urlixc}/webservice/v1/get_boleto`,
                           headers: {
@@ -1194,8 +1367,8 @@ export const provider = async (
                           });
                       }
 
-                      //SE TIVER PIX ENVIA O PIX
-                      var optionsPix = {
+                      // SE TIVER PIX ENVIA O PIX
+                      const optionsPix = {
                         method: "GET",
                         url: `${urlixc}/webservice/v1/get_pix`,
                         headers: {
@@ -1220,11 +1393,15 @@ export const provider = async (
                                 contact
                               )
                             };
-                            await sendBaileysSocketMessage(
-                              wbot,
-                              ticketJid,
-                              bodyBoletoPix
-                            );
+                            await outboundMessageService.create({
+                              companyId: ticket.companyId,
+                              ticketId: ticket.id,
+                              idempotencyScope: "providers-flow",
+                              idempotencyKey: uuidv4(),
+                              kind: "text",
+                              text: bodyBoletoPix.text,
+                              origin: "automation"
+                            });
                             const body_linhadigitavel = {
                               text: formatBody(
                                 "Este é o *Código de Barras*",
@@ -1232,20 +1409,28 @@ export const provider = async (
                               )
                             };
                             await sleep(2000);
-                            await sendBaileysSocketMessage(
-                              wbot,
-                              ticketJid,
-                              body_linhadigitavel
-                            );
+                            await outboundMessageService.create({
+                              companyId: ticket.companyId,
+                              ticketId: ticket.id,
+                              idempotencyScope: "providers-flow",
+                              idempotencyKey: uuidv4(),
+                              kind: "text",
+                              text: body_linhadigitavel.text,
+                              origin: "automation"
+                            });
                             await sleep(2000);
                             const body_linha_digitavel = {
                               text: formatBody(`${linha_digitavel}`, contact)
                             };
-                            await sendBaileysSocketMessage(
-                              wbot,
-                              ticketJid,
-                              body_linha_digitavel
-                            );
+                            await outboundMessageService.create({
+                              companyId: ticket.companyId,
+                              ticketId: ticket.id,
+                              idempotencyScope: "providers-flow",
+                              idempotencyKey: uuidv4(),
+                              kind: "text",
+                              text: body_linha_digitavel.text,
+                              origin: "automation"
+                            });
                             const body_pix = {
                               text: formatBody(
                                 "Este é o *PIX Copia e Cola*",
@@ -1253,30 +1438,42 @@ export const provider = async (
                               )
                             };
                             await sleep(2000);
-                            await sendBaileysSocketMessage(
-                              wbot,
-                              ticketJid,
-                              body_pix
-                            );
+                            await outboundMessageService.create({
+                              companyId: ticket.companyId,
+                              ticketId: ticket.id,
+                              idempotencyScope: "providers-flow",
+                              idempotencyKey: uuidv4(),
+                              kind: "text",
+                              text: body_pix.text,
+                              origin: "automation"
+                            });
                             await sleep(2000);
                             const body_pix_dig = {
                               text: formatBody(`${pix}`, contact)
                             };
-                            await sendBaileysSocketMessage(
-                              wbot,
-                              ticketJid,
-                              body_pix_dig
-                            );
+                            await outboundMessageService.create({
+                              companyId: ticket.companyId,
+                              ticketId: ticket.id,
+                              idempotencyScope: "providers-flow",
+                              idempotencyKey: uuidv4(),
+                              kind: "text",
+                              text: body_pix_dig.text,
+                              origin: "automation"
+                            });
                             const body_pixqr = {
                               text: formatBody("QR CODE do *PIX*", contact)
                             };
                             await sleep(2000);
-                            await sendBaileysSocketMessage(
-                              wbot,
-                              ticketJid,
-                              body_pixqr
-                            );
-                            let linkBoleto = `https://chart.googleapis.com/chart?cht=qr&chs=500x500&chld=L|0&chl=${pix}`;
+                            await outboundMessageService.create({
+                              companyId: ticket.companyId,
+                              ticketId: ticket.id,
+                              idempotencyScope: "providers-flow",
+                              idempotencyKey: uuidv4(),
+                              kind: "text",
+                              text: body_pixqr.text,
+                              origin: "automation"
+                            });
+                            const linkBoleto = `https://chart.googleapis.com/chart?cht=qr&chs=500x500&chld=L|0&chl=${pix}`;
                             await sleep(2000);
                             await sendMessageImage(
                               wbot,
@@ -1285,7 +1482,7 @@ export const provider = async (
                               linkBoleto,
                               ""
                             );
-                            ///VE SE ESTA BLOQUEADO PARA LIBERAR!
+                            /// VE SE ESTA BLOQUEADO PARA LIBERAR!
                             var optionscontrato = {
                               method: "POST",
                               url: `${urlixc}/webservice/v1/cliente_contrato`,
@@ -1321,25 +1518,33 @@ export const provider = async (
                                     )
                                   };
                                   await sleep(2000);
-                                  await sendBaileysSocketMessage(
-                                    wbot,
-                                    ticketJid,
-                                    bodyPdf
-                                  );
+                                  await outboundMessageService.create({
+                                    companyId: ticket.companyId,
+                                    ticketId: ticket.id,
+                                    idempotencyScope: "providers-flow",
+                                    idempotencyKey: uuidv4(),
+                                    kind: "text",
+                                    text: bodyPdf.text,
+                                    origin: "automation"
+                                  });
                                   const bodyqrcode = {
                                     text: formatBody(
-                                      `Estou liberando seu acesso. Por favor aguarde!`,
+                                      "Estou liberando seu acesso. Por favor aguarde!",
                                       contact
                                     )
                                   };
                                   await sleep(2000);
-                                  await sendBaileysSocketMessage(
-                                    wbot,
-                                    ticketJid,
-                                    bodyqrcode
-                                  );
-                                  //REALIZANDO O DESBLOQUEIO
-                                  var optionsdesbloqeuio = {
+                                  await outboundMessageService.create({
+                                    companyId: ticket.companyId,
+                                    ticketId: ticket.id,
+                                    idempotencyScope: "providers-flow",
+                                    idempotencyKey: uuidv4(),
+                                    kind: "text",
+                                    text: bodyqrcode.text,
+                                    origin: "automation"
+                                  });
+                                  // REALIZANDO O DESBLOQUEIO
+                                  const optionsdesbloqeuio = {
                                     method: "POST",
                                     url: `${urlixc}/webservice/v1/desbloqueio_confianca`,
                                     headers: {
@@ -1356,8 +1561,8 @@ export const provider = async (
                                       tipoInner38 = responseInner37.data?.tipo;
                                       mensagem = responseInner37.data?.mensagem;
                                       if (tipoInner38 === "sucesso") {
-                                        //DESCONECTANDO O CLIENTE PARA VOLTAR O ACESSO
-                                        var optionsRadius = {
+                                        // DESCONECTANDO O CLIENTE PARA VOLTAR O ACESSO
+                                        const optionsRadius = {
                                           method: "GET",
                                           url: `${urlixc}/webservice/v1/radusuarios`,
                                           headers: {
@@ -1391,34 +1596,55 @@ export const provider = async (
                                                 )
                                               };
                                               await sleep(2000);
-                                              await sendBaileysSocketMessage(
-                                                wbot,
-                                                ticketJid,
-                                                body_mensagem
+                                              await outboundMessageService.create(
+                                                {
+                                                  companyId: ticket.companyId,
+                                                  ticketId: ticket.id,
+                                                  idempotencyScope:
+                                                    "providers-flow",
+                                                  idempotencyKey: uuidv4(),
+                                                  kind: "text",
+                                                  text: body_mensagem.text,
+                                                  origin: "automation"
+                                                }
                                               );
                                               const bodyPdfInner41 = {
                                                 text: formatBody(
-                                                  `Fiz os procedimentos de liberação! Agora aguarde até 5 minutos e veja se sua conexão irá retornar! .\n\nCaso não tenha voltado, retorne o contato e fale com um atendente!`,
+                                                  "Fiz os procedimentos de liberação! Agora aguarde até 5 minutos e veja se sua conexão irá retornar! .\n\nCaso não tenha voltado, retorne o contato e fale com um atendente!",
                                                   contact
                                                 )
                                               };
                                               await sleep(2000);
-                                              await sendBaileysSocketMessage(
-                                                wbot,
-                                                ticketJid,
-                                                bodyPdfInner41
+                                              await outboundMessageService.create(
+                                                {
+                                                  companyId: ticket.companyId,
+                                                  ticketId: ticket.id,
+                                                  idempotencyScope:
+                                                    "providers-flow",
+                                                  idempotencyKey: uuidv4(),
+                                                  kind: "text",
+                                                  text: bodyPdfInner41.text,
+                                                  origin: "automation"
+                                                }
                                               );
                                               const bodyfinaliza = {
                                                 text: formatBody(
-                                                  `Estamos finalizando esta conversa! Caso precise entre em contato conosco!`,
+                                                  "Estamos finalizando esta conversa! Caso precise entre em contato conosco!",
                                                   contact
                                                 )
                                               };
                                               await sleep(2000);
-                                              await sendBaileysSocketMessage(
-                                                wbot,
-                                                ticketJid,
-                                                bodyfinaliza
+                                              await outboundMessageService.create(
+                                                {
+                                                  companyId: ticket.companyId,
+                                                  ticketId: ticket.id,
+                                                  idempotencyScope:
+                                                    "providers-flow",
+                                                  idempotencyKey: uuidv4(),
+                                                  kind: "text",
+                                                  text: bodyfinaliza.text,
+                                                  origin: "automation"
+                                                }
                                               );
                                               await UpdateTicketService({
                                                 ticketData: {
@@ -1432,13 +1658,13 @@ export const provider = async (
                                           .catch(function (error) {
                                             console.error(error);
                                           });
-                                        //FIM DA DESCONEXÃO
+                                        // FIM DA DESCONEXÃO
                                       } else {
-                                        var msgerrolbieracao =
+                                        const msgerrolbieracao =
                                           responseInner37.data.mensagem;
                                         const bodyerro = {
                                           text: formatBody(
-                                            `Ops! Ocorreu um erro e nao consegui desbloquear`,
+                                            "Ops! Ocorreu um erro e nao consegui desbloquear",
                                             contact
                                           )
                                         };
@@ -1449,58 +1675,78 @@ export const provider = async (
                                           )
                                         };
                                         await sleep(2000);
-                                        await sendBaileysSocketMessage(
-                                          wbot,
-                                          ticketJid,
-                                          bodyerro
-                                        );
+                                        await outboundMessageService.create({
+                                          companyId: ticket.companyId,
+                                          ticketId: ticket.id,
+                                          idempotencyScope: "providers-flow",
+                                          idempotencyKey: uuidv4(),
+                                          kind: "text",
+                                          text: bodyerro.text,
+                                          origin: "automation"
+                                        });
                                         await sleep(2000);
-                                        await sendBaileysSocketMessage(
-                                          wbot,
-                                          ticketJid,
-                                          msg_errolbieracao
-                                        );
+                                        await outboundMessageService.create({
+                                          companyId: ticket.companyId,
+                                          ticketId: ticket.id,
+                                          idempotencyScope: "providers-flow",
+                                          idempotencyKey: uuidv4(),
+                                          kind: "text",
+                                          text: msg_errolbieracao.text,
+                                          origin: "automation"
+                                        });
                                         const bodyerroatendent = {
                                           text: formatBody(
-                                            `Digite *#* para voltar o menu e fale com um atendente!`,
+                                            "Digite *#* para voltar o menu e fale com um atendente!",
                                             contact
                                           )
                                         };
                                         await sleep(2000);
-                                        await sendBaileysSocketMessage(
-                                          wbot,
-                                          ticketJid,
-                                          bodyerroatendent
-                                        );
+                                        await outboundMessageService.create({
+                                          companyId: ticket.companyId,
+                                          ticketId: ticket.id,
+                                          idempotencyScope: "providers-flow",
+                                          idempotencyKey: uuidv4(),
+                                          kind: "text",
+                                          text: bodyerroatendent.text,
+                                          origin: "automation"
+                                        });
                                       }
                                     })
                                     .catch(async function (_errorUnused42) {
                                       const bodyerro = {
                                         text: formatBody(
-                                          `Ops! Ocorreu um erro digite *#* e fale com um atendente!`,
+                                          "Ops! Ocorreu um erro digite *#* e fale com um atendente!",
                                           contact
                                         )
                                       };
                                       await sleep(2000);
-                                      await sendBaileysSocketMessage(
-                                        wbot,
-                                        ticketJid,
-                                        bodyerro
-                                      );
+                                      await outboundMessageService.create({
+                                        companyId: ticket.companyId,
+                                        ticketId: ticket.id,
+                                        idempotencyScope: "providers-flow",
+                                        idempotencyKey: uuidv4(),
+                                        kind: "text",
+                                        text: bodyerro.text,
+                                        origin: "automation"
+                                      });
                                     });
                                 } else {
                                   const bodyfinaliza = {
                                     text: formatBody(
-                                      `Estamos finalizando esta conversa! Caso precise entre em contato conosco!`,
+                                      "Estamos finalizando esta conversa! Caso precise entre em contato conosco!",
                                       contact
                                     )
                                   };
                                   await sleep(8000);
-                                  await sendBaileysSocketMessage(
-                                    wbot,
-                                    ticketJid,
-                                    bodyfinaliza
-                                  );
+                                  await outboundMessageService.create({
+                                    companyId: ticket.companyId,
+                                    ticketId: ticket.id,
+                                    idempotencyScope: "providers-flow",
+                                    idempotencyKey: uuidv4(),
+                                    kind: "text",
+                                    text: bodyfinaliza.text,
+                                    origin: "automation"
+                                  });
                                   await UpdateTicketService({
                                     ticketData: { status: "closed" },
                                     ticketId: ticket.id,
@@ -1513,18 +1759,22 @@ export const provider = async (
                               .catch(async function (_errorUnused43) {
                                 const bodyerro = {
                                   text: formatBody(
-                                    `Ops! Ocorreu um erro digite *#* e fale com um atendente!`,
+                                    "Ops! Ocorreu um erro digite *#* e fale com um atendente!",
                                     contact
                                   )
                                 };
                                 await sleep(2000);
-                                await sendBaileysSocketMessage(
-                                  wbot,
-                                  ticketJid,
-                                  bodyerro
-                                );
+                                await outboundMessageService.create({
+                                  companyId: ticket.companyId,
+                                  ticketId: ticket.id,
+                                  idempotencyScope: "providers-flow",
+                                  idempotencyKey: uuidv4(),
+                                  kind: "text",
+                                  text: bodyerro.text,
+                                  origin: "automation"
+                                });
                               });
-                            ///VE SE ESTA BLOQUEADO PARA LIBERAR!
+                            /// VE SE ESTA BLOQUEADO PARA LIBERAR!
                           } else {
                             const bodyBoleto = {
                               text: formatBody(
@@ -1533,33 +1783,45 @@ export const provider = async (
                               )
                             };
                             await sleep(2000);
-                            await sendBaileysSocketMessage(
-                              wbot,
-                              ticketJid,
-                              bodyBoleto
-                            );
+                            await outboundMessageService.create({
+                              companyId: ticket.companyId,
+                              ticketId: ticket.id,
+                              idempotencyScope: "providers-flow",
+                              idempotencyKey: uuidv4(),
+                              kind: "text",
+                              text: bodyBoleto.text,
+                              origin: "automation"
+                            });
                             const bodyInner44 = {
                               text: formatBody(
-                                `Este é o *Codigo de Barras*`,
+                                "Este é o *Codigo de Barras*",
                                 contact
                               )
                             };
                             await sleep(2000);
-                            await sendBaileysSocketMessage(
-                              wbot,
-                              ticketJid,
-                              bodyInner44
-                            );
+                            await outboundMessageService.create({
+                              companyId: ticket.companyId,
+                              ticketId: ticket.id,
+                              idempotencyScope: "providers-flow",
+                              idempotencyKey: uuidv4(),
+                              kind: "text",
+                              text: bodyInner44.text,
+                              origin: "automation"
+                            });
                             await sleep(2000);
                             const body_linha_digitavel = {
                               text: formatBody(`${linha_digitavel}`, contact)
                             };
-                            await sendBaileysSocketMessage(
-                              wbot,
-                              ticketJid,
-                              body_linha_digitavel
-                            );
-                            ///VE SE ESTA BLOQUEADO PARA LIBERAR!
+                            await outboundMessageService.create({
+                              companyId: ticket.companyId,
+                              ticketId: ticket.id,
+                              idempotencyScope: "providers-flow",
+                              idempotencyKey: uuidv4(),
+                              kind: "text",
+                              text: body_linha_digitavel.text,
+                              origin: "automation"
+                            });
+                            /// VE SE ESTA BLOQUEADO PARA LIBERAR!
                             var optionscontrato = {
                               method: "POST",
                               url: `${urlixc}/webservice/v1/cliente_contrato`,
@@ -1595,25 +1857,33 @@ export const provider = async (
                                     )
                                   };
                                   await sleep(2000);
-                                  await sendBaileysSocketMessage(
-                                    wbot,
-                                    ticketJid,
-                                    bodyPdf
-                                  );
+                                  await outboundMessageService.create({
+                                    companyId: ticket.companyId,
+                                    ticketId: ticket.id,
+                                    idempotencyScope: "providers-flow",
+                                    idempotencyKey: uuidv4(),
+                                    kind: "text",
+                                    text: bodyPdf.text,
+                                    origin: "automation"
+                                  });
                                   const bodyqrcode = {
                                     text: formatBody(
-                                      `Estou liberando seu acesso. Por favor aguarde!`,
+                                      "Estou liberando seu acesso. Por favor aguarde!",
                                       contact
                                     )
                                   };
                                   await sleep(2000);
-                                  await sendBaileysSocketMessage(
-                                    wbot,
-                                    ticketJid,
-                                    bodyqrcode
-                                  );
-                                  //REALIZANDO O DESBLOQUEIO
-                                  var optionsdesbloqeuio = {
+                                  await outboundMessageService.create({
+                                    companyId: ticket.companyId,
+                                    ticketId: ticket.id,
+                                    idempotencyScope: "providers-flow",
+                                    idempotencyKey: uuidv4(),
+                                    kind: "text",
+                                    text: bodyqrcode.text,
+                                    origin: "automation"
+                                  });
+                                  // REALIZANDO O DESBLOQUEIO
+                                  const optionsdesbloqeuio = {
                                     method: "POST",
                                     url: `${urlixc}/webservice/v1/desbloqueio_confianca`,
                                     headers: {
@@ -1630,8 +1900,8 @@ export const provider = async (
                                       tipoInner1 = responseInner46.data?.tipo;
                                       mensagem = responseInner46.data?.mensagem;
                                       if (tipoInner1 === "sucesso") {
-                                        //DESCONECTANDO O CLIENTE PARA VOLTAR O ACESSO
-                                        var optionsRadius = {
+                                        // DESCONECTANDO O CLIENTE PARA VOLTAR O ACESSO
+                                        const optionsRadius = {
                                           method: "GET",
                                           url: `${urlixc}/webservice/v1/radusuarios`,
                                           headers: {
@@ -1665,34 +1935,55 @@ export const provider = async (
                                             };
                                             if (tipoInner3 === "success") {
                                               await sleep(2000);
-                                              await sendBaileysSocketMessage(
-                                                wbot,
-                                                ticketJid,
-                                                body_mensagem
+                                              await outboundMessageService.create(
+                                                {
+                                                  companyId: ticket.companyId,
+                                                  ticketId: ticket.id,
+                                                  idempotencyScope:
+                                                    "providers-flow",
+                                                  idempotencyKey: uuidv4(),
+                                                  kind: "text",
+                                                  text: body_mensagem.text,
+                                                  origin: "automation"
+                                                }
                                               );
                                               const bodyPdfInner4 = {
                                                 text: formatBody(
-                                                  `Fiz os procedimentos de liberação! Agora aguarde até 5 minutos e veja se sua conexão irá retornar! .\n\nCaso não tenha voltado, retorne o contato e fale com um atendente!`,
+                                                  "Fiz os procedimentos de liberação! Agora aguarde até 5 minutos e veja se sua conexão irá retornar! .\n\nCaso não tenha voltado, retorne o contato e fale com um atendente!",
                                                   contact
                                                 )
                                               };
                                               await sleep(2000);
-                                              await sendBaileysSocketMessage(
-                                                wbot,
-                                                ticketJid,
-                                                bodyPdfInner4
+                                              await outboundMessageService.create(
+                                                {
+                                                  companyId: ticket.companyId,
+                                                  ticketId: ticket.id,
+                                                  idempotencyScope:
+                                                    "providers-flow",
+                                                  idempotencyKey: uuidv4(),
+                                                  kind: "text",
+                                                  text: bodyPdfInner4.text,
+                                                  origin: "automation"
+                                                }
                                               );
                                               const bodyfinaliza = {
                                                 text: formatBody(
-                                                  `Estamos finalizando esta conversa! Caso precise entre em contato conosco!`,
+                                                  "Estamos finalizando esta conversa! Caso precise entre em contato conosco!",
                                                   contact
                                                 )
                                               };
                                               await sleep(2000);
-                                              await sendBaileysSocketMessage(
-                                                wbot,
-                                                ticketJid,
-                                                bodyfinaliza
+                                              await outboundMessageService.create(
+                                                {
+                                                  companyId: ticket.companyId,
+                                                  ticketId: ticket.id,
+                                                  idempotencyScope:
+                                                    "providers-flow",
+                                                  idempotencyKey: uuidv4(),
+                                                  kind: "text",
+                                                  text: bodyfinaliza.text,
+                                                  origin: "automation"
+                                                }
                                               );
                                               await UpdateTicketService({
                                                 ticketData: {
@@ -1703,46 +1994,74 @@ export const provider = async (
                                               });
                                             } else {
                                               await sleep(2000);
-                                              await sendBaileysSocketMessage(
-                                                wbot,
-                                                ticketJid,
-                                                body_mensagem
+                                              await outboundMessageService.create(
+                                                {
+                                                  companyId: ticket.companyId,
+                                                  ticketId: ticket.id,
+                                                  idempotencyScope:
+                                                    "providers-flow",
+                                                  idempotencyKey: uuidv4(),
+                                                  kind: "text",
+                                                  text: body_mensagem.text,
+                                                  origin: "automation"
+                                                }
                                               );
                                               const bodyPdfInner5 = {
                                                 text: formatBody(
-                                                  `Vou precisar que você *retire* seu equipamento da tomada.\n\n*OBS: Somente retire da tomada.* \nAguarde 1 minuto e ligue novamente!`,
+                                                  "Vou precisar que você *retire* seu equipamento da tomada.\n\n*OBS: Somente retire da tomada.* \nAguarde 1 minuto e ligue novamente!",
                                                   contact
                                                 )
                                               };
                                               await sleep(2000);
-                                              await sendBaileysSocketMessage(
-                                                wbot,
-                                                ticketJid,
-                                                bodyPdfInner5
+                                              await outboundMessageService.create(
+                                                {
+                                                  companyId: ticket.companyId,
+                                                  ticketId: ticket.id,
+                                                  idempotencyScope:
+                                                    "providers-flow",
+                                                  idempotencyKey: uuidv4(),
+                                                  kind: "text",
+                                                  text: bodyPdfInner5.text,
+                                                  origin: "automation"
+                                                }
                                               );
                                               const bodyqrcodeInner6 = {
                                                 text: formatBody(
-                                                  `Veja se seu acesso voltou! Caso não tenha voltado retorne o contato e fale com um atendente!`,
+                                                  "Veja se seu acesso voltou! Caso não tenha voltado retorne o contato e fale com um atendente!",
                                                   contact
                                                 )
                                               };
                                               await sleep(2000);
-                                              await sendBaileysSocketMessage(
-                                                wbot,
-                                                ticketJid,
-                                                bodyqrcodeInner6
+                                              await outboundMessageService.create(
+                                                {
+                                                  companyId: ticket.companyId,
+                                                  ticketId: ticket.id,
+                                                  idempotencyScope:
+                                                    "providers-flow",
+                                                  idempotencyKey: uuidv4(),
+                                                  kind: "text",
+                                                  text: bodyqrcodeInner6.text,
+                                                  origin: "automation"
+                                                }
                                               );
                                               const bodyfinaliza = {
                                                 text: formatBody(
-                                                  `Estamos finalizando esta conversa! Caso precise entre em contato conosco!`,
+                                                  "Estamos finalizando esta conversa! Caso precise entre em contato conosco!",
                                                   contact
                                                 )
                                               };
                                               await sleep(2000);
-                                              await sendBaileysSocketMessage(
-                                                wbot,
-                                                ticketJid,
-                                                bodyfinaliza
+                                              await outboundMessageService.create(
+                                                {
+                                                  companyId: ticket.companyId,
+                                                  ticketId: ticket.id,
+                                                  idempotencyScope:
+                                                    "providers-flow",
+                                                  idempotencyKey: uuidv4(),
+                                                  kind: "text",
+                                                  text: bodyfinaliza.text,
+                                                  origin: "automation"
+                                                }
                                               );
                                               await UpdateTicketService({
                                                 ticketData: {
@@ -1756,49 +2075,61 @@ export const provider = async (
                                           .catch(function (error) {
                                             console.error(error);
                                           });
-                                        //FIM DA DESCONEXÃO
+                                        // FIM DA DESCONEXÃO
                                       } else {
                                         const bodyerro = {
                                           text: formatBody(
-                                            `Ops! Ocorreu um erro e nao consegui desbloquear! Digite *#* e fale com um atendente!`,
+                                            "Ops! Ocorreu um erro e nao consegui desbloquear! Digite *#* e fale com um atendente!",
                                             contact
                                           )
                                         };
                                         await sleep(2000);
-                                        await sendBaileysSocketMessage(
-                                          wbot,
-                                          ticketJid,
-                                          bodyerro
-                                        );
+                                        await outboundMessageService.create({
+                                          companyId: ticket.companyId,
+                                          ticketId: ticket.id,
+                                          idempotencyScope: "providers-flow",
+                                          idempotencyKey: uuidv4(),
+                                          kind: "text",
+                                          text: bodyerro.text,
+                                          origin: "automation"
+                                        });
                                       }
                                     })
                                     .catch(async function (_errorUnused7) {
                                       const bodyerro = {
                                         text: formatBody(
-                                          `Ops! Ocorreu um erro digite *#* e fale com um atendente!`,
+                                          "Ops! Ocorreu um erro digite *#* e fale com um atendente!",
                                           contact
                                         )
                                       };
                                       await sleep(2000);
-                                      await sendBaileysSocketMessage(
-                                        wbot,
-                                        ticketJid,
-                                        bodyerro
-                                      );
+                                      await outboundMessageService.create({
+                                        companyId: ticket.companyId,
+                                        ticketId: ticket.id,
+                                        idempotencyScope: "providers-flow",
+                                        idempotencyKey: uuidv4(),
+                                        kind: "text",
+                                        text: bodyerro.text,
+                                        origin: "automation"
+                                      });
                                     });
                                 } else {
                                   const bodyfinaliza = {
                                     text: formatBody(
-                                      `Estamos finalizando esta conversa! Caso precise entre em contato conosco!`,
+                                      "Estamos finalizando esta conversa! Caso precise entre em contato conosco!",
                                       contact
                                     )
                                   };
                                   await sleep(2000);
-                                  await sendBaileysSocketMessage(
-                                    wbot,
-                                    ticketJid,
-                                    bodyfinaliza
-                                  );
+                                  await outboundMessageService.create({
+                                    companyId: ticket.companyId,
+                                    ticketId: ticket.id,
+                                    idempotencyScope: "providers-flow",
+                                    idempotencyKey: uuidv4(),
+                                    kind: "text",
+                                    text: bodyfinaliza.text,
+                                    origin: "automation"
+                                  });
                                   await UpdateTicketService({
                                     ticketData: { status: "closed" },
                                     ticketId: ticket.id,
@@ -1811,24 +2142,28 @@ export const provider = async (
                               .catch(async function (_errorUnused8) {
                                 const bodyerro = {
                                   text: formatBody(
-                                    `Ops! Ocorreu um erro digite *#* e fale com um atendente!`,
+                                    "Ops! Ocorreu um erro digite *#* e fale com um atendente!",
                                     contact
                                   )
                                 };
                                 await sleep(2000);
-                                await sendBaileysSocketMessage(
-                                  wbot,
-                                  ticketJid,
-                                  bodyerro
-                                );
+                                await outboundMessageService.create({
+                                  companyId: ticket.companyId,
+                                  ticketId: ticket.id,
+                                  idempotencyScope: "providers-flow",
+                                  idempotencyKey: uuidv4(),
+                                  kind: "text",
+                                  text: bodyerro.text,
+                                  origin: "automation"
+                                });
                               });
-                            ///VE SE ESTA BLOQUEADO PARA LIBERAR!
+                            /// VE SE ESTA BLOQUEADO PARA LIBERAR!
                           }
                         })
                         .catch(function (error) {
                           console.error(error);
                         });
-                      //FIM DO PÌX
+                      // FIM DO PÌX
                     })
                     .catch(function (error) {
                       console.error(error);
@@ -1838,30 +2173,38 @@ export const provider = async (
               .catch(async function (_errorUnused9) {
                 const bodyInner10 = {
                   text: formatBody(
-                    `*Opss!!!!*\nOcorreu um erro! Digite *#* e fale com um *Atendente*!`,
+                    "*Opss!!!!*\nOcorreu um erro! Digite *#* e fale com um *Atendente*!",
                     contact
                   )
                 };
                 await sleep(2000);
-                await sendBaileysSocketMessage(
-                  wbot,
-                  ticketJid,
-                  bodyInner10
-                );
+                await outboundMessageService.create({
+                  companyId: ticket.companyId,
+                  ticketId: ticket.id,
+                  idempotencyScope: "providers-flow",
+                  idempotencyKey: uuidv4(),
+                  kind: "text",
+                  text: bodyInner10.text,
+                  origin: "automation"
+                });
               });
           } else {
             const body = {
               text: formatBody(
-                `Este CPF/CNPJ não é válido!\n\nPor favor tente novamente!\nOu digite *#* para voltar ao *Menu Anterior*`,
+                "Este CPF/CNPJ não é válido!\n\nPor favor tente novamente!\nOu digite *#* para voltar ao *Menu Anterior*",
                 contact
               )
             };
             await sleep(2000);
-            await sendBaileysSocketMessage(
-              wbot,
-              ticketJid,
-              body
-            );
+            await outboundMessageService.create({
+              companyId: ticket.companyId,
+              ticketId: ticket.id,
+              idempotencyScope: "providers-flow",
+              idempotencyKey: uuidv4(),
+              kind: "text",
+              text: body.text,
+              origin: "automation"
+            });
           }
         }
       }
@@ -1917,7 +2260,7 @@ export const provider = async (
       }
     });
 
-    //VARS
+    // VARS
     const ixckeybase64 = btoa(ixcapikey.value);
     const urlixc = urlixcdb.value;
 
@@ -1944,20 +2287,24 @@ export const provider = async (
               numberCPFCNPJ = numberCPFCNPJ.replace(/\.(\d{3})(\d)/, ".$1/$2");
               numberCPFCNPJ = numberCPFCNPJ.replace(/(\d{4})(\d)/, "$1-$2");
             }
-            //const token = await CheckSettingsHelper("OBTEM O TOKEN DO BANCO (dei insert na tabela settings)")
+            // const token = await CheckSettingsHelper("OBTEM O TOKEN DO BANCO (dei insert na tabela settings)")
             const body = {
               text: formatBody(
-                `Aguarde! Estamos consultando na base de dados!`,
+                "Aguarde! Estamos consultando na base de dados!",
                 contact
               )
             };
             try {
               await sleep(2000);
-              await sendBaileysSocketMessage(
-                wbot,
-                ticketJid,
-                body
-              );
+              await outboundMessageService.create({
+                companyId: ticket.companyId,
+                ticketId: ticket.id,
+                idempotencyScope: "providers-flow",
+                idempotencyKey: uuidv4(),
+                kind: "text",
+                text: body.text,
+                origin: "automation"
+              });
             } catch (error) {}
             var options = {
               method: "GET",
@@ -1983,31 +2330,39 @@ export const provider = async (
                 if (response.data.type === "error") {
                   const bodyInner11 = {
                     text: formatBody(
-                      `*Opss!!!!*\nOcorreu um erro! Digite *#* e fale com um *Atendente*!`,
+                      "*Opss!!!!*\nOcorreu um erro! Digite *#* e fale com um *Atendente*!",
                       contact
                     )
                   };
                   await sleep(2000);
-                  await sendBaileysSocketMessage(
-                    wbot,
-                    ticketJid,
-                    bodyInner11
-                  );
+                  await outboundMessageService.create({
+                    companyId: ticket.companyId,
+                    ticketId: ticket.id,
+                    idempotencyScope: "providers-flow",
+                    idempotencyKey: uuidv4(),
+                    kind: "text",
+                    text: bodyInner11.text,
+                    origin: "automation"
+                  });
                 }
                 if (response.data.total === 0) {
                   const bodyInner12 = {
                     text: formatBody(
-                      `Cadastro não localizado! *CPF/CNPJ* incorreto ou inválido. Tenta novamente!`,
+                      "Cadastro não localizado! *CPF/CNPJ* incorreto ou inválido. Tenta novamente!",
                       contact
                     )
                   };
                   try {
                     await sleep(2000);
-                    await sendBaileysSocketMessage(
-                      wbot,
-                      ticketJid,
-                      bodyInner12
-                    );
+                    await outboundMessageService.create({
+                      companyId: ticket.companyId,
+                      ticketId: ticket.id,
+                      idempotencyScope: "providers-flow",
+                      idempotencyKey: uuidv4(),
+                      kind: "text",
+                      text: bodyInner12.text,
+                      origin: "automation"
+                    });
                   } catch (error) {}
                 } else {
                   let nome;
@@ -2023,13 +2378,17 @@ export const provider = async (
                     )
                   };
                   await sleep(2000);
-                  await sendBaileysSocketMessage(
-                    wbot,
-                    ticketJid,
-                    bodyInner13
-                  );
-                  ///VE SE ESTA BLOQUEADO PARA LIBERAR!
-                  var optionscontrato = {
+                  await outboundMessageService.create({
+                    companyId: ticket.companyId,
+                    ticketId: ticket.id,
+                    idempotencyScope: "providers-flow",
+                    idempotencyKey: uuidv4(),
+                    kind: "text",
+                    text: bodyInner13.text,
+                    origin: "automation"
+                  });
+                  /// VE SE ESTA BLOQUEADO PARA LIBERAR!
+                  const optionscontrato = {
                     method: "POST",
                     url: `${urlixc}/webservice/v1/cliente_contrato`,
                     headers: {
@@ -2062,25 +2421,33 @@ export const provider = async (
                           )
                         };
                         await sleep(2000);
-                        await sendBaileysSocketMessage(
-                          wbot,
-                          ticketJid,
-                          bodyPdf
-                        );
+                        await outboundMessageService.create({
+                          companyId: ticket.companyId,
+                          ticketId: ticket.id,
+                          idempotencyScope: "providers-flow",
+                          idempotencyKey: uuidv4(),
+                          kind: "text",
+                          text: bodyPdf.text,
+                          origin: "automation"
+                        });
                         const bodyqrcode = {
                           text: formatBody(
-                            `Estou liberando seu acesso. Por favor aguarde!`,
+                            "Estou liberando seu acesso. Por favor aguarde!",
                             contact
                           )
                         };
                         await sleep(2000);
-                        await sendBaileysSocketMessage(
-                          wbot,
-                          ticketJid,
-                          bodyqrcode
-                        );
-                        //REALIZANDO O DESBLOQUEIO
-                        var optionsdesbloqeuio = {
+                        await outboundMessageService.create({
+                          companyId: ticket.companyId,
+                          ticketId: ticket.id,
+                          idempotencyScope: "providers-flow",
+                          idempotencyKey: uuidv4(),
+                          kind: "text",
+                          text: bodyqrcode.text,
+                          origin: "automation"
+                        });
+                        // REALIZANDO O DESBLOQUEIO
+                        const optionsdesbloqeuio = {
                           method: "POST",
                           url: `${urlixc}/webservice/v1/desbloqueio_confianca`,
                           headers: {
@@ -2100,8 +2467,8 @@ export const provider = async (
                               text: formatBody(`${mensagem}`, contact)
                             };
                             if (tipo === "sucesso") {
-                              //DESCONECTANDO O CLIENTE PARA VOLTAR O ACESSO
-                              var optionsRadius = {
+                              // DESCONECTANDO O CLIENTE PARA VOLTAR O ACESSO
+                              const optionsRadius = {
                                 method: "GET",
                                 url: `${urlixc}/webservice/v1/radusuarios`,
                                 headers: {
@@ -2127,35 +2494,47 @@ export const provider = async (
 
                                   if (tipoInner17 === "success") {
                                     await sleep(2000);
-                                    await sendBaileysSocketMessage(
-                                      wbot,
-                                      ticketJid,
-                                      body_mensagem
-                                    );
+                                    await outboundMessageService.create({
+                                      companyId: ticket.companyId,
+                                      ticketId: ticket.id,
+                                      idempotencyScope: "providers-flow",
+                                      idempotencyKey: uuidv4(),
+                                      kind: "text",
+                                      text: body_mensagem.text,
+                                      origin: "automation"
+                                    });
                                     const bodyPdfInner18 = {
                                       text: formatBody(
-                                        `Fiz os procedimentos de liberação! Agora aguarde até 5 minutos e veja se sua conexão irá retornar! .\n\nCaso não tenha voltado, retorne o contato e fale com um atendente!`,
+                                        "Fiz os procedimentos de liberação! Agora aguarde até 5 minutos e veja se sua conexão irá retornar! .\n\nCaso não tenha voltado, retorne o contato e fale com um atendente!",
                                         contact
                                       )
                                     };
                                     await sleep(2000);
-                                    await sendBaileysSocketMessage(
-                                      wbot,
-                                      ticketJid,
-                                      bodyPdfInner18
-                                    );
+                                    await outboundMessageService.create({
+                                      companyId: ticket.companyId,
+                                      ticketId: ticket.id,
+                                      idempotencyScope: "providers-flow",
+                                      idempotencyKey: uuidv4(),
+                                      kind: "text",
+                                      text: bodyPdfInner18.text,
+                                      origin: "automation"
+                                    });
                                     const bodyfinaliza = {
                                       text: formatBody(
-                                        `Estamos finalizando esta conversa! Caso precise entre em contato conosco!`,
+                                        "Estamos finalizando esta conversa! Caso precise entre em contato conosco!",
                                         contact
                                       )
                                     };
                                     await sleep(2000);
-                                    await sendBaileysSocketMessage(
-                                      wbot,
-                                      ticketJid,
-                                      bodyfinaliza
-                                    );
+                                    await outboundMessageService.create({
+                                      companyId: ticket.companyId,
+                                      ticketId: ticket.id,
+                                      idempotencyScope: "providers-flow",
+                                      idempotencyKey: uuidv4(),
+                                      kind: "text",
+                                      text: bodyfinaliza.text,
+                                      origin: "automation"
+                                    });
                                     await UpdateTicketService({
                                       ticketData: { status: "closed" },
                                       ticketId: ticket.id,
@@ -2163,47 +2542,63 @@ export const provider = async (
                                     });
                                   } else {
                                     await sleep(2000);
-                                    await sendBaileysSocketMessage(
-                                      wbot,
-                                      ticketJid,
-                                      body_mensagem
-                                    );
+                                    await outboundMessageService.create({
+                                      companyId: ticket.companyId,
+                                      ticketId: ticket.id,
+                                      idempotencyScope: "providers-flow",
+                                      idempotencyKey: uuidv4(),
+                                      kind: "text",
+                                      text: body_mensagem.text,
+                                      origin: "automation"
+                                    });
                                     const bodyPdfInner19 = {
                                       text: formatBody(
-                                        `Vou precisar que você *retire* seu equipamento da tomada.\n\n*OBS: Somente retire da tomada.* \nAguarde 1 minuto e ligue novamente!`,
+                                        "Vou precisar que você *retire* seu equipamento da tomada.\n\n*OBS: Somente retire da tomada.* \nAguarde 1 minuto e ligue novamente!",
                                         contact
                                       )
                                     };
                                     await sleep(2000);
-                                    await sendBaileysSocketMessage(
-                                      wbot,
-                                      ticketJid,
-                                      bodyPdfInner19
-                                    );
+                                    await outboundMessageService.create({
+                                      companyId: ticket.companyId,
+                                      ticketId: ticket.id,
+                                      idempotencyScope: "providers-flow",
+                                      idempotencyKey: uuidv4(),
+                                      kind: "text",
+                                      text: bodyPdfInner19.text,
+                                      origin: "automation"
+                                    });
                                     const bodyqrcodeInner20 = {
                                       text: formatBody(
-                                        `Veja se seu acesso voltou! Caso não tenha voltado retorne o contato e fale com um atendente!`,
+                                        "Veja se seu acesso voltou! Caso não tenha voltado retorne o contato e fale com um atendente!",
                                         contact
                                       )
                                     };
                                     await sleep(2000);
-                                    await sendBaileysSocketMessage(
-                                      wbot,
-                                      ticketJid,
-                                      bodyqrcodeInner20
-                                    );
+                                    await outboundMessageService.create({
+                                      companyId: ticket.companyId,
+                                      ticketId: ticket.id,
+                                      idempotencyScope: "providers-flow",
+                                      idempotencyKey: uuidv4(),
+                                      kind: "text",
+                                      text: bodyqrcodeInner20.text,
+                                      origin: "automation"
+                                    });
                                     const bodyfinaliza = {
                                       text: formatBody(
-                                        `Estamos finalizando esta conversa! Caso precise entre em contato conosco!`,
+                                        "Estamos finalizando esta conversa! Caso precise entre em contato conosco!",
                                         contact
                                       )
                                     };
                                     await sleep(2000);
-                                    await sendBaileysSocketMessage(
-                                      wbot,
-                                      ticketJid,
-                                      bodyfinaliza
-                                    );
+                                    await outboundMessageService.create({
+                                      companyId: ticket.companyId,
+                                      ticketId: ticket.id,
+                                      idempotencyScope: "providers-flow",
+                                      idempotencyKey: uuidv4(),
+                                      kind: "text",
+                                      text: bodyfinaliza.text,
+                                      origin: "automation"
+                                    });
                                     await UpdateTicketService({
                                       ticketData: { status: "closed" },
                                       ticketId: ticket.id,
@@ -2214,38 +2609,50 @@ export const provider = async (
                                 .catch(function (error) {
                                   console.error(error);
                                 });
-                              //FIM DA DESCONEXÃO
+                              // FIM DA DESCONEXÃO
                             } else {
                               const bodyerro = {
                                 text: formatBody(
-                                  `Ops! Ocorreu um erro e nao consegui desbloquear!`,
+                                  "Ops! Ocorreu um erro e nao consegui desbloquear!",
                                   contact
                                 )
                               };
                               await sleep(2000);
-                              await sendBaileysSocketMessage(
-                                wbot,
-                                ticketJid,
-                                bodyerro
-                              );
+                              await outboundMessageService.create({
+                                companyId: ticket.companyId,
+                                ticketId: ticket.id,
+                                idempotencyScope: "providers-flow",
+                                idempotencyKey: uuidv4(),
+                                kind: "text",
+                                text: bodyerro.text,
+                                origin: "automation"
+                              });
                               await sleep(2000);
-                              await sendBaileysSocketMessage(
-                                wbot,
-                                ticketJid,
-                                body_mensagem
-                              );
+                              await outboundMessageService.create({
+                                companyId: ticket.companyId,
+                                ticketId: ticket.id,
+                                idempotencyScope: "providers-flow",
+                                idempotencyKey: uuidv4(),
+                                kind: "text",
+                                text: body_mensagem.text,
+                                origin: "automation"
+                              });
                               const bodyerroatendente = {
                                 text: formatBody(
-                                  `Digite *#* e fale com um atendente!`,
+                                  "Digite *#* e fale com um atendente!",
                                   contact
                                 )
                               };
                               await sleep(2000);
-                              await sendBaileysSocketMessage(
-                                wbot,
-                                ticketJid,
-                                bodyerroatendente
-                              );
+                              await outboundMessageService.create({
+                                companyId: ticket.companyId,
+                                ticketId: ticket.id,
+                                idempotencyScope: "providers-flow",
+                                idempotencyKey: uuidv4(),
+                                kind: "text",
+                                text: bodyerroatendente.text,
+                                origin: "automation"
+                              });
                             } /* else {
                                  const bodyerro = {
                   text: formatBody(`Ops! Ocorreu um erro e nao consegui desbloquear! Digite *#* e fale com um atendente!`
@@ -2256,42 +2663,54 @@ export const provider = async (
                           .catch(async function (_errorUnused21) {
                             const bodyerro = {
                               text: formatBody(
-                                `Ops! Ocorreu um erro digite *#* e fale com um atendente!`,
+                                "Ops! Ocorreu um erro digite *#* e fale com um atendente!",
                                 contact
                               )
                             };
                             await sleep(2000);
-                            await sendBaileysSocketMessage(
-                              wbot,
-                              ticketJid,
-                              bodyerro
-                            );
+                            await outboundMessageService.create({
+                              companyId: ticket.companyId,
+                              ticketId: ticket.id,
+                              idempotencyScope: "providers-flow",
+                              idempotencyKey: uuidv4(),
+                              kind: "text",
+                              text: bodyerro.text,
+                              origin: "automation"
+                            });
                           });
                       } else {
                         const bodysembloqueio = {
                           text: formatBody(
-                            `Sua Conexão não está bloqueada! Caso esteja com dificuldades de navegação, retorne o contato e fale com um atendente!`,
+                            "Sua Conexão não está bloqueada! Caso esteja com dificuldades de navegação, retorne o contato e fale com um atendente!",
                             contact
                           )
                         };
                         await sleep(2000);
-                        await sendBaileysSocketMessage(
-                          wbot,
-                          ticketJid,
-                          bodysembloqueio
-                        );
+                        await outboundMessageService.create({
+                          companyId: ticket.companyId,
+                          ticketId: ticket.id,
+                          idempotencyScope: "providers-flow",
+                          idempotencyKey: uuidv4(),
+                          kind: "text",
+                          text: bodysembloqueio.text,
+                          origin: "automation"
+                        });
                         const bodyfinaliza = {
                           text: formatBody(
-                            `Estamos finalizando esta conversa! Caso precise entre em contato conosco!`,
+                            "Estamos finalizando esta conversa! Caso precise entre em contato conosco!",
                             contact
                           )
                         };
                         await sleep(2000);
-                        await sendBaileysSocketMessage(
-                          wbot,
-                          ticketJid,
-                          bodyfinaliza
-                        );
+                        await outboundMessageService.create({
+                          companyId: ticket.companyId,
+                          ticketId: ticket.id,
+                          idempotencyScope: "providers-flow",
+                          idempotencyKey: uuidv4(),
+                          kind: "text",
+                          text: bodyfinaliza.text,
+                          origin: "automation"
+                        });
                         await UpdateTicketService({
                           ticketData: { status: "closed" },
                           ticketId: ticket.id,
@@ -2304,46 +2723,58 @@ export const provider = async (
                     .catch(async function (_errorUnused22) {
                       const bodyerro = {
                         text: formatBody(
-                          `Ops! Ocorreu um erro digite *#* e fale com um atendente!`,
+                          "Ops! Ocorreu um erro digite *#* e fale com um atendente!",
                           contact
                         )
                       };
                       await sleep(2000);
-                      await sendBaileysSocketMessage(
-                        wbot,
-                        ticketJid,
-                        bodyerro
-                      );
+                      await outboundMessageService.create({
+                        companyId: ticket.companyId,
+                        ticketId: ticket.id,
+                        idempotencyScope: "providers-flow",
+                        idempotencyKey: uuidv4(),
+                        kind: "text",
+                        text: bodyerro.text,
+                        origin: "automation"
+                      });
                     });
                 }
               })
               .catch(async function (_errorUnused23) {
                 const bodyInner24 = {
                   text: formatBody(
-                    `*Opss!!!!*\nOcorreu um erro! Digite *#* e fale com um *Atendente*!`,
+                    "*Opss!!!!*\nOcorreu um erro! Digite *#* e fale com um *Atendente*!",
                     contact
                   )
                 };
                 await sleep(2000);
-                await sendBaileysSocketMessage(
-                  wbot,
-                  ticketJid,
-                  bodyInner24
-                );
+                await outboundMessageService.create({
+                  companyId: ticket.companyId,
+                  ticketId: ticket.id,
+                  idempotencyScope: "providers-flow",
+                  idempotencyKey: uuidv4(),
+                  kind: "text",
+                  text: bodyInner24.text,
+                  origin: "automation"
+                });
               });
           } else {
             const body = {
               text: formatBody(
-                `Este CPF/CNPJ não é válido!\n\nPor favor tente novamente!\nOu digite *#* para voltar ao *Menu Anterior*`,
+                "Este CPF/CNPJ não é válido!\n\nPor favor tente novamente!\nOu digite *#* para voltar ao *Menu Anterior*",
                 contact
               )
             };
             await sleep(2000);
-            await sendBaileysSocketMessage(
-              wbot,
-              ticketJid,
-              body
-            );
+            await outboundMessageService.create({
+              companyId: ticket.companyId,
+              ticketId: ticket.id,
+              idempotencyScope: "providers-flow",
+              idempotencyKey: uuidv4(),
+              kind: "text",
+              text: body.text,
+              origin: "automation"
+            });
           }
         }
       }

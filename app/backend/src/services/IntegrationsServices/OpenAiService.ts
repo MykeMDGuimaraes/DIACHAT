@@ -1,12 +1,10 @@
-import { sendBaileysSocketMessage } from "../../messaging/public/baileys";
+import { v4 as uuidv4 } from "uuid";
 import { proto, WASocket } from "../../messaging/public/baileys";
 import {
   convertTextToSpeechAndSaveToFile,
   getBodyMessage,
   keepOnlySpecifiedChars,
-  transferQueue,
-  verifyMediaMessage,
-  verifyMessage
+  transferQueue
 } from "../WbotServices/wbotMessageListener";
 
 import fs from "fs";
@@ -17,7 +15,13 @@ import Ticket from "../../models/Ticket";
 import Contact from "../../models/Contact";
 import Message from "../../models/Message";
 import TicketTraking from "../../models/TicketTraking";
+import {
+  OutboundMessageService,
+  stageMessagingMedia
+} from "../../messaging/public/outbound";
 import { logger } from "../../utils/logger";
+
+const outboundMessageService = new OutboundMessageService();
 
 type Session = WASocket & {
   id?: number;
@@ -62,7 +66,7 @@ export const handleOpenAi = async (
   ticket: Ticket,
   contact: Contact,
   mediaSent: Message | undefined,
-  ticketTraking: TicketTraking
+  _ticketTraking: TicketTraking
 ): Promise<void> => {
   // REGRA PARA DESABILITAR O BOT PARA ALGUM CONTATO
   if (contact.disableBot) {
@@ -161,14 +165,15 @@ export const handleOpenAi = async (
       console.log(173, "OpenAiService");
       logger.info(chat.data.choices[0].message);
       logger.info(response);
-      const sentMessage = await sendBaileysSocketMessage(
-        wbot,
-        msg.key.remoteJid!,
-        {
-          text: `\u200e ${response!}`
-        }
-      );
-      await verifyMessage(sentMessage!, ticket, contact);
+      await outboundMessageService.create({
+        companyId: ticket.companyId,
+        ticketId: ticket.id,
+        idempotencyScope: "prompt-openai-text",
+        idempotencyKey: uuidv4(),
+        kind: "text",
+        text: `\u200e ${response!}`,
+        origin: "automation"
+      });
     } else {
       console.log(179, "OpenAiService");
       const fileNameWithOutExtension = `${ticket.id}_${Date.now()}`;
@@ -182,24 +187,19 @@ export const handleOpenAi = async (
       ).then(async () => {
         try {
           console.log(194, "OpenAiService");
-          const sendMessage = await sendBaileysSocketMessage(
-            wbot,
-            msg.key.remoteJid!,
-            {
-              audio: { url: `${publicFolder}/${fileNameWithOutExtension}.mp3` },
-              mimetype: "audio/mpeg",
-              ptt: true
-            }
+          const localPath = await stageMessagingMedia(
+            `${publicFolder}/${fileNameWithOutExtension}.mp3`,
+            `${fileNameWithOutExtension}.mp3`
           );
-          await verifyMediaMessage(
-            sendMessage!,
-            ticket,
-            contact,
-            ticketTraking,
-            false,
-            false,
-            wbot
-          );
+          await outboundMessageService.create({
+            companyId: ticket.companyId,
+            ticketId: ticket.id,
+            idempotencyScope: "prompt-openai-tts",
+            idempotencyKey: uuidv4(),
+            kind: "audio",
+            payload: { localPath, mimeType: "audio/mpeg", ptt: true },
+            origin: "automation"
+          });
           deleteFileSync(`${publicFolder}/${fileNameWithOutExtension}.mp3`);
           deleteFileSync(`${publicFolder}/${fileNameWithOutExtension}.wav`);
         } catch (error) {
@@ -254,14 +254,15 @@ export const handleOpenAi = async (
         .trim();
     }
     if (openAiSettings.voice === "texto") {
-      const sentMessage = await sendBaileysSocketMessage(
-        wbot,
-        msg.key.remoteJid!,
-        {
-          text: `\u200e ${response!}`
-        }
-      );
-      await verifyMessage(sentMessage!, ticket, contact);
+      await outboundMessageService.create({
+        companyId: ticket.companyId,
+        ticketId: ticket.id,
+        idempotencyScope: "prompt-openai-text",
+        idempotencyKey: uuidv4(),
+        kind: "text",
+        text: `\u200e ${response!}`,
+        origin: "automation"
+      });
     } else {
       const fileNameWithOutExtension = `${ticket.id}_${Date.now()}`;
       convertTextToSpeechAndSaveToFile(
@@ -273,24 +274,19 @@ export const handleOpenAi = async (
         "mp3"
       ).then(async () => {
         try {
-          const sendMessage = await sendBaileysSocketMessage(
-            wbot,
-            msg.key.remoteJid!,
-            {
-              audio: { url: `${publicFolder}/${fileNameWithOutExtension}.mp3` },
-              mimetype: "audio/mpeg",
-              ptt: true
-            }
+          const localPath = await stageMessagingMedia(
+            `${publicFolder}/${fileNameWithOutExtension}.mp3`,
+            `${fileNameWithOutExtension}.mp3`
           );
-          await verifyMediaMessage(
-            sendMessage!,
-            ticket,
-            contact,
-            ticketTraking,
-            false,
-            false,
-            wbot
-          );
+          await outboundMessageService.create({
+            companyId: ticket.companyId,
+            ticketId: ticket.id,
+            idempotencyScope: "prompt-openai-tts",
+            idempotencyKey: uuidv4(),
+            kind: "audio",
+            payload: { localPath, mimeType: "audio/mpeg", ptt: true },
+            origin: "automation"
+          });
           deleteFileSync(`${publicFolder}/${fileNameWithOutExtension}.mp3`);
           deleteFileSync(`${publicFolder}/${fileNameWithOutExtension}.wav`);
         } catch (error) {

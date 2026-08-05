@@ -2,6 +2,7 @@ import path, { join } from "path";
 import { promisify } from "util";
 import * as Sentry from "@sentry/node";
 import { extension as mimeExtension } from "mime-types";
+import { v4 as uuidv4 } from "uuid";
 
 import {
   downloadMediaMessage,
@@ -14,10 +15,12 @@ import {
   WAMessageStubType,
   WAMessageUpdate,
   WASocket,
-  sendBaileysSocketMessage,
-  parseBaileysContactIdentity,
-  resolveContactJid
+  parseBaileysContactIdentity
 } from "../../messaging/public/baileys";
+import {
+  OutboundMessageService,
+  stageMessagingMedia
+} from "../../messaging/public/outbound";
 import Contact from "../../models/Contact";
 import Ticket from "../../models/Ticket";
 import Message from "../../models/Message";
@@ -40,7 +43,6 @@ import formatBody from "../../helpers/Mustache";
 import { Store } from "../../libs/store";
 import TicketTraking from "../../models/TicketTraking";
 import UserRating from "../../models/UserRating";
-import SendWhatsAppMessage from "./SendWhatsAppMessage";
 import moment from "moment";
 import Queue from "../../models/Queue";
 import QueueOption from "../../models/QueueOption";
@@ -77,6 +79,8 @@ import Whatsapp from "../../models/Whatsapp";
 import axios from "axios";
 import { writeFile } from "fs";
 import { isNil, head } from "lodash";
+
+const outboundMessageService = new OutboundMessageService();
 
 const fs = require("fs");
 
@@ -243,72 +247,118 @@ export async function sleep(time) {
   await timeout(time);
 }
 export const sendMessageImage = async (
-  wbot: Session,
+  _wbot: Session,
   contact,
   ticket: Ticket,
   url: string,
   caption: string
 ) => {
-  let sentMessage;
   try {
-    sentMessage = await sendBaileysSocketMessage(
-      wbot,
-      resolveContactJid({ ...contact, isGroup: ticket.isGroup }),
-      {
-        image: url
-          ? { url }
-          : fs.readFileSync(`public/temp/${caption}-${makeid(10)}`),
-        fileName: caption,
-        caption: caption,
-        mimetype: "image/jpeg"
-      }
-    );
+    if (url) {
+      await outboundMessageService.create({
+        companyId: ticket.companyId,
+        ticketId: ticket.id,
+        idempotencyScope: "flow-image",
+        idempotencyKey: uuidv4(),
+        kind: "image",
+        payload: {
+          link: url,
+          caption,
+          fileName: caption,
+          mimeType: "image/jpeg"
+        },
+        origin: "automation"
+      });
+    } else {
+      const localPath = await stageMessagingMedia(
+        `public/temp/${caption}-${makeid(10)}`,
+        `${caption}-${makeid(10)}.jpg`
+      );
+      await outboundMessageService.create({
+        companyId: ticket.companyId,
+        ticketId: ticket.id,
+        idempotencyScope: "flow-image",
+        idempotencyKey: uuidv4(),
+        kind: "image",
+        payload: {
+          localPath,
+          caption,
+          fileName: caption,
+          mimeType: "image/jpeg"
+        },
+        origin: "automation"
+      });
+    }
   } catch (error) {
-    sentMessage = await sendBaileysSocketMessage(
-      wbot,
-      resolveContactJid({ ...contact, isGroup: ticket.isGroup }),
-      {
-        text: formatBody(
-          "Não consegui enviar a imagem, tente novamente!",
-          contact
-        )
-      }
-    );
+    await outboundMessageService.create({
+      companyId: ticket.companyId,
+      ticketId: ticket.id,
+      idempotencyScope: "flow-image-fallback",
+      idempotencyKey: uuidv4(),
+      kind: "text",
+      text: formatBody(
+        "Não consegui enviar a imagem, tente novamente!",
+        contact
+      ),
+      origin: "automation"
+    });
   }
-  verifyMessage(sentMessage, ticket, contact);
 };
 
 export const sendMessageLink = async (
-  wbot: Session,
+  _wbot: Session,
   contact: Contact,
   ticket: Ticket,
   url: string,
   caption: string
 ) => {
-  let sentMessage;
   try {
-    sentMessage = await sendBaileysSocketMessage(
-      wbot,
-      resolveContactJid({ ...contact, isGroup: ticket.isGroup }),
-      {
-        document: url
-          ? { url }
-          : fs.readFileSync(`public/temp/${caption}-${makeid(10)}`),
-        fileName: caption,
-        caption: caption,
-        mimetype: "application/pdf"
-      }
-    );
+    if (url) {
+      await outboundMessageService.create({
+        companyId: ticket.companyId,
+        ticketId: ticket.id,
+        idempotencyScope: "flow-document",
+        idempotencyKey: uuidv4(),
+        kind: "document",
+        payload: {
+          link: url,
+          caption,
+          fileName: caption,
+          mimeType: "application/pdf"
+        },
+        origin: "automation"
+      });
+    } else {
+      const localPath = await stageMessagingMedia(
+        `public/temp/${caption}-${makeid(10)}`,
+        `${caption}-${makeid(10)}.pdf`
+      );
+      await outboundMessageService.create({
+        companyId: ticket.companyId,
+        ticketId: ticket.id,
+        idempotencyScope: "flow-document",
+        idempotencyKey: uuidv4(),
+        kind: "document",
+        payload: {
+          localPath,
+          caption,
+          fileName: caption,
+          mimeType: "application/pdf"
+        },
+        origin: "automation"
+      });
+    }
   } catch (error) {
-    sentMessage = await sendBaileysSocketMessage(
-      wbot,
-      resolveContactJid({ ...contact, isGroup: ticket.isGroup }),
-      {
-        text: formatBody("Não consegui enviar o PDF, tente novamente!", contact)
-      }
-    );
+    await outboundMessageService.create({
+      companyId: ticket.companyId,
+      ticketId: ticket.id,
+      idempotencyScope: "flow-document-fallback",
+      idempotencyKey: uuidv4(),
+      kind: "text",
+      text: formatBody("Não consegui enviar o PDF, tente novamente!", contact),
+      origin: "automation"
+    });
   }
-  verifyMessage(sentMessage, ticket, contact);
 };
 
 export function makeid(length) {
@@ -771,45 +821,16 @@ const handleOpenAi = async (
         .trim();
     }
 
-    const sentMessage = await sendBaileysSocketMessage(
-      wbot,
-      msg.key.remoteJid!,
-      {
-        text: response!
-      }
-    );
-    await verifyMessage(sentMessage!, ticket, contact);
+    await outboundMessageService.create({
+      companyId: ticket.companyId,
+      ticketId: ticket.id,
+      idempotencyScope: "prompt-text",
+      idempotencyKey: uuidv4(),
+      kind: "text",
+      text: response!,
+      origin: "automation"
+    });
 
-    /*
-    if (prompt.voice === "texto") {
-      const sentMessage = await sendBaileysSocketMessage(wbot, msg.key.remoteJid!, {
-        text: response!
-      });
-      await verifyMessage(sentMessage!, ticket, contact);
-    } else {
-      const fileNameWithOutExtension = `${ticket.id}_${Date.now()}`;
-      convertTextToSpeechAndSaveToFile(
-        keepOnlySpecifiedChars(response!),
-        `${publicFolder}/${fileNameWithOutExtension}`,
-        prompt.voiceKey,
-        prompt.voiceRegion,
-        prompt.voice,
-        "mp3"
-      ).then(async () => {
-        try {
-          const sendMessage = await sendBaileysSocketMessage(wbot, msg.key.remoteJid!, {
-            audio: { url: `${publicFolder}/${fileNameWithOutExtension}.mp3` },
-            mimetype: "audio/mpeg",
-            ptt: true
-          });
-          await verifyMediaMessage(sendMessage!, ticket, contact);
-          deleteFileSync(`${publicFolder}/${fileNameWithOutExtension}.mp3`);
-          deleteFileSync(`${publicFolder}/${fileNameWithOutExtension}.wav`);
-        } catch (error) {
-          console.log(`Erro para responder com audio: ${error}`);
-        }
-      });
-    }*/
   } else if (msg.message?.audioMessage) {
     const mediaUrl = mediaSent!.mediaUrl!.split("/").pop();
     const file = fs.createReadStream(`${publicFolder}/${mediaUrl}`) as any;
@@ -845,35 +866,6 @@ const handleOpenAi = async (
         .replace("Ação: Transferir para o setor de atendimento", "")
         .trim();
     }
-    /*if (prompt.voice === "texto") {
-      const sentMessage = await sendBaileysSocketMessage(wbot, msg.key.remoteJid!, {
-        text: response!
-      });
-      await verifyMessage(sentMessage!, ticket, contact);
-    } else {
-      const fileNameWithOutExtension = `${ticket.id}_${Date.now()}`;
-      convertTextToSpeechAndSaveToFile(
-        keepOnlySpecifiedChars(response!),
-        `${publicFolder}/${fileNameWithOutExtension}`,
-        prompt.voiceKey,
-        prompt.voiceRegion,
-        prompt.voice,
-        "mp3"
-      ).then(async () => {
-        try {
-          const sendMessage = await sendBaileysSocketMessage(wbot, msg.key.remoteJid!, {
-            audio: { url: `${publicFolder}/${fileNameWithOutExtension}.mp3` },
-            mimetype: "audio/mpeg",
-            ptt: true
-          });
-          await verifyMediaMessage(sendMessage!, ticket, contact);
-          deleteFileSync(`${publicFolder}/${fileNameWithOutExtension}.mp3`);
-          deleteFileSync(`${publicFolder}/${fileNameWithOutExtension}.wav`);
-        } catch (error) {
-          console.log(`Erro para responder com audio: ${error}`);
-        }
-      });
-    }*/
   }
   messagesOpenAi = [];
 };
@@ -1124,13 +1116,15 @@ const verifyQueue = async (
     ) {
       const body = formatBody(`${greetingMessage}`, contact);
 
-      await sendBaileysSocketMessage(
-        wbot,
-        resolveContactJid({ ...contact, isGroup: ticket.isGroup }),
-        {
-          text: body
-        }
-      );
+      await outboundMessageService.create({
+        companyId: ticket.companyId,
+        ticketId: ticket.id,
+        idempotencyScope: "chatbot-greeting-single",
+        idempotencyKey: uuidv4(),
+        kind: "text",
+        text: body,
+        origin: "automation"
+      });
     }
 
     const firstQueue = head(queues);
@@ -1201,17 +1195,15 @@ const verifyQueue = async (
       options += `*[ ${index + 1} ]* - ${queue.name}\n`;
     });
 
-    const textMessage = {
-      text: formatBody(`\u200e${greetingMessage}\n\n${options}`, contact)
-    };
-
-    const sendMsg = await sendBaileysSocketMessage(
-      wbot,
-      resolveContactJid({ ...contact, isGroup: ticket.isGroup }),
-      textMessage
-    );
-
-    await verifyMessage(sendMsg, ticket, ticket.contact);
+    await outboundMessageService.create({
+      companyId: ticket.companyId,
+      ticketId: ticket.id,
+      idempotencyScope: "chatbot-greeting-options",
+      idempotencyKey: uuidv4(),
+      kind: "text",
+      text: formatBody(`\u200e${greetingMessage}\n\n${options}`, contact),
+      origin: "automation"
+    });
   };
 
   if (choosenQueue) {
@@ -1257,14 +1249,15 @@ const verifyQueue = async (
             `\u200e ${queue.outOfHoursMessage}\n\n*[ # ]* - Voltar ao Menu Principal`,
             ticket.contact
           );
-          const sentMessage = await sendBaileysSocketMessage(
-            wbot,
-            resolveContactJid({ ...contact, isGroup: ticket.isGroup }),
-            {
-              text: body
-            }
-          );
-          await verifyMessage(sentMessage, ticket, contact);
+          await outboundMessageService.create({
+            companyId: ticket.companyId,
+            ticketId: ticket.id,
+            idempotencyScope: "chatbot-out-of-hours",
+            idempotencyKey: uuidv4(),
+            kind: "text",
+            text: body,
+            origin: "automation"
+          });
           await UpdateTicketService({
             ticketData: { queueId: null, chatbot },
             ticketId: ticket.id,
@@ -1316,14 +1309,15 @@ const verifyQueue = async (
         ticket.contact
       );
       if (choosenQueue.greetingMessage) {
-        const sentMessage = await sendBaileysSocketMessage(
-          wbot,
-          resolveContactJid({ ...contact, isGroup: ticket.isGroup }),
-          {
-            text: body
-          }
-        );
-        await verifyMessage(sentMessage, ticket, contact);
+        await outboundMessageService.create({
+          companyId: ticket.companyId,
+          ticketId: ticket.id,
+          idempotencyScope: "chatbot-queue-greeting",
+          idempotencyKey: uuidv4(),
+          kind: "text",
+          text: body,
+          origin: "automation"
+        });
       }
     }
   } else {
@@ -1413,8 +1407,15 @@ export const handleRating = async (
   });
 
   if (complationMessage) {
-    const body = formatBody(`\u200e${complationMessage}`, ticket.contact);
-    await SendWhatsAppMessage({ body, ticket });
+    await outboundMessageService.create({
+      companyId: ticket.companyId,
+      ticketId: ticket.id,
+      idempotencyScope: "ticket-completion",
+      idempotencyKey: uuidv4(),
+      kind: "text",
+      text: formatBody(`\u200e${complationMessage}`, ticket.contact),
+      origin: "automation"
+    });
   }
 
   await ticketTraking.update({
@@ -1587,13 +1588,15 @@ const handleChartbot = async (
         headerType: 4
       };
 
-      const sendMsg = await sendBaileysSocketMessage(
-        wbot,
-        resolveContactJid({ ...ticket.contact, isGroup: ticket.isGroup }),
-        buttonMessage
-      );
-
-      await verifyMessage(sendMsg, ticket, ticket.contact);
+      await outboundMessageService.create({
+        companyId: ticket.companyId,
+        ticketId: ticket.id,
+        idempotencyScope: "chatbot-queue-menu",
+        idempotencyKey: uuidv4(),
+        kind: "text",
+        text: buttonMessage.text,
+        origin: "automation"
+      });
     };
 
     const botText = async () => {
@@ -1612,13 +1615,15 @@ const handleChartbot = async (
         )
       };
 
-      const sendMsg = await sendBaileysSocketMessage(
-        wbot,
-        resolveContactJid({ ...ticket.contact, isGroup: ticket.isGroup }),
-        textMessage
-      );
-
-      await verifyMessage(sendMsg, ticket, ticket.contact);
+      await outboundMessageService.create({
+        companyId: ticket.companyId,
+        ticketId: ticket.id,
+        idempotencyScope: "chatbot-queue-menu",
+        idempotencyKey: uuidv4(),
+        kind: "text",
+        text: textMessage.text,
+        origin: "automation"
+      });
     };
 
     // if (buttonActive.value === "list") {
@@ -1680,13 +1685,15 @@ const handleChartbot = async (
           sections
         };
 
-        const sendMsg = await sendBaileysSocketMessage(
-          wbot,
-          resolveContactJid({ ...ticket.contact, isGroup: ticket.isGroup }),
-          listMessage
-        );
-
-        await verifyMessage(sendMsg, ticket, ticket.contact);
+        await outboundMessageService.create({
+          companyId: ticket.companyId,
+          ticketId: ticket.id,
+          idempotencyScope: "chatbot-option-menu",
+          idempotencyKey: uuidv4(),
+          kind: "text",
+          text: listMessage.text,
+          origin: "automation"
+        });
       };
 
       const botButton = async () => {
@@ -1710,13 +1717,15 @@ const handleChartbot = async (
           headerType: 4
         };
 
-        const sendMsg = await sendBaileysSocketMessage(
-          wbot,
-          resolveContactJid({ ...ticket.contact, isGroup: ticket.isGroup }),
-          buttonMessage
-        );
-
-        await verifyMessage(sendMsg, ticket, ticket.contact);
+        await outboundMessageService.create({
+          companyId: ticket.companyId,
+          ticketId: ticket.id,
+          idempotencyScope: "chatbot-option-menu",
+          idempotencyKey: uuidv4(),
+          kind: "text",
+          text: buttonMessage.text,
+          origin: "automation"
+        });
       };
 
       const botText = async () => {
@@ -1734,13 +1743,15 @@ const handleChartbot = async (
           )
         };
 
-        const sendMsg = await sendBaileysSocketMessage(
-          wbot,
-          resolveContactJid({ ...ticket.contact, isGroup: ticket.isGroup }),
-          textMessage
-        );
-
-        await verifyMessage(sendMsg, ticket, ticket.contact);
+        await outboundMessageService.create({
+          companyId: ticket.companyId,
+          ticketId: ticket.id,
+          idempotencyScope: "chatbot-option-menu",
+          idempotencyKey: uuidv4(),
+          kind: "text",
+          text: textMessage.text,
+          origin: "automation"
+        });
       };
 
       if (buttonActive.value === "list") {
@@ -2419,13 +2430,15 @@ const handleMessage = async (
 
           const debouncedSentMessage = debounce(
             async () => {
-              await sendBaileysSocketMessage(
-                wbot,
-                resolveContactJid({ ...ticket.contact, isGroup: ticket.isGroup }),
-                {
-                  text: body
-                }
-              );
+              await outboundMessageService.create({
+                companyId: ticket.companyId,
+                ticketId: ticket.id,
+                idempotencyScope: "chatbot-out-of-hours-debounced",
+                idempotencyKey: uuidv4(),
+                kind: "text",
+                text: body,
+                origin: "automation"
+              });
             },
             3000,
             ticket.id
@@ -2469,13 +2482,15 @@ const handleMessage = async (
               const body = `${queue.outOfHoursMessage}`;
               const debouncedSentMessage = debounce(
                 async () => {
-                  await sendBaileysSocketMessage(
-                    wbot,
-                    resolveContactJid({ ...ticket.contact, isGroup: ticket.isGroup }),
-                    {
-                      text: body
-                    }
-                  );
+                  await outboundMessageService.create({
+                    companyId: ticket.companyId,
+                    ticketId: ticket.id,
+                    idempotencyScope: "chatbot-out-of-hours-debounced",
+                    idempotencyKey: uuidv4(),
+                    kind: "text",
+                    text: body,
+                    origin: "automation"
+                  });
                 },
                 3000,
                 ticket.id
@@ -2792,13 +2807,15 @@ const handleMessage = async (
             const body = queue.outOfHoursMessage;
             const debouncedSentMessage = debounce(
               async () => {
-                await sendBaileysSocketMessage(
-                  wbot,
-                  resolveContactJid({ ...ticket.contact, isGroup: ticket.isGroup }),
-                  {
-                    text: body
-                  }
-                );
+                await outboundMessageService.create({
+                  companyId: ticket.companyId,
+                  ticketId: ticket.id,
+                  idempotencyScope: "chatbot-out-of-hours-debounced",
+                  idempotencyKey: uuidv4(),
+                  kind: "text",
+                  text: body,
+                  origin: "automation"
+                });
               },
               3000,
               ticket.id
@@ -2837,13 +2854,15 @@ const handleMessage = async (
       if (whatsapp.greetingMessage) {
         const debouncedSentMessage = debounce(
           async () => {
-            await sendBaileysSocketMessage(
-              wbot,
-              resolveContactJid({ ...ticket.contact, isGroup: ticket.isGroup }),
-              {
-                text: whatsapp.greetingMessage
-              }
-            );
+            await outboundMessageService.create({
+              companyId: ticket.companyId,
+              ticketId: ticket.id,
+              idempotencyScope: "chatbot-greeting-debounced",
+              idempotencyKey: uuidv4(),
+              kind: "text",
+              text: whatsapp.greetingMessage,
+              origin: "automation"
+            });
           },
           1000,
           ticket.id

@@ -13,6 +13,7 @@ const MESSAGING_ALLOWED_CORE_TARGETS = [
   "^src/config/upload",
   "^src/utils/logger",
   "^src/helpers/GetTicketWbot",
+  "^src/helpers/brazilianNinthDigitVariants",
   "^src/libs/wbot",
   "^src/models/(AuditLog|Company|Contact|Message|Ticket|TicketTraking|Whatsapp|Queue|User|Setting)(\\.ts)?$",
   "^src/services/MessageServices/CreateMessageService",

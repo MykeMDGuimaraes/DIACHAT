@@ -144,6 +144,21 @@ const mediaAuth = async (
     return notFound(res);
   }
 
+  // messaging/<mediaPath> — midia staged privada do outbox (Task 4): o
+  // caminho completo e o mediaUrl persistido na Message da empresa.
+  if (segments[0] === "messaging") {
+    const record = await Message.findOne({
+      where: { mediaUrl: normalized, companyId },
+      attributes: ["id"]
+    });
+    if (record) {
+      auditMedia(req, actor, normalized, "success");
+      return next();
+    }
+    auditMedia(req, actor, normalized, "denied");
+    return notFound(res);
+  }
+
   // Arquivos na raiz de /public: mensagens, agendamentos, campanhas,
   // mídia de fluxo (FlowAudio/FlowImg) e anúncios legados (URL flat).
   if (segments.length === 1) {
