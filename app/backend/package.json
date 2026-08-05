@@ -22,6 +22,7 @@
     "capacity:whatsapp-mirror": "node scripts/messagingCapacityGate.js --whatsapp-mirror",
     "verify:roteador-contract": "node scripts/verifyRoteadorContractFixtures.js",
     "backfill:contact-lids": "node dist/messaging/operations/ContactLidBackfillCli.js",
+    "backfill:whatsapp-session-keys": "node dist/messaging/operations/WhatsAppSessionKeyBackfillCli.js",
     "docker:push": "docker buildx build --platform linux/amd64,linux/arm64 -t rafaeldomenegueti/atendechat-backend:latest . --push",
     "docker:push:hml": "docker buildx build --platform linux/amd64,linux/arm64 -t rafaeldomenegueti/atendechat-backend:hml . --push"
   },

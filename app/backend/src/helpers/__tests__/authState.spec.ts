@@ -9,6 +9,19 @@ jest.mock("../../messaging/public/baileys", () => ({
   }
 }));
 
+// A fachada do auth-store (T6) e mockada: o modo padrao "json" exercita o
+// caminho legado sem carregar o adaptador Baileys real (vendor nao
+// transpilado quebra o parse do jest).
+jest.mock("../../messaging/public/authStore", () => ({
+  CREDS_KEY_TYPE: "creds",
+  CREDS_KEY_ID: "current",
+  resolveAuthStoreMode: jest.fn(() => "json"),
+  loadSessionAuthSnapshot: jest.fn(),
+  getSessionKeyEntries: jest.fn(),
+  setSessionKeyEntries: jest.fn().mockResolvedValue(undefined),
+  sessionAuthDigest: jest.fn(() => "digest")
+}));
+
 jest.mock("../../utils/logger", () => ({
   logger: {
     debug: jest.fn(),

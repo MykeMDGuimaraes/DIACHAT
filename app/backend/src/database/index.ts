@@ -58,6 +58,7 @@ import ConversationCommand from "../messaging/persistence/models/ConversationCom
 import WhatsAppChatState from "../messaging/persistence/models/WhatsAppChatState";
 import MessageTemplate from "../messaging/persistence/models/MessageTemplate";
 import WhatsAppSessionLease from "../messaging/persistence/models/WhatsAppSessionLease";
+import WhatsAppSessionKey from "../messaging/persistence/models/WhatsAppSessionKey";
 
 // eslint-disable-next-line
 const dbConfig = require("../config/database");
@@ -125,6 +126,7 @@ const models = [
   WhatsAppChatState,
   MessageTemplate,
   WhatsAppSessionLease,
+  WhatsAppSessionKey,
 ];
 
 sequelize.addModels(models);

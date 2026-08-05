@@ -23,8 +23,12 @@ export interface AuthWriteJob {
   whatsappId: number;
   /** Fence avaliado na execução: retornar false torna a escrita inerte. */
   shouldWrite: () => boolean;
-  /** Persiste o snapshot obtido NO MOMENTO da execução. */
-  persist: () => Promise<unknown>;
+  /**
+   * Persiste o snapshot obtido NO MOMENTO da execução. Recebe a revisão
+   * monotônica da fila do canal — usada como fencing na persistência por
+   * chave (Hardening T6).
+   */
+  persist: (revision: number) => Promise<unknown>;
   /** Chamado uma única vez ao atingir o limite de falhas consecutivas. */
   onPersistentFailure?: (whatsappId: number) => void | Promise<void>;
 }
@@ -45,7 +49,7 @@ const execute = async (job: AuthWriteJob, revision: number): Promise<void> => {
   }
 
   try {
-    await job.persist();
+    await job.persist(revision);
     consecutiveFailures.set(job.whatsappId, 0);
   } catch (error) {
     // Fence reavaliado na FALHA: se um replace publicou geração nova
