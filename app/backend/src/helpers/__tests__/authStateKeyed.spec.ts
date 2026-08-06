@@ -2,7 +2,7 @@ import authState from "../authState";
 import {
   getSessionKeyEntries,
   loadSessionAuthSnapshot,
-  resolveAuthStoreMode,
+  resolveAuthStoreModeForCompany,
   sessionAuthDigest,
   setSessionKeyEntries
 } from "../../messaging/public/authStore";
@@ -24,7 +24,7 @@ jest.mock("../../messaging/public/baileys", () => ({
 jest.mock("../../messaging/public/authStore", () => ({
   CREDS_KEY_TYPE: "creds",
   CREDS_KEY_ID: "current",
-  resolveAuthStoreMode: jest.fn(() => "json"),
+  resolveAuthStoreModeForCompany: jest.fn(async () => "json"),
   loadSessionAuthSnapshot: jest.fn(),
   getSessionKeyEntries: jest.fn(),
   setSessionKeyEntries: jest.fn().mockResolvedValue(undefined),
@@ -45,7 +45,7 @@ jest.mock("../../utils/logger", () => ({
   }
 }));
 
-const mode = resolveAuthStoreMode as jest.Mock;
+const mode = resolveAuthStoreModeForCompany as jest.Mock;
 const loadSnapshot = loadSessionAuthSnapshot as jest.Mock;
 const getEntries = getSessionKeyEntries as jest.Mock;
 const setEntries = setSessionKeyEntries as jest.Mock;

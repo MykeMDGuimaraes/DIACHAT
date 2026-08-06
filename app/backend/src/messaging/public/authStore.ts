@@ -18,3 +18,11 @@ export {
   SessionKeyFence,
   SessionKeyStoreMode
 } from "../persistence/WhatsAppSessionKeyRepository";
+
+// Coorte de rollout por empresa (T9): o modo persistido da empresa vence o
+// default global (env). Core consome somente por aqui (fronteira depcruise).
+export {
+  AUTH_STORE_COHORT_CAPABILITY,
+  flushAuthStoreCohortCache,
+  resolveAuthStoreModeForCompany
+} from "../persistence/AuthStoreCohortResolver";

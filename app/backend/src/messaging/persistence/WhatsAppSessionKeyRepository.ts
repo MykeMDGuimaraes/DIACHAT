@@ -12,6 +12,7 @@ import {
   DELIVERY_METRIC,
   incrementDeliveryCounter
 } from "../telemetry/DeliveryObservability";
+import { resolveAuthStoreMode, SessionKeyStoreMode } from "./authStoreMode";
 
 /**
  * Repositorio por chave do auth-state WhatsApp (Hardening T6).
@@ -26,7 +27,10 @@ import {
  * keyring lancam erro — o chamador (authState) nao inicia o socket.
  */
 
-export type SessionKeyStoreMode = "json" | "dual_write" | "postgres";
+// Tipo e resolucao do modo vivem em ./authStoreMode (T9, modulo minimo sem
+// adaptadores); reexportados para manter a superficie publica estavel.
+export { resolveAuthStoreMode };
+export type { SessionKeyStoreMode };
 
 export const CREDS_KEY_TYPE = "creds";
 export const CREDS_KEY_ID = "current";
@@ -282,14 +286,3 @@ export const sessionAuthDigest = (snapshot: {
   createHash("sha256")
     .update(JSON.stringify(canonicalize(snapshot)))
     .digest("hex");
-
-/**
- * Modo de armazenamento do auth-state: json (legado, padrao), dual_write ou
- * postgres. Valor desconhecido cai no modo legado — nunca quebra o boot.
- */
-export const resolveAuthStoreMode = (
-  environment: Record<string, string | undefined> = process.env
-): SessionKeyStoreMode => {
-  const raw = (environment.MESSAGING_AUTH_STORE_MODE ?? "json").trim();
-  return raw === "dual_write" || raw === "postgres" ? raw : "json";
-};

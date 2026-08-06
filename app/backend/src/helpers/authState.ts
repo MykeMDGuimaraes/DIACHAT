@@ -12,7 +12,7 @@ import {
   CREDS_KEY_TYPE,
   getSessionKeyEntries,
   loadSessionAuthSnapshot,
-  resolveAuthStoreMode,
+  resolveAuthStoreModeForCompany,
   sessionAuthDigest,
   setSessionKeyEntries,
   SessionKeyEntry,
@@ -346,7 +346,10 @@ const authState = async (
   whatsapp: Whatsapp,
   options: AuthStateOptions = {}
 ): Promise<AuthStateResult> => {
-  const mode = resolveAuthStoreMode();
+  // T9: a coorte persistida da empresa vence o default global (env). Em
+  // qualquer falha de resolução, o resolvedor cai no modo global — o boot
+  // nunca quebra por causa da coorte.
+  const mode = await resolveAuthStoreModeForCompany(whatsapp.companyId);
   if (mode === "json") return jsonAuthState(whatsapp, options);
   return keyedAuthState(whatsapp, options, mode);
 };

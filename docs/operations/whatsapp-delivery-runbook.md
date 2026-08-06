@@ -102,6 +102,12 @@ SELECT "whatsappId", "keyType", COUNT(*) AS chaves, MAX(revision) AS ultima_revi
 FROM messaging."WhatsAppSessionKeys"
 GROUP BY "whatsappId", "keyType"
 ORDER BY "whatsappId", "keyType";
+
+-- Coortes de rollout por empresa (T9; capability 'auth_store' controla o modo
+-- do auth store por empresa; sem row vale o default global do ambiente):
+SELECT capability, "companyId", mode, "updatedAt"
+FROM messaging."MessagingRolloutCohorts"
+ORDER BY capability, "companyId";
 ```
 
 ## Referências

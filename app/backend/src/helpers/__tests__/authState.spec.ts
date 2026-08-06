@@ -15,7 +15,7 @@ jest.mock("../../messaging/public/baileys", () => ({
 jest.mock("../../messaging/public/authStore", () => ({
   CREDS_KEY_TYPE: "creds",
   CREDS_KEY_ID: "current",
-  resolveAuthStoreMode: jest.fn(() => "json"),
+  resolveAuthStoreModeForCompany: jest.fn(async () => "json"),
   loadSessionAuthSnapshot: jest.fn(),
   getSessionKeyEntries: jest.fn(),
   setSessionKeyEntries: jest.fn().mockResolvedValue(undefined),
