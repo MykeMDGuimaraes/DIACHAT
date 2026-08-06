@@ -115,7 +115,9 @@ const defaultDependencies: OutboundMessageDependencies = {
       where: { id: ticketId, companyId },
       include: [Contact],
       transaction,
-      lock: transaction.LOCK.UPDATE
+      // PostgreSQL recusa FOR UPDATE no lado nulavel do LEFT JOIN (Contact);
+      // "of: Ticket" limita a trava a tabela base.
+      lock: { level: transaction.LOCK.UPDATE, of: Ticket }
     }),
   findWhatsapp: (id, companyId, transaction) =>
     Whatsapp.findOne({ where: { id, companyId }, transaction }),
@@ -137,7 +139,7 @@ const defaultDependencies: OutboundMessageDependencies = {
       order: [["id", "DESC"]],
       include: [Contact],
       transaction,
-      lock: transaction.LOCK.UPDATE
+      lock: { level: transaction.LOCK.UPDATE, of: Ticket }
     }),
   createTicket: async (data, transaction) => {
     const ticket = await Ticket.create(data as any, { transaction });

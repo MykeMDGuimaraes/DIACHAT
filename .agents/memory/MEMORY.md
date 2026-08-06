@@ -15,3 +15,4 @@
 - [Deploy env snapshot + seeds](deploy-env-snapshot-seeds.md) — env var de prod só aplica em deployment NOVO (loop antigo ignora); seed no boot exige guard de idempotência ou vira crash loop.
 - [Drift de schema no publish](publish-schema-sync-drift.md) — sync dev→prod adiciona colunas em tabelas existentes sem SequelizeMeta; migrações precisam ser idempotentes (guards describeTable/to_regclass/pg_indexes).
 - [Custom DNS lookup no Node >=18](node-lookup-all-true.md) — https.request chama lookup com all=true esperando array; retorno único quebra com "Invalid IP address: undefined"; validar rede com disparo real, não só mocks.
+- [Sequelize lock + include no Postgres](sequelize-lock-outer-join.md) — LOCK.UPDATE com include (outer join) gera erro 0A000 e 500; usar lock { level, of: Model } e validar contra banco real.
