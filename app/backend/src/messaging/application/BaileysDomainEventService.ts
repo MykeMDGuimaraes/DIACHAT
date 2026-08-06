@@ -12,7 +12,11 @@ import {
 import { adaptBaileysMessageEvents } from "../adapters/baileys/BaileysProviderEventAdapter";
 import { WhatsAppProviderEvent } from "../domain/WhatsAppProviderEvent";
 import WhatsAppProviderEventPublisher from "./WhatsAppProviderEventPublisher";
-import { observeAckLatencyMs } from "../telemetry/DeliveryObservability";
+import {
+  observeAckLatencyMs,
+  observeSendPipelineLatencyMs,
+  SEND_PIPELINE_STAGE
+} from "../telemetry/DeliveryObservability";
 import ChannelDeliveryHealthService from "./ChannelDeliveryHealthService";
 
 const validOpaqueButtonId = (value: unknown): value is string =>
@@ -405,8 +409,8 @@ class BaileysDomainEventService {
           typeof input.ack === "number" && input.ack >= 4
             ? MESSAGE_COMMAND_STATUS.READ
             : typeof input.ack === "number" && input.ack >= 3
-              ? MESSAGE_COMMAND_STATUS.DELIVERED
-              : null;
+            ? MESSAGE_COMMAND_STATUS.DELIVERED
+            : null;
         // ACK tardio (T5): um unknown por DELIVERY_UNCONFIRMED se cura com
         // ack >= 2 — volta a constar como sent/delivered/read e a entrega
         // confirmada zera o contador de falhas e restaura a saúde do canal.
@@ -439,6 +443,17 @@ class BaileysDomainEventService {
           advanced = true;
         }
         if (advanced) {
+          // Latência providerMessageId → ACK (T8): completedAt do comando é o
+          // instante do SENT; só conta quando o avanço parte de SENT.
+          if (
+            command.status === MESSAGE_COMMAND_STATUS.SENT &&
+            command.completedAt
+          ) {
+            observeSendPipelineLatencyMs(
+              SEND_PIPELINE_STAGE.PROVIDER_ID_TO_ACK,
+              Date.now() - new Date(command.completedAt).getTime()
+            );
+          }
           healthChangedChannel =
             await this.dependencies.recordConfirmedDelivery(
               command.whatsappId,

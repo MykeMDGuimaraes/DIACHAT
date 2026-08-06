@@ -111,3 +111,9 @@ ORDER BY "whatsappId", "keyType";
 - Telemetria/alertas: `src/messaging/telemetry/DeliveryObservability.ts`.
 - Rollout do storage de chaves (T6): `npm run backfill:whatsapp-session-keys`
   (dry-run por padrão; contagens apenas, sem payload).
+
+## Desempenho e limites operacionais de envio (T8)
+
+- **Lanes por canal**: o dispatcher despacha até `MESSAGING_DISPATCH_CHANNEL_CONCURRENCY` canais em paralelo por rodada (padrão 8, máximo 64). Cada canal é uma lane serial — o comando mais antigo da fila do canal é reivindicado primeiro e o próximo só entra após o anterior finalizar, garantindo a ordem de envio por canal. Um canal lento ou desconectado ocupa apenas a própria lane: socket indisponível agenda retry em 30s sem tocar nos demais canais.
+- **Cache de retry limitado**: `msgRetryCounterCache` tem TTL de 10 minutos e máximo de 1000 chaves (evicção do mais antigo). O cache é criado por socket — substituir a geração descarta o cache inteiro junto com ele.
+- **Latências do pipeline** (endpoint de métricas, chave `deliverySignals.sendPipeline`): `send_pipeline_commit_to_dispatch_ms` (commit do outbox → claim), `send_pipeline_dispatch_to_provider_id_ms` (send → providerMessageId persistido) e `send_pipeline_provider_id_to_ack_ms` (SENT → ACK que avança o comando). Reservatório de 512 amostras por estágio; o snapshot expõe p50/p95/p99/max. Compare com o baseline do ambiente aprovado antes/depois de mudanças no pipeline — sem teste de carga em produção.

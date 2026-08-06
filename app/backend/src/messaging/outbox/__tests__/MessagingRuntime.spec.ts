@@ -99,6 +99,7 @@ describe("MessagingRuntime", () => {
       undefined,
       undefined,
       { fanout: 2, delivery: 1 },
+      8,
       reportPoolFailure
     );
 

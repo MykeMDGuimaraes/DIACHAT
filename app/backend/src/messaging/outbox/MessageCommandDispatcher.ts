@@ -1,6 +1,6 @@
 /* eslint-disable max-classes-per-file */
 import { randomUUID } from "crypto";
-import { Op } from "sequelize";
+import { Op, QueryTypes, Transaction } from "sequelize";
 import sequelize from "../../database";
 import {
   DispatchableMessageCommand,
@@ -24,6 +24,10 @@ import {
 import MessageCommand from "../persistence/models/MessageCommand";
 import MessagingOutboxEvent from "../persistence/models/MessagingOutboxEvent";
 import ConversationAutomationState from "../persistence/models/ConversationAutomationState";
+import {
+  observeSendPipelineLatencyMs,
+  SEND_PIPELINE_STAGE
+} from "../telemetry/DeliveryObservability";
 import { logger } from "../../utils/logger";
 
 export interface MessageCommandEventSource {
@@ -162,6 +166,13 @@ export const automationCommandIsCurrent = (
 
 export interface MessageCommandDispatcherDependencies {
   claimNext: (now: Date) => Promise<ClaimedDispatch | null>;
+  // Lanes por canal (T8): até `maxChannels` claims, um por canal, sempre o
+  // comando mais antigo da fila de cada canal. Opcional para manter testes
+  // legados que injetam apenas claimNext.
+  claimNextPerChannel?: (
+    now: Date,
+    maxChannels: number
+  ) => Promise<ClaimedDispatch[]>;
   send: (
     command: DispatchableMessageCommand
   ) => Promise<{ providerMessageId?: string }>;
@@ -290,6 +301,137 @@ const refreshLeasePair = async (
   }
 };
 
+// Classe do advisory lock transacional das lanes (T8): serializa o claim por
+// canal entre workers/processos. Não há outro usuário de advisory lock no app.
+const LANE_CLAIM_ADVISORY_LOCK_CLASS = 732701;
+
+// Corpo compartilhado do claim (T8): dado um evento READY já travado na
+// transação, valida comando e automação e marca o lease do par comando+evento.
+const claimEventCommand = async (
+  event: MessagingOutboxEvent,
+  now: Date,
+  transaction: Transaction
+): Promise<ClaimedDispatch | null> => {
+  const commandCandidate = await MessageCommand.findOne({
+    where: {
+      id: event.aggregateId,
+      status: MESSAGE_COMMAND_STATUS.QUEUED
+    },
+    transaction
+  });
+
+  if (!commandCandidate) {
+    await event.update(
+      {
+        status: OUTBOX_EVENT_STATUS.COMPLETED,
+        leaseExpiresAt: null,
+        leaseToken: null
+      },
+      { transaction }
+    );
+    return null;
+  }
+
+  // Global order: event -> automation state -> command. Handoff locks
+  // state before cancelling queued commands, so claim must never hold the
+  // command row while waiting for that state.
+  const state = commandCandidate.externalTicketId
+    ? await ConversationAutomationState.findOne({
+        where: {
+          companyId: commandCandidate.companyId,
+          externalTicketId: commandCandidate.externalTicketId
+        },
+        transaction,
+        lock: transaction.LOCK.UPDATE
+      })
+    : null;
+  const command = await MessageCommand.findOne({
+    where: {
+      id: event.aggregateId,
+      status: MESSAGE_COMMAND_STATUS.QUEUED
+    },
+    transaction,
+    lock: transaction.LOCK.UPDATE
+  });
+  if (!command) {
+    await event.update(
+      {
+        status: OUTBOX_EVENT_STATUS.COMPLETED,
+        leaseExpiresAt: null,
+        leaseToken: null
+      },
+      { transaction }
+    );
+    return null;
+  }
+
+  if (command.externalTicketId) {
+    if (
+      !automationCommandIsCurrent(
+        command.toJSON() as unknown as MessageCommandEventSource,
+        state?.toJSON() as any
+      )
+    ) {
+      await command.update(
+        {
+          status: MESSAGE_COMMAND_STATUS.CANCELLED,
+          errorCode: "STALE_AUTOMATION_EPOCH",
+          cancelledAt: now,
+          completedAt: now
+        },
+        { transaction }
+      );
+      await event.update(
+        {
+          status: OUTBOX_EVENT_STATUS.COMPLETED,
+          leaseExpiresAt: null,
+          leaseToken: null
+        },
+        { transaction }
+      );
+      await MessagingOutboxEvent.create(
+        buildMessageFailedEvent(
+          command.toJSON() as unknown as MessageCommandEventSource,
+          "STALE_AUTOMATION_EPOCH",
+          "Comando cancelado antes do envio"
+        ) as any,
+        { transaction }
+      );
+      return null;
+    }
+  }
+
+  const leaseToken = randomUUID();
+  const leaseExpiresAt = new Date(now.getTime() + SEND_LEASE_MS);
+  const attemptCount = command.attemptCount + 1;
+  await command.update(
+    {
+      status: MESSAGE_COMMAND_STATUS.SENDING,
+      attemptCount,
+      leaseExpiresAt,
+      leaseToken
+    },
+    { transaction }
+  );
+  await event.update(
+    {
+      status: OUTBOX_EVENT_STATUS.PROCESSING,
+      attemptCount: event.attemptCount + 1,
+      leaseExpiresAt,
+      leaseToken
+    },
+    { transaction }
+  );
+
+  return {
+    eventId: event.id,
+    leaseToken,
+    attemptCount,
+    command: command.toJSON() as DispatchableMessageCommand &
+      MessageCommandEventSource
+  };
+};
+
 const createDefaultDependencies = (
   providers: MessagingProvider[]
 ): MessageCommandDispatcherDependencies => {
@@ -322,125 +464,103 @@ const createDefaultDependencies = (
           return null;
         }
 
-        const commandCandidate = await MessageCommand.findOne({
-          where: {
-            id: event.aggregateId,
-            status: MESSAGE_COMMAND_STATUS.QUEUED
+        return claimEventCommand(event, now, transaction);
+      }),
+    // Lanes por canal (T8): seleciona o evento READY mais antigo por canal
+    // (canais com envio em andamento ficam fora desta rodada) e revalida cada
+    // candidato com lock na própria transação. DISTINCT ON não aceita FOR
+    // UPDATE, por isso a seleção não trava — a corrida resolve no lock abaixo.
+    claimNextPerChannel: async (now, maxChannels) => {
+      const candidates = await sequelize.query<{
+        id: string;
+        whatsappId: number;
+      }>(
+        `SELECT DISTINCT ON (command."whatsappId") event.id, command."whatsappId"
+           FROM messaging."MessagingOutboxEvents" AS event
+           JOIN messaging."MessageCommands" AS command
+             ON command.id = event."aggregateId"::uuid
+          WHERE event."eventType" = :eventType
+            AND event.status = :ready
+            AND event."availableAt" <= :now
+            AND command.status = :queued
+            AND NOT EXISTS (
+              SELECT 1
+                FROM messaging."MessageCommands" AS inflight
+               WHERE inflight."whatsappId" = command."whatsappId"
+                 AND inflight.status = :sending
+                 AND inflight."leaseExpiresAt" > :now
+            )
+          ORDER BY command."whatsappId", event."createdAt" ASC, event.id ASC
+          LIMIT :maxChannels`,
+        {
+          replacements: {
+            eventType: OUTBOX_EVENT_TYPE.MESSAGE_DISPATCH_REQUESTED,
+            ready: OUTBOX_EVENT_STATUS.READY,
+            queued: MESSAGE_COMMAND_STATUS.QUEUED,
+            sending: MESSAGE_COMMAND_STATUS.SENDING,
+            now,
+            maxChannels
           },
-          transaction
-        });
-
-        if (!commandCandidate) {
-          await event.update(
-            {
-              status: OUTBOX_EVENT_STATUS.COMPLETED,
-              leaseExpiresAt: null,
-              leaseToken: null
-            },
-            { transaction }
-          );
-          return null;
+          type: QueryTypes.SELECT
         }
-
-        // Global order: event -> automation state -> command. Handoff locks
-        // state before cancelling queued commands, so claim must never hold the
-        // command row while waiting for that state.
-        const state = commandCandidate.externalTicketId
-          ? await ConversationAutomationState.findOne({
-              where: {
-                companyId: commandCandidate.companyId,
-                externalTicketId: commandCandidate.externalTicketId
+      );
+      const claimed: ClaimedDispatch[] = [];
+      for (const candidate of candidates) {
+        // eslint-disable-next-line no-await-in-loop
+        const claim = await sequelize.transaction(async transaction => {
+          const event = await MessagingOutboxEvent.findOne({
+            where: {
+              id: candidate.id,
+              eventType: OUTBOX_EVENT_TYPE.MESSAGE_DISPATCH_REQUESTED,
+              status: OUTBOX_EVENT_STATUS.READY,
+              availableAt: { [Op.lte]: now }
+            },
+            transaction,
+            lock: transaction.LOCK.UPDATE,
+            skipLocked: true
+          });
+          if (!event) return null;
+          // Claim atômico por canal (T8): o advisory lock transacional
+          // serializa workers concorrentes do MESMO canal; só depois dele a
+          // revalidação de in-flight é confiável (sem ela, dois workers
+          // podiam claimear comandos diferentes do mesmo canal ao mesmo
+          // tempo, quebrando a ordem serial da lane).
+          await sequelize.query(
+            "SELECT pg_advisory_xact_lock(:lockClass, :whatsappId)",
+            {
+              replacements: {
+                lockClass: LANE_CLAIM_ADVISORY_LOCK_CLASS,
+                whatsappId: candidate.whatsappId
+              },
+              transaction
+            }
+          );
+          const busy = await sequelize.query<{ busy: number }>(
+            `SELECT 1 AS busy
+               FROM messaging."MessageCommands"
+              WHERE "whatsappId" = :whatsappId
+                AND status = :sending
+                AND "leaseExpiresAt" > :now
+              LIMIT 1`,
+            {
+              replacements: {
+                whatsappId: candidate.whatsappId,
+                sending: MESSAGE_COMMAND_STATUS.SENDING,
+                now
               },
               transaction,
-              lock: transaction.LOCK.UPDATE
-            })
-          : null;
-        const command = await MessageCommand.findOne({
-          where: {
-            id: event.aggregateId,
-            status: MESSAGE_COMMAND_STATUS.QUEUED
-          },
-          transaction,
-          lock: transaction.LOCK.UPDATE
-        });
-        if (!command) {
-          await event.update(
-            {
-              status: OUTBOX_EVENT_STATUS.COMPLETED,
-              leaseExpiresAt: null,
-              leaseToken: null
-            },
-            { transaction }
+              type: QueryTypes.SELECT
+            }
           );
-          return null;
-        }
-
-        if (command.externalTicketId) {
-          if (
-            !automationCommandIsCurrent(
-              command.toJSON() as unknown as MessageCommandEventSource,
-              state?.toJSON() as any
-            )
-          ) {
-            await command.update(
-              {
-                status: MESSAGE_COMMAND_STATUS.CANCELLED,
-                errorCode: "STALE_AUTOMATION_EPOCH",
-                cancelledAt: now,
-                completedAt: now
-              },
-              { transaction }
-            );
-            await event.update(
-              {
-                status: OUTBOX_EVENT_STATUS.COMPLETED,
-                leaseExpiresAt: null,
-                leaseToken: null
-              },
-              { transaction }
-            );
-            await MessagingOutboxEvent.create(
-              buildMessageFailedEvent(
-                command.toJSON() as unknown as MessageCommandEventSource,
-                "STALE_AUTOMATION_EPOCH",
-                "Comando cancelado antes do envio"
-              ) as any,
-              { transaction }
-            );
-            return null;
-          }
-        }
-
-        const leaseToken = randomUUID();
-        const leaseExpiresAt = new Date(now.getTime() + SEND_LEASE_MS);
-        const attemptCount = command.attemptCount + 1;
-        await command.update(
-          {
-            status: MESSAGE_COMMAND_STATUS.SENDING,
-            attemptCount,
-            leaseExpiresAt,
-            leaseToken
-          },
-          { transaction }
-        );
-        await event.update(
-          {
-            status: OUTBOX_EVENT_STATUS.PROCESSING,
-            attemptCount: event.attemptCount + 1,
-            leaseExpiresAt,
-            leaseToken
-          },
-          { transaction }
-        );
-
-        return {
-          eventId: event.id,
-          leaseToken,
-          attemptCount,
-          command: command.toJSON() as DispatchableMessageCommand &
-            MessageCommandEventSource
-        };
-      }),
+          // Outro worker claimeou este canal entre a seleção e o lock: o
+          // evento segue READY para a próxima rodada.
+          if (busy.length > 0) return null;
+          return claimEventCommand(event, now, transaction);
+        });
+        if (claim) claimed.push(claim);
+      }
+      return claimed;
+    },
     send,
     withSendPermit: async (claim, sendOperation) => {
       const refreshedLeaseExpiresAt = new Date(Date.now() + SEND_LEASE_MS);
@@ -667,6 +787,61 @@ class MessageCommandDispatcher {
     if (!claimed) {
       return { status: "idle" };
     }
+    return { status: await this.dispatchClaimed(claimed, now) };
+  }
+
+  // Lanes por canal (T8): despacha até `maxChannels` comandos em paralelo —
+  // um por canal, sempre o mais antigo da fila. Um canal lento ou
+  // desconectado ocupa apenas a própria lane; os demais progridem.
+  async dispatchChannelLaneBatch(
+    maxChannels: number,
+    now = new Date()
+  ): Promise<{
+    status: "idle" | "dispatched";
+    dispatched: number;
+    outcomes: DispatchOutcome[];
+  }> {
+    const claimed = this.dependencies.claimNextPerChannel
+      ? await this.dependencies.claimNextPerChannel(now, maxChannels)
+      : [];
+    if (claimed.length === 0) {
+      return { status: "idle", dispatched: 0, outcomes: [] };
+    }
+    const settled = await Promise.allSettled(
+      claimed.map(claim => this.dispatchClaimed(claim, now))
+    );
+    const outcomes: DispatchOutcome[] = [];
+    let failedLanes = 0;
+    settled.forEach(result => {
+      if (result.status === "fulfilled") {
+        outcomes.push(result.value);
+      } else {
+        failedLanes += 1;
+      }
+    });
+    if (failedLanes > 0) {
+      logger.error(
+        { failedLanes },
+        "messaging: lanes de dispatch falharam com erro nao tratado"
+      );
+    }
+    return { status: "dispatched", dispatched: outcomes.length, outcomes };
+  }
+
+  private async dispatchClaimed(
+    claimed: ClaimedDispatch,
+    now: Date
+  ): Promise<DispatchOutcome> {
+    // Latência commit → dispatch (T8): o createdAt do comando é o commit
+    // transacional do outbox; o claim acabou de acontecer.
+    observeSendPipelineLatencyMs(
+      SEND_PIPELINE_STAGE.COMMIT_TO_DISPATCH,
+      now.getTime() -
+        new Date(
+          (claimed.command as { createdAt?: Date | string }).createdAt ?? now
+        ).getTime()
+    );
+    const sendStartedAt = Date.now();
 
     let delivery: { providerMessageId?: string };
     try {
@@ -675,14 +850,14 @@ class MessageCommandDispatcher {
           this.dependencies.send(claimed.command)
         );
         if (permit.status !== "permitted") {
-          return { status: permit.status };
+          return permit.status;
         }
         delivery = permit.delivery || {};
       } else {
         delivery = await this.dependencies.send(claimed.command);
       }
     } catch (error) {
-      return { status: await this.handleSendError(claimed, error, now) };
+      return this.handleSendError(claimed, error, now);
     }
 
     const finalized = await this.dependencies.markSent(
@@ -698,9 +873,15 @@ class MessageCommandDispatcher {
         },
         "messaging: lease antigo tentou publicar sucesso e foi bloqueado (fencing)"
       );
-      return { status: "fenced" };
+      return "fenced";
     }
-    return { status: "sent" };
+    // Latência dispatch → providerMessageId (T8): do início do send ao SENT
+    // confirmado com fencing válido.
+    observeSendPipelineLatencyMs(
+      SEND_PIPELINE_STAGE.DISPATCH_TO_PROVIDER_ID,
+      Date.now() - sendStartedAt
+    );
+    return "sent";
   }
 
   private async handleSendError(

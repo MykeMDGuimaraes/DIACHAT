@@ -2,11 +2,13 @@ import { logger } from "../../../utils/logger";
 import {
   DELIVERY_ALERT,
   DELIVERY_METRIC,
+  SEND_PIPELINE_STAGE,
   STREAM_REPLACEMENT_STATUS_CODES,
   UNCONFIRMED_DELIVERY_ALERT_THRESHOLD,
   emitDeliveryAlert,
   incrementDeliveryCounter,
   observeAckLatencyMs,
+  observeSendPipelineLatencyMs,
   resetDeliveryMetrics,
   setDeliveryGauge,
   shouldAlertDuplicateSocket,
@@ -138,5 +140,59 @@ describe("DeliveryObservability (T7)", () => {
     const snap = snapshotDeliveryMetrics();
     expect(snap.counters).toEqual({});
     expect(snap.ackLatencyMs).toEqual({ count: 0, sumMs: 0, maxMs: 0 });
+  });
+});
+
+describe("latências do pipeline de envio (T8)", () => {
+  it("resume p50/p95/p99 por estágio", () => {
+    resetDeliveryMetrics();
+    for (let value = 1; value <= 100; value += 1) {
+      observeSendPipelineLatencyMs(
+        SEND_PIPELINE_STAGE.COMMIT_TO_DISPATCH,
+        value
+      );
+    }
+    const summary =
+      snapshotDeliveryMetrics().sendPipeline[
+        SEND_PIPELINE_STAGE.COMMIT_TO_DISPATCH
+      ];
+    expect(summary.count).toBe(100);
+    expect(summary.sampled).toBe(100);
+    expect(summary.p50).toBe(50);
+    expect(summary.p95).toBe(95);
+    expect(summary.p99).toBe(99);
+    expect(summary.maxMs).toBe(100);
+  });
+
+  it("limita o reservatório e conta os descartes", () => {
+    resetDeliveryMetrics();
+    for (let value = 0; value < 600; value += 1) {
+      observeSendPipelineLatencyMs(
+        SEND_PIPELINE_STAGE.DISPATCH_TO_PROVIDER_ID,
+        value
+      );
+    }
+    const summary =
+      snapshotDeliveryMetrics().sendPipeline[
+        SEND_PIPELINE_STAGE.DISPATCH_TO_PROVIDER_ID
+      ];
+    expect(summary.count).toBe(600);
+    expect(summary.sampled).toBe(512);
+    expect(summary.maxMs).toBe(599);
+  });
+
+  it("ignora valores inválidos", () => {
+    resetDeliveryMetrics();
+    observeSendPipelineLatencyMs(SEND_PIPELINE_STAGE.PROVIDER_ID_TO_ACK, -5);
+    observeSendPipelineLatencyMs(
+      SEND_PIPELINE_STAGE.PROVIDER_ID_TO_ACK,
+      Number.NaN
+    );
+    const summary =
+      snapshotDeliveryMetrics().sendPipeline[
+        SEND_PIPELINE_STAGE.PROVIDER_ID_TO_ACK
+      ];
+    expect(summary.count).toBe(0);
+    expect(summary.sampled).toBe(0);
   });
 });

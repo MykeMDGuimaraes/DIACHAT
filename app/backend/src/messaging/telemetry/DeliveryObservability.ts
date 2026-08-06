@@ -38,6 +38,25 @@ export const DELIVERY_ALERT = {
 export type DeliveryAlertCode =
   (typeof DELIVERY_ALERT)[keyof typeof DELIVERY_ALERT];
 
+/** Estágios de latência do pipeline de envio (T8): commit → dispatch → providerMessageId → ACK. */
+export const SEND_PIPELINE_STAGE = {
+  COMMIT_TO_DISPATCH: "send_pipeline_commit_to_dispatch_ms",
+  DISPATCH_TO_PROVIDER_ID: "send_pipeline_dispatch_to_provider_id_ms",
+  PROVIDER_ID_TO_ACK: "send_pipeline_provider_id_to_ack_ms"
+} as const;
+
+export type SendPipelineStage =
+  (typeof SEND_PIPELINE_STAGE)[keyof typeof SEND_PIPELINE_STAGE];
+
+export interface PipelineLatencySummary {
+  count: number;
+  sampled: number;
+  p50: number;
+  p95: number;
+  p99: number;
+  maxMs: number;
+}
+
 export type AlertSeverity = "critical" | "warning";
 
 /** Rótulos permitidos nas métricas — nada além de ids e códigos normalizados. */
@@ -63,6 +82,56 @@ export interface AlertContext {
 const counters = new Map<string, number>();
 const gauges = new Map<string, number>();
 const ackLatency = { count: 0, sumMs: 0, maxMs: 0 };
+
+// Reservatório limitado por estágio (T8): memória constante; excedentes são
+// descartados (os mais antigos) e contados em `count` mas não em `sampled`.
+const PIPELINE_LATENCY_RESERVOIR_SIZE = 512;
+const pipelineLatencySamples = new Map<string, number[]>();
+const pipelineLatencyOverflow = new Map<string, number>();
+
+export const observeSendPipelineLatencyMs = (
+  stage: SendPipelineStage,
+  latencyMs: number
+): void => {
+  if (!Number.isFinite(latencyMs) || latencyMs < 0) return;
+  const samples = pipelineLatencySamples.get(stage) ?? [];
+  if (samples.length >= PIPELINE_LATENCY_RESERVOIR_SIZE) {
+    samples.shift();
+    pipelineLatencyOverflow.set(
+      stage,
+      (pipelineLatencyOverflow.get(stage) ?? 0) + 1
+    );
+  }
+  const rounded = Math.round(latencyMs);
+  samples.push(rounded);
+  pipelineLatencySamples.set(stage, samples);
+  logger.debug({ metric: stage, value: rounded }, "delivery-metric");
+};
+
+const percentile = (sorted: number[], p: number): number => {
+  if (sorted.length === 0) return 0;
+  const index = Math.min(
+    sorted.length - 1,
+    Math.max(0, Math.ceil((p / 100) * sorted.length) - 1)
+  );
+  return sorted[index];
+};
+
+const summarizePipelineStage = (
+  stage: SendPipelineStage
+): PipelineLatencySummary => {
+  const samples = [...(pipelineLatencySamples.get(stage) ?? [])].sort(
+    (left, right) => left - right
+  );
+  return {
+    count: samples.length + (pipelineLatencyOverflow.get(stage) ?? 0),
+    sampled: samples.length,
+    p50: percentile(samples, 50),
+    p95: percentile(samples, 95),
+    p99: percentile(samples, 99),
+    maxMs: samples.length > 0 ? samples[samples.length - 1] : 0
+  };
+};
 
 const labelKey = (labels: MetricLabels): string =>
   JSON.stringify(
@@ -152,10 +221,22 @@ export const snapshotDeliveryMetrics = (): {
   counters: Record<string, number>;
   gauges: Record<string, number>;
   ackLatencyMs: { count: number; sumMs: number; maxMs: number };
+  sendPipeline: Record<SendPipelineStage, PipelineLatencySummary>;
 } => ({
   counters: Object.fromEntries(counters),
   gauges: Object.fromEntries(gauges),
-  ackLatencyMs: { ...ackLatency }
+  ackLatencyMs: { ...ackLatency },
+  sendPipeline: {
+    [SEND_PIPELINE_STAGE.COMMIT_TO_DISPATCH]: summarizePipelineStage(
+      SEND_PIPELINE_STAGE.COMMIT_TO_DISPATCH
+    ),
+    [SEND_PIPELINE_STAGE.DISPATCH_TO_PROVIDER_ID]: summarizePipelineStage(
+      SEND_PIPELINE_STAGE.DISPATCH_TO_PROVIDER_ID
+    ),
+    [SEND_PIPELINE_STAGE.PROVIDER_ID_TO_ACK]: summarizePipelineStage(
+      SEND_PIPELINE_STAGE.PROVIDER_ID_TO_ACK
+    )
+  }
 });
 
 /** Testes: zera o registro em processo. */
@@ -165,4 +246,6 @@ export const resetDeliveryMetrics = (): void => {
   ackLatency.count = 0;
   ackLatency.sumMs = 0;
   ackLatency.maxMs = 0;
+  pipelineLatencySamples.clear();
+  pipelineLatencyOverflow.clear();
 };

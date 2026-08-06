@@ -23,6 +23,11 @@ interface RecoveryRunner {
 
 interface DispatchRunner {
   dispatchOne: () => Promise<{ status: string }>;
+  // Lanes por canal (T8): runners com suporte despacham um comando por canal
+  // em paralelo; runners sem o método seguem no loop sequencial legado.
+  dispatchChannelLaneBatch?: (
+    maxChannels: number
+  ) => Promise<{ status: string; dispatched: number }>;
 }
 
 interface InboxRunner {
@@ -86,6 +91,20 @@ export const resolveWebhookRuntimeConcurrency = (
   )
 });
 
+const MAX_DISPATCH_CHANNEL_CONCURRENCY = 64;
+
+// Lanes de dispatch por canal (T8): quantos canais despacham em paralelo por
+// rodada; a ordem dentro de cada canal é preservada pela lane serial.
+export const resolveDispatchChannelConcurrency = (
+  environment: Record<string, string | undefined> = process.env
+): number => {
+  const value = environment.MESSAGING_DISPATCH_CHANNEL_CONCURRENCY;
+  if (!value || !/^\d+$/.test(value)) return 8;
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 1) return 8;
+  return Math.min(MAX_DISPATCH_CHANNEL_CONCURRENCY, parsed);
+};
+
 class MessagingRuntime {
   // Parameter properties keep each worker replaceable in tests.
   // eslint-disable-next-line no-useless-constructor
@@ -112,6 +131,7 @@ class MessagingRuntime {
       runBatch: async () => ({ processed: 0, safeToDispatch: true })
     },
     private readonly webhookConcurrency: WebhookRuntimeConcurrency = resolveWebhookRuntimeConcurrency(),
+    private readonly dispatchChannelConcurrency: number = resolveDispatchChannelConcurrency(),
     private readonly reportWebhookPoolFailure: (
       pool: WebhookPoolName,
       failedLanes: number
@@ -245,12 +265,24 @@ class MessagingRuntime {
       }
     }
 
-    for (let index = 0; index < this.batchSize; index += 1) {
-      const result = await this.dispatcher.dispatchOne();
-      if (result.status === "idle") {
-        break;
+    if (this.dispatcher.dispatchChannelLaneBatch) {
+      // Lanes por canal (T8): cada rodada despacha um comando por canal em
+      // paralelo; rodadas adaptativas drenam a fila enquanto houver trabalho.
+      for (let round = 0; round < MAX_ADAPTIVE_WEBHOOK_ROUNDS; round += 1) {
+        const result = await this.dispatcher.dispatchChannelLaneBatch(
+          this.dispatchChannelConcurrency
+        );
+        dispatched += result.dispatched;
+        if (result.status === "idle") break;
       }
-      dispatched += 1;
+    } else {
+      for (let index = 0; index < this.batchSize; index += 1) {
+        const result = await this.dispatcher.dispatchOne();
+        if (result.status === "idle") {
+          break;
+        }
+        dispatched += 1;
+      }
     }
 
     for (let index = 0; index < this.batchSize; index += 1) {

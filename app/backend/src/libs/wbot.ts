@@ -1,6 +1,5 @@
 import { randomUUID } from "crypto";
 import { Boom } from "@hapi/boom";
-import NodeCache from "node-cache";
 import makeWASocket, {
   WASocket,
   Browsers,
@@ -35,6 +34,7 @@ import {
   emitDeliveryAlert,
   incrementDeliveryCounter
 } from "../messaging/public/observability";
+import { createMsgRetryCounterCache } from "./baileysRetryCounterCache";
 
 const loggerBaileys = MAIN_LOGGER.child({});
 loggerBaileys.level = "error";
@@ -128,7 +128,9 @@ export const createWASocket = async (
       })
   });
 
-  const msgRetryCounterCache = new NodeCache();
+  // Cache de retry limitado (T8): TTL + tamanho máximo; criado por socket,
+  // então substituir a geração descarta o cache inteiro junto com o socket.
+  const msgRetryCounterCache = createMsgRetryCounterCache();
 
   const wsocket: Session = makeWASocket({
     logger: loggerBaileys,

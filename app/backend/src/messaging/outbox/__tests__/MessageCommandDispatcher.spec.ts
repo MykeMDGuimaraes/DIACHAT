@@ -27,8 +27,7 @@ const command = {
   messageKind: "text",
   provider: "baileys",
   recipient: "5531999999999",
-  requestPayload: { text: "Ola" }
-  ,
+  requestPayload: { text: "Ola" },
   externalTicketId: "ticket-uuid",
   automationEpoch: 4,
   conversationId: "conversation-uuid",
@@ -374,5 +373,119 @@ describe("computeRetryDelayMs", () => {
         random: () => 0.5
       })
     ).toBe(BACKOFF_MAX_MS);
+  });
+});
+
+describe("MessageCommandDispatcher — lanes por canal (T8)", () => {
+  const laneClaim = (whatsappId: number, id: string) => ({
+    eventId: `outbox_${id}`,
+    leaseToken: `lease-${id}`,
+    attemptCount: 1,
+    command: {
+      ...command,
+      id,
+      whatsappId,
+      createdAt: new Date(Date.now() - 100)
+    }
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it("100 comandos do mesmo canal são enviados em ordem (lane serial)", async () => {
+    const sendOrder: string[] = [];
+    const claims = Array.from({ length: 100 }, (_unused, index) =>
+      laneClaim(42, `cmd_${index}`)
+    );
+    const dependencies = buildDependencies({
+      claimNext: jest.fn().mockResolvedValue(null),
+      claimNextPerChannel: jest
+        .fn()
+        .mockImplementation(async () =>
+          claims.length > 0 ? [claims.shift()] : []
+        ),
+      send: jest.fn().mockImplementation(async cmd => {
+        sendOrder.push(cmd.id);
+        return { providerMessageId: `wamid_${cmd.id}` };
+      })
+    });
+    const dispatcher = new MessageCommandDispatcher(dependencies);
+
+    for (let round = 0; round < 100; round += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      await dispatcher.dispatchChannelLaneBatch(8);
+    }
+
+    expect(sendOrder).toEqual(
+      Array.from({ length: 100 }, (_unused, index) => `cmd_${index}`)
+    );
+  });
+
+  it("dois canais progridem de forma independente na mesma rodada", async () => {
+    const started: string[] = [];
+    const finished: string[] = [];
+    const dependencies = buildDependencies({
+      claimNext: jest.fn().mockResolvedValue(null),
+      claimNextPerChannel: jest
+        .fn()
+        .mockResolvedValue([laneClaim(1, "cmd_a"), laneClaim(2, "cmd_b")]),
+      send: jest.fn().mockImplementation(async cmd => {
+        started.push(cmd.id);
+        if (cmd.id === "cmd_a") {
+          await new Promise(resolve => setTimeout(resolve, 50));
+        }
+        finished.push(cmd.id);
+        return { providerMessageId: `wamid_${cmd.id}` };
+      })
+    });
+    const dispatcher = new MessageCommandDispatcher(dependencies);
+
+    const result = await dispatcher.dispatchChannelLaneBatch(8);
+
+    expect(result.status).toBe("dispatched");
+    expect(result.dispatched).toBe(2);
+    expect(started).toHaveLength(2);
+    // cmd_b (rápido) termina antes de cmd_a (lento): em execução sequencial
+    // cmd_a terminaria primeiro — prova de que as lanes rodam em paralelo.
+    expect(finished).toEqual(["cmd_b", "cmd_a"]);
+  });
+
+  it("canal desconectado ocupa só a própria lane e não bloqueia os demais", async () => {
+    const dependencies = buildDependencies({
+      claimNext: jest.fn().mockResolvedValue(null),
+      claimNextPerChannel: jest
+        .fn()
+        .mockResolvedValue([laneClaim(1, "cmd_down"), laneClaim(2, "cmd_ok")]),
+      send: jest.fn().mockImplementation(async cmd => {
+        if (cmd.id === "cmd_down") {
+          throw new RetryableSendError({
+            code: "BAILEYS_SOCKET_UNAVAILABLE",
+            message: "Sessao Baileys indisponivel para envio"
+          });
+        }
+        return { providerMessageId: "wamid_ok" };
+      })
+    });
+    const dispatcher = new MessageCommandDispatcher(dependencies);
+
+    const result = await dispatcher.dispatchChannelLaneBatch(8);
+
+    expect([...result.outcomes].sort()).toEqual(["retry_scheduled", "sent"]);
+    expect(dependencies.scheduleRetry).toHaveBeenCalledTimes(1);
+    expect(dependencies.markSent).toHaveBeenCalledTimes(1);
+  });
+
+  it("fica idle quando nenhum canal tem trabalho", async () => {
+    const dependencies = buildDependencies({
+      claimNext: jest.fn().mockResolvedValue(null),
+      claimNextPerChannel: jest.fn().mockResolvedValue([])
+    });
+    const dispatcher = new MessageCommandDispatcher(dependencies);
+
+    const result = await dispatcher.dispatchChannelLaneBatch(8);
+
+    expect(result).toEqual({ status: "idle", dispatched: 0, outcomes: [] });
+    expect(dependencies.send).not.toHaveBeenCalled();
   });
 });
