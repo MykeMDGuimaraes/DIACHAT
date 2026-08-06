@@ -12,6 +12,7 @@ import {
 import { adaptBaileysMessageEvents } from "../adapters/baileys/BaileysProviderEventAdapter";
 import { WhatsAppProviderEvent } from "../domain/WhatsAppProviderEvent";
 import WhatsAppProviderEventPublisher from "./WhatsAppProviderEventPublisher";
+import { observeAckLatencyMs } from "../telemetry/DeliveryObservability";
 import ChannelDeliveryHealthService from "./ChannelDeliveryHealthService";
 
 const validOpaqueButtonId = (value: unknown): value is string =>
@@ -457,6 +458,13 @@ class BaileysDomainEventService {
         { ack: input.ack },
         transaction
       );
+      // Latência do ACK (T7): criação da mensagem local até o ack do servidor.
+      if (persisted.createdAt) {
+        observeAckLatencyMs(
+          Date.now() - new Date(persisted.createdAt).getTime(),
+          { whatsappId: command?.whatsappId }
+        );
+      }
       return persisted;
     });
     if (!message) return null;

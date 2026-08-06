@@ -3,6 +3,12 @@ import {
   CHANNEL_DELIVERY_HEALTH,
   DELIVERY_HEALTH_WINDOW_MS
 } from "../domain/MessagingStates";
+import {
+  DELIVERY_ALERT,
+  DELIVERY_METRIC,
+  emitDeliveryAlert,
+  incrementDeliveryCounter
+} from "../telemetry/DeliveryObservability";
 
 interface Dependencies {
   findChannelForUpdate(
@@ -85,6 +91,18 @@ class ChannelDeliveryHealthService {
       },
       { transaction }
     );
+
+    // Métrica + alerta crítico (T7): >2 não confirmadas em 10min no canal.
+    incrementDeliveryCounter(DELIVERY_METRIC.DELIVERY_UNCONFIRMED_TOTAL, {
+      whatsappId
+    });
+    if (changesNow) {
+      emitDeliveryAlert(
+        "critical",
+        DELIVERY_ALERT.DELIVERY_UNCONFIRMED_THRESHOLD,
+        { whatsappId, errorCode, consecutiveUnconfirmed: consecutive }
+      );
+    }
 
     return changesNow ? channel : null;
   }

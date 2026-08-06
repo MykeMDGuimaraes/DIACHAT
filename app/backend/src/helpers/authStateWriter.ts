@@ -1,4 +1,11 @@
 import { logger } from "../utils/logger";
+import {
+  DELIVERY_ALERT,
+  DELIVERY_METRIC,
+  emitDeliveryAlert,
+  incrementDeliveryCounter,
+  shouldAlertStaleWriteAccepted
+} from "../messaging/public/observability";
 
 /**
  * Escritor serializado de auth-state por canal (Task 3 do hardening).
@@ -36,6 +43,9 @@ export interface AuthWriteJob {
 const queues = new Map<number, Promise<void>>();
 const nextRevision = new Map<number, number>();
 const consecutiveFailures = new Map<number, number>();
+// Última revisão aplicada com sucesso por canal (T7): defesa em profundidade
+// do alerta de escrita stale aceita — a fila a torna impossível.
+const lastAppliedRevision = new Map<number, number>();
 
 const execute = async (job: AuthWriteJob, revision: number): Promise<void> => {
   // Fence na execução: entre enfileirar e rodar, um replace pode ter
@@ -51,6 +61,16 @@ const execute = async (job: AuthWriteJob, revision: number): Promise<void> => {
   try {
     await job.persist(revision);
     consecutiveFailures.set(job.whatsappId, 0);
+    // Escrita stale aceita (T7): crítico se uma revisão não crescente grava.
+    const lastApplied = lastAppliedRevision.get(job.whatsappId) ?? 0;
+    if (shouldAlertStaleWriteAccepted(revision, lastApplied)) {
+      emitDeliveryAlert("critical", DELIVERY_ALERT.STALE_WRITE_ACCEPTED, {
+        whatsappId: job.whatsappId,
+        revision
+      });
+    } else {
+      lastAppliedRevision.set(job.whatsappId, revision);
+    }
   } catch (error) {
     // Fence reavaliado na FALHA: se um replace publicou geração nova
     // enquanto a escrita estava em voo, esta falha pertence à geração
@@ -65,6 +85,10 @@ const execute = async (job: AuthWriteJob, revision: number): Promise<void> => {
     }
     const failures = (consecutiveFailures.get(job.whatsappId) ?? 0) + 1;
     consecutiveFailures.set(job.whatsappId, failures);
+    // Falha de escrita de credencial (T7): sinal ate entao invisivel.
+    incrementDeliveryCounter(DELIVERY_METRIC.AUTH_WRITE_FAILURE_TOTAL, {
+      whatsappId: job.whatsappId
+    });
     // Estruturado e sem conteúdo sensível: ids, revisão e mensagem do erro.
     logger.error(
       {

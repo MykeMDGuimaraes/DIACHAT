@@ -8,6 +8,14 @@ import {
   renewSessionLease,
   releaseSessionLease
 } from "../../messaging/public/sessionLeases";
+import {
+  DELIVERY_ALERT,
+  DELIVERY_METRIC,
+  emitDeliveryAlert,
+  incrementDeliveryCounter,
+  setDeliveryGauge,
+  shouldAlertDuplicateSocket
+} from "../../messaging/public/observability";
 
 /**
  * SessionManager single-flight (Task 1 do hardening de entrega WhatsApp).
@@ -144,6 +152,11 @@ export class WhatsAppSessionManager {
   private readonly heartbeatRunning = new Set<number>();
 
   private readonly renewalFailures = new Map<number, number>();
+
+  // Instancias fisicas de socket vivas por canal (T7): registradas quando a
+  // factory devolve, baixadas no teardown. O gauge/alerta de socket usa esta
+  // contagem real — o indice activeSessions por canal nunca passaria de 1.
+  private readonly liveSocketCounts = new Map<number, number>();
 
   // Tentativa em voo por canal (factory/lease ainda nao publicados) e
   // revogacoes: stop/replace marcam o token da tentativa; acquireAndStart
@@ -379,6 +392,10 @@ export class WhatsAppSessionManager {
     effect: () => Promise<T> | T
   ): Promise<T | undefined> {
     if (!this.isCurrent(whatsappId, generation)) {
+      // Callback de geracao antiga (T7): sinal ate entao invisivel.
+      incrementDeliveryCounter(DELIVERY_METRIC.STALE_CALLBACK_TOTAL, {
+        whatsappId
+      });
       logger.warn(
         { whatsappId },
         "session-manager: efeito suprimido por geracao obsoleta"
@@ -553,10 +570,16 @@ export class WhatsAppSessionManager {
       // A factory devolve o socket ainda em opening (QR/pareamento), o que
       // permite heartbeat da lease durante todo o ciclo de vida. A geracao
       // vai no input para os callbacks do socket validarem efeitos.
+      incrementDeliveryCounter(DELIVERY_METRIC.CONNECT_ATTEMPT_TOTAL, {
+        whatsappId: id,
+        companyId
+      });
       const socket = await this.socketFactory({
         ...input,
         generation: lease.fencingToken
       });
+      // Instancia fisica viva (T7): baixada somente no teardown.
+      this.liveSocketCounts.set(id, (this.liveSocketCounts.get(id) ?? 0) + 1);
       const session: ManagedSession = {
         whatsappId: id,
         companyId,
@@ -573,6 +596,23 @@ export class WhatsAppSessionManager {
       }
       this.activeSessions.set(id, session);
       this.renewalFailures.delete(id);
+      // Gauge + alerta critico (T7): invariante = exatamente 1 instancia de
+      // socket viva no canal (a recem-publicada). Acima disso ha outra
+      // instancia viva sem teardown — regressao de lifecycle (ver runbook).
+      const activeSocketCount = this.liveSocketCounts.get(id) ?? 1;
+      setDeliveryGauge(
+        DELIVERY_METRIC.ACTIVE_SOCKET_COUNT,
+        { whatsappId: id, companyId },
+        activeSocketCount
+      );
+      if (shouldAlertDuplicateSocket(activeSocketCount)) {
+        emitDeliveryAlert("critical", DELIVERY_ALERT.DUPLICATE_ACTIVE_SOCKET, {
+          whatsappId: id,
+          companyId,
+          generation: session.generation,
+          activeSocketCount
+        });
+      }
       this.startHeartbeat(session);
       input.onCreated?.(session);
       return session;
@@ -596,6 +636,18 @@ export class WhatsAppSessionManager {
     if (this.activeSessions.get(session.whatsappId) === session) {
       this.activeSessions.delete(session.whatsappId);
     }
+    // Baixa da instancia fisica (T7) — tambem para sockets revogados que
+    // nunca chegaram a publicar.
+    const remainingSockets = Math.max(
+      0,
+      (this.liveSocketCounts.get(session.whatsappId) ?? 1) - 1
+    );
+    this.liveSocketCounts.set(session.whatsappId, remainingSockets);
+    setDeliveryGauge(
+      DELIVERY_METRIC.ACTIVE_SOCKET_COUNT,
+      { whatsappId: session.whatsappId, companyId: session.companyId },
+      remainingSockets
+    );
     this.stopHeartbeat(session.whatsappId);
     this.renewalFailures.delete(session.whatsappId);
     try {

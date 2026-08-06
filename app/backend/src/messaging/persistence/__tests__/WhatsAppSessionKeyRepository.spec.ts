@@ -14,6 +14,10 @@ import {
   encryptMessagingSecret,
   MessagingKeyring
 } from "../../security/MessagingSecretCipher";
+import {
+  resetDeliveryMetrics,
+  snapshotDeliveryMetrics
+} from "../../telemetry/DeliveryObservability";
 
 jest.mock("../../adapters/baileys/BaileysExports", () => ({
   BufferJSON: { replacer: undefined, reviver: undefined }
@@ -257,5 +261,48 @@ describe("WhatsAppSessionKeyRepository", () => {
     expect(resolveAuthStoreMode({ MESSAGING_AUTH_STORE_MODE: "lixo" })).toBe(
       "json"
     );
+  });
+});
+
+describe("telemetria (T7)", () => {
+  beforeEach(() => resetDeliveryMetrics());
+
+  it("fencing que rejeita a escrita conta auth_revision_conflict_total", async () => {
+    mockTransaction();
+    jest.spyOn(sequelize, "query").mockResolvedValue([] as any);
+
+    await setSessionKeyEntries({
+      whatsappId: 7,
+      entries: [{ keyType: "session", keyId: "1:a", value: { v: 1 } }],
+      fence,
+      keyring
+    });
+
+    const snap = snapshotDeliveryMetrics();
+    expect(snap.counters['auth_revision_conflict_total|{"whatsappId":7}']).toBe(
+      1
+    );
+  });
+
+  it("escrita aplicada retorna via RETURNING e nao conta conflito", async () => {
+    mockTransaction();
+    const query = jest
+      .spyOn(sequelize, "query")
+      .mockResolvedValue([{ keyId: "1:a" }] as any);
+
+    await setSessionKeyEntries({
+      whatsappId: 7,
+      entries: [{ keyType: "session", keyId: "1:a", value: { v: 1 } }],
+      fence,
+      keyring
+    });
+
+    const [upsertSql] = query.mock.calls[0] as any[];
+    expect(upsertSql).toContain('RETURNING "keyId"');
+    expect(
+      snapshotDeliveryMetrics().counters[
+        'auth_revision_conflict_total|{"whatsappId":7}'
+      ]
+    ).toBeUndefined();
   });
 });

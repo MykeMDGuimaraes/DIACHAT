@@ -1,6 +1,10 @@
 import BaileysDomainEventService, {
   extractSelectedButtonId
 } from "../BaileysDomainEventService";
+import {
+  resetDeliveryMetrics,
+  snapshotDeliveryMetrics
+} from "../../telemetry/DeliveryObservability";
 
 describe("BaileysDomainEventService", () => {
   it.each([
@@ -654,5 +658,44 @@ describe("BaileysDomainEventService", () => {
 
     expect(dependencies.advanceCommandStatus).not.toHaveBeenCalled();
     expect(dependencies.recordConfirmedDelivery).not.toHaveBeenCalled();
+  });
+});
+
+describe("telemetria de ack (T7)", () => {
+  beforeEach(() => resetDeliveryMetrics());
+
+  it("registra ack_latency_ms quando o ack confirma a mensagem", async () => {
+    const createdAt = new Date(Date.now() - 1500);
+    const dependencies = {
+      transaction: jest.fn((callback: any) => callback("tx")),
+      findCommandByProviderMessageId: jest.fn().mockResolvedValue({
+        id: "command-1",
+        messageId: "local-message-1",
+        status: "sent",
+        whatsappId: 2
+      }),
+      advanceCommandStatus: jest.fn().mockResolvedValue(undefined),
+      recordConfirmedDelivery: jest.fn().mockResolvedValue(null),
+      findCommandByMessageId: jest.fn().mockResolvedValue(null),
+      findMessage: jest.fn().mockResolvedValue({
+        id: "local-message-1",
+        companyId: 7,
+        ticketId: 91,
+        createdAt
+      }),
+      updateMessage: jest.fn().mockResolvedValue(undefined),
+      findOrCreateEvent: jest.fn().mockResolvedValue(undefined)
+    };
+    const service = new BaileysDomainEventService(dependencies as any);
+
+    await service.acknowledgeProviderMessage({
+      companyId: 7,
+      providerMessageId: "wa-provider-1",
+      ack: 3
+    });
+
+    const snap = snapshotDeliveryMetrics();
+    expect(snap.ackLatencyMs.count).toBe(1);
+    expect(snap.ackLatencyMs.maxMs).toBeGreaterThanOrEqual(1500);
   });
 });

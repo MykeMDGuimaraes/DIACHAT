@@ -8,11 +8,26 @@ import {
   renewSessionLease,
   releaseSessionLease
 } from "../../../messaging/public/sessionLeases";
+import {
+  resetDeliveryMetrics,
+  snapshotDeliveryMetrics
+} from "../../../messaging/public/observability";
+import { logger } from "../../../utils/logger";
+
+const loggerMock = logger as unknown as { error: jest.Mock };
 
 jest.mock("../../../messaging/public/sessionLeases", () => ({
   acquireSessionLease: jest.fn(),
   renewSessionLease: jest.fn(),
   releaseSessionLease: jest.fn()
+}));
+jest.mock("../../../utils/logger", () => ({
+  logger: {
+    debug: jest.fn(),
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn()
+  }
 }));
 
 const acquireMock = acquireSessionLease as jest.Mock;
@@ -53,6 +68,7 @@ beforeEach(() => {
   acquireMock.mockReset().mockResolvedValue({ ...LEASE });
   renewMock.mockReset().mockResolvedValue(true);
   releaseMock.mockReset().mockResolvedValue(true);
+  resetDeliveryMetrics();
 });
 
 describe("single-flight local", () => {
@@ -708,5 +724,82 @@ describe("contadores de QR e reconexao", () => {
 
     await manager.stop(7, "close");
     expect(manager.listActiveSessionIds()).toEqual([8]);
+  });
+});
+
+describe("telemetria (T7)", () => {
+  it("start publicado incrementa connect_attempt_total e fixa active_socket_count=1", async () => {
+    const socket = makeFakeSocket();
+    const factory = jest.fn().mockResolvedValue(socket);
+    const manager = makeManager(factory);
+
+    await manager.start(input());
+
+    const snap = snapshotDeliveryMetrics();
+    expect(
+      snap.counters['connect_attempt_total|{"companyId":10,"whatsappId":1}']
+    ).toBe(1);
+    expect(
+      snap.gauges['active_socket_count|{"companyId":10,"whatsappId":1}']
+    ).toBe(1);
+  });
+
+  it("efeito suprimido por geracao obsoleta incrementa stale_callback_total", async () => {
+    const socket = makeFakeSocket();
+    const factory = jest.fn().mockResolvedValue(socket);
+    const manager = makeManager(factory);
+
+    const result = await manager.runFenced(1, "geracao-inexistente", () => 1);
+
+    expect(result).toBeUndefined();
+    const snap = snapshotDeliveryMetrics();
+    expect(snap.counters['stale_callback_total|{"whatsappId":1}']).toBe(1);
+  });
+
+  it("teardown zera o gauge active_socket_count do canal", async () => {
+    const socket = makeFakeSocket();
+    const factory = jest.fn().mockResolvedValue(socket);
+    const manager = makeManager(factory);
+
+    await manager.start(input());
+    await manager.stop(1, "close");
+
+    const snap = snapshotDeliveryMetrics();
+    expect(
+      snap.gauges['active_socket_count|{"companyId":10,"whatsappId":1}']
+    ).toBe(0);
+  });
+});
+
+describe("telemetria (T7) — alerta de socket duplicado", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("publish com segunda instancia viva dispara alerta critico duplicate_active_socket", async () => {
+    const socketA = makeFakeSocket();
+    const socketB = makeFakeSocket();
+    const factory = jest
+      .fn()
+      .mockResolvedValueOnce(socketA)
+      .mockResolvedValueOnce(socketB);
+    const manager = makeManager(factory);
+
+    await manager.start(input());
+    // Regressao simulada: o teardown nao baixa a instancia anterior —
+    // duas instancias fisicas vivas no canal no momento do publish.
+    (manager as unknown as { teardownSession: unknown }).teardownSession = jest
+      .fn()
+      .mockResolvedValue(undefined);
+
+    await manager.replace(input());
+
+    expect(loggerMock.error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        alert: "duplicate_active_socket",
+        severity: "critical",
+        whatsappId: 1,
+        activeSocketCount: 2
+      }),
+      "delivery-alert"
+    );
   });
 });

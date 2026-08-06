@@ -4,6 +4,17 @@ import {
   MESSAGE_COMMAND_ERROR_CODE
 } from "../../domain/MessagingStates";
 import ChannelDeliveryHealthService from "../ChannelDeliveryHealthService";
+import { logger } from "../../../utils/logger";
+import {
+  resetDeliveryMetrics,
+  snapshotDeliveryMetrics
+} from "../../telemetry/DeliveryObservability";
+
+jest.mock("../../../utils/logger", () => ({
+  logger: { debug: jest.fn(), warn: jest.fn(), error: jest.fn() }
+}));
+
+const loggerMock = logger as unknown as { error: jest.Mock };
 
 const NOW = new Date("2026-08-05T12:00:00Z");
 
@@ -185,5 +196,53 @@ describe("ChannelDeliveryHealthService", () => {
       service.recordUnconfirmedDelivery(999, "X", {})
     ).resolves.toBeNull();
     await expect(service.recordConfirmedDelivery(999, {})).resolves.toBeNull();
+  });
+});
+
+describe("telemetria (T7)", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    resetDeliveryMetrics();
+  });
+
+  it("falha isolada conta a métrica sem alerta crítico", async () => {
+    const channel = buildChannel();
+
+    await buildService(channel).recordUnconfirmedDelivery(
+      5,
+      MESSAGE_COMMAND_ERROR_CODE.DELIVERY_UNCONFIRMED,
+      {}
+    );
+
+    const snap = snapshotDeliveryMetrics();
+    expect(snap.counters['delivery_unconfirmed_total|{"whatsappId":5}']).toBe(
+      1
+    );
+    expect(loggerMock.error).not.toHaveBeenCalled();
+  });
+
+  it("transição para degraded emite alerta crítico com contexto sem PII", async () => {
+    const channel = buildChannel({
+      consecutiveUnconfirmedDeliveries: 1,
+      lastUnconfirmedDeliveryAt: new Date(NOW.getTime() - 60000)
+    });
+
+    const changed = await buildService(channel).recordUnconfirmedDelivery(
+      5,
+      MESSAGE_COMMAND_ERROR_CODE.DELIVERY_UNCONFIRMED,
+      {}
+    );
+
+    expect(changed).not.toBeNull();
+    expect(loggerMock.error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        alert: "delivery_unconfirmed_threshold",
+        severity: "critical",
+        whatsappId: 5,
+        consecutiveUnconfirmed: 2,
+        errorCode: MESSAGE_COMMAND_ERROR_CODE.DELIVERY_UNCONFIRMED
+      }),
+      "delivery-alert"
+    );
   });
 });

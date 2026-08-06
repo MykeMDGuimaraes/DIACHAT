@@ -28,6 +28,13 @@ import {
   configureSessionManager,
   getSessionManager
 } from "../services/WbotServices/WhatsAppSessionManager";
+import {
+  DELIVERY_ALERT,
+  DELIVERY_METRIC,
+  STREAM_REPLACEMENT_STATUS_CODES,
+  emitDeliveryAlert,
+  incrementDeliveryCounter
+} from "../messaging/public/observability";
 
 const loggerBaileys = MAIN_LOGGER.child({});
 loggerBaileys.level = "error";
@@ -205,6 +212,32 @@ export const createWASocket = async (
           "wbot: decisao da politica de desconexao"
         );
 
+        // Alertas (T7): sessao terminal e substituicao de stream (440/463)
+        // sao avisos operacionais — investigar, nao agir automaticamente.
+        if (decision.disconnectClass === "terminal") {
+          emitDeliveryAlert("warning", DELIVERY_ALERT.TERMINAL_SESSION, {
+            whatsappId: id,
+            companyId: whatsapp.companyId,
+            statusCode: statusCode ?? null,
+            reasonCode: decision.reasonCode
+          });
+        }
+        if (
+          typeof statusCode === "number" &&
+          STREAM_REPLACEMENT_STATUS_CODES.includes(statusCode)
+        ) {
+          emitDeliveryAlert(
+            "warning",
+            DELIVERY_ALERT.STREAM_REPLACEMENT_WARNING,
+            {
+              whatsappId: id,
+              companyId: whatsapp.companyId,
+              statusCode,
+              reasonCode: decision.reasonCode
+            }
+          );
+        }
+
         await fenced(async () => {
           const manager = getSessionManager();
           // Revalida antes de mexer na credencial: um 401/403 de geracao
@@ -225,6 +258,12 @@ export const createWASocket = async (
           // nenhuma reconexao e agendada.
           const stopped = await manager.stopIfCurrent(id, generation, "close");
           if (stopped && decision.action === "reconnect") {
+            // Reconexao por reasonCode normalizado (T7).
+            incrementDeliveryCounter(DELIVERY_METRIC.RECONNECT_TOTAL, {
+              whatsappId: id,
+              companyId: whatsapp.companyId,
+              reasonCode: decision.reasonCode
+            });
             // Reconexao com teto da policy, agendada so pelo manager:
             // replace/stop cancelam este timer junto com a geracao.
             manager.tryScheduleReconnect(

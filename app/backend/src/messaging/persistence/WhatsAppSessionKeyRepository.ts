@@ -8,6 +8,10 @@ import {
   loadMessagingKeyring,
   MessagingKeyring
 } from "../security/MessagingSecretCipher";
+import {
+  DELIVERY_METRIC,
+  incrementDeliveryCounter
+} from "../telemetry/DeliveryObservability";
 
 /**
  * Repositorio por chave do auth-state WhatsApp (Hardening T6).
@@ -183,7 +187,7 @@ const applyEntry = async (
     return;
   }
   const ciphertext = encryptMessagingSecret(serialize(entry.value), keyring);
-  await getSequelize().query(
+  const rows = (await getSequelize().query(
     `INSERT INTO ${TABLE}
        ("whatsappId", "keyType", "keyId", "ciphertext", "revision", "generation", "createdAt", "updatedAt")
      VALUES
@@ -191,9 +195,21 @@ const applyEntry = async (
      ON CONFLICT ("whatsappId", "keyType", "keyId") DO UPDATE
        SET "ciphertext" = :ciphertext, "revision" = :revision,
            "generation" = :generation, "updatedAt" = NOW()
-       WHERE ${FENCING_WHERE}`,
-    { replacements: { ...replacements, ciphertext }, transaction }
-  );
+       WHERE ${FENCING_WHERE}
+     RETURNING "keyId"`,
+    {
+      replacements: { ...replacements, ciphertext },
+      transaction,
+      type: QueryTypes.SELECT
+    }
+  )) as unknown[];
+  if (rows.length === 0) {
+    // Fencing rejeitou a escrita (registro mais novo vigente) — conflito de
+    // revisão/geração (T7): a escrita stale NÃO foi aceita.
+    incrementDeliveryCounter(DELIVERY_METRIC.AUTH_REVISION_CONFLICT_TOTAL, {
+      whatsappId
+    });
+  }
 };
 
 /**

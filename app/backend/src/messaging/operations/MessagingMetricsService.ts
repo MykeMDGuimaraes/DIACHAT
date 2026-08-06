@@ -19,6 +19,7 @@ import {
   WEBHOOK_DELIVERY_STATUS
 } from "../domain/MessagingStates";
 import { snapshotWhatsAppMirrorMetrics } from "./WhatsAppMirrorMetrics";
+import { snapshotDeliveryMetrics } from "../telemetry/DeliveryObservability";
 
 const oldestAgeSeconds = (createdAt?: Date | null): number =>
   createdAt
@@ -355,6 +356,9 @@ class MessagingMetricsService {
           deliveriesLastMinute: mirrorDeliveriesLastMinute
         }
       },
+      // Sinais de entrega do hardening (T7): contadores/gauges em processo
+      // de sessao, credencial e confirmacao de entrega.
+      deliverySignals: snapshotDeliveryMetrics(),
       process: process.memoryUsage(),
       postgresPool: pool
         ? {
